@@ -247,6 +247,7 @@ const CATEGORIA_MAP = Object.fromEntries(CATEGORIAS.map(c=>[c.key,c]));
 let STATE = {
   colaboradores: [],
   entregas: [],
+  transferencias: [],
   config: null,
   isAdmin: false,
   view: 'dashboard',
@@ -353,9 +354,11 @@ function gerarDadosTeste(){
 // no registro real de entregas, latinhas usa 'kg' ou 'unidades' normalmente (ver normalizarQuantidade).
 
 /* ---------- CARREGAMENTO INICIAL ---------- */
+const CAMPANHA_INICIO = { mes: 5, ano: 2026 }; // a campanha e o acompanhamento acumulado começam em maio de 2026
 async function carregarDados(){
   STATE.colaboradores = await storageGet('colaboradores', []);
   STATE.entregas = await storageGet('entregas', []);
+  STATE.transferencias = await storageGet('transferencias', []);
   STATE.config = await storageGet('config', null);
   if(!STATE.config){
     STATE.config = defaultConfig();
@@ -375,6 +378,7 @@ async function carregarDados(){
 }
 async function salvarColaboradores(){ await storageSet('colaboradores', STATE.colaboradores); }
 async function salvarEntregas(){ await storageSet('entregas', STATE.entregas); }
+async function salvarTransferencias(){ await storageSet('transferencias', STATE.transferencias); }
 async function salvarConfig(){ await storageSet('config', STATE.config); }
 
 /* ---------- LÓGICA DE NEGÓCIO ---------- */
@@ -404,30 +408,83 @@ function entregasValidadasDoMes(mes,ano){
   const chave = chaveMA(mes,ano);
   return STATE.entregas.filter(e=>e.statusValidacao==='validado' && e.data && e.data.slice(0,7)===chave);
 }
-function calcularResultadosMes(mes,ano,setorFiltro){
-  const metas = getMetasDoMes(mes,ano);
-  const entregas = entregasValidadasDoMes(mes,ano);
-  let colaboradores = STATE.colaboradores.filter(c=> !setorFiltro || c.setor===setorFiltro);
-  const resultados = colaboradores.map(c=>{
-    const totais = {}; CATEGORIAS.forEach(cat=>totais[cat.key]=0);
-    entregas.filter(e=>e.colaboradorId===c.id).forEach(e=>{
-      if(totais[e.tipo]!==undefined) totais[e.tipo]+= normalizarQuantidadeUnidades(e);
+function transferenciasDoMes(mes,ano){
+  const chave = chaveMA(mes,ano);
+  return STATE.transferencias.filter(t=>t.data && t.data.slice(0,7)===chave);
+}
+function mesAnteriorDe(mes,ano){
+  let m=mes-1, a=ano;
+  if(m<1){ m=12; a--; }
+  if(a<CAMPANHA_INICIO.ano || (a===CAMPANHA_INICIO.ano && m<CAMPANHA_INICIO.mes)) return null;
+  return {mes:m, ano:a};
+}
+function todosMesesDesdeCampanhaAte(mesAlvo,anoAlvo){
+  const lista = [];
+  let m=CAMPANHA_INICIO.mes, a=CAMPANHA_INICIO.ano;
+  // se o mês alvo for anterior ao início da campanha, considera só ele mesmo (evita lista vazia)
+  if(anoAlvo<a || (anoAlvo===a && mesAlvo<m)) return [{mes:mesAlvo,ano:anoAlvo}];
+  while(a<anoAlvo || (a===anoAlvo && m<=mesAlvo)){
+    lista.push({mes:m,ano:a});
+    m++; if(m>12){ m=1; a++; }
+  }
+  return lista;
+}
+/* Calcula, para cada colaborador e categoria, o saldo mês a mês desde o início da campanha
+   até o mês alvo, já considerando: entregas validadas, transferências recebidas/enviadas, e
+   o excedente (o que passou da meta) transportado automaticamente para o mês seguinte. */
+function calcularSaldosAcumulados(mesAlvo,anoAlvo){
+  const meses = todosMesesDesdeCampanhaAte(mesAlvo,anoAlvo);
+  const saldos = {};
+  STATE.colaboradores.forEach(c=>{ saldos[c.id]={}; CATEGORIAS.forEach(cat=> saldos[c.id][cat.key]={}); });
+  meses.forEach(({mes,ano})=>{
+    const chave = chaveMA(mes,ano);
+    const metas = getMetasDoMes(mes,ano);
+    const entregas = entregasValidadasDoMes(mes,ano);
+    const transferencias = transferenciasDoMes(mes,ano);
+    const anterior = mesAnteriorDe(mes,ano);
+    const chaveAnterior = anterior? chaveMA(anterior.mes,anterior.ano) : null;
+    STATE.colaboradores.forEach(c=>{
+      CATEGORIAS.forEach(cat=>{
+        let creditos = 0;
+        entregas.filter(e=>e.colaboradorId===c.id && e.tipo===cat.key).forEach(e=> creditos += normalizarQuantidadeUnidades(e));
+        transferencias.filter(t=>t.colaboradorDestinoId===c.id && t.categoriaDestino===cat.key).forEach(t=> creditos += t.quantidade);
+        transferencias.filter(t=>t.colaboradorOrigemId===c.id && t.categoriaOrigem===cat.key).forEach(t=> creditos -= t.quantidade);
+        const carryIn = chaveAnterior && saldos[c.id][cat.key][chaveAnterior] ? saldos[c.id][cat.key][chaveAnterior].leftover : 0;
+        const meta = metas[cat.key] || cat.metaDefault;
+        const totalDisponivel = creditos + carryIn;
+        const leftover = Math.max(0, totalDisponivel - meta);
+        saldos[c.id][cat.key][chave] = { creditos, carryIn, totalDisponivel, leftover, meta };
+      });
     });
-    const percentuais = {};
+  });
+  return saldos;
+}
+function saldoDisponivelAntes(colaboradorId, categoria, mes, ano){
+  const saldos = calcularSaldosAcumulados(mes,ano);
+  const s = saldos[colaboradorId]?.[categoria]?.[chaveMA(mes,ano)];
+  return s? s.totalDisponivel : 0;
+}
+function resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro){
+  const chave = chaveMA(mes,ano);
+  let colaboradores = STATE.colaboradores.filter(c=> !setorFiltro || c.setor===setorFiltro);
+  colaboradores = colaboradores.filter(c=> !c.dataCadastro || c.dataCadastro.slice(0,7) <= chave);
+  const resultados = colaboradores.map(c=>{
+    const totais = {}, percentuais = {}, frescos = {};
     CATEGORIAS.forEach(cat=>{
-      const meta = metas[cat.key] || cat.metaDefault;
-      percentuais[cat.key] = meta>0 ? (totais[cat.key]/meta*100) : 0;
+      const s = saldos[c.id]?.[cat.key]?.[chave];
+      const totalDisponivel = s? s.totalDisponivel : 0;
+      const meta = s? s.meta : (getMetasDoMes(mes,ano)[cat.key]||cat.metaDefault);
+      totais[cat.key] = totalDisponivel;
+      frescos[cat.key] = Math.max(0, s? s.creditos : 0);
+      percentuais[cat.key] = meta>0 ? (totalDisponivel/meta*100) : 0;
     });
     const percentuaisCapped = CATEGORIAS.map(cat=>Math.min(100,percentuais[cat.key]));
     const pontuacao = percentuaisCapped.reduce((a,b)=>a+b,0)/CATEGORIAS.length;
     const percentuaisReais = CATEGORIAS.map(cat=>percentuais[cat.key]);
     const mediaReal = percentuaisReais.reduce((a,b)=>a+b,0)/CATEGORIAS.length;
     const metaAtingida = CATEGORIAS.every(cat=>percentuais[cat.key]>=100);
-    const totalMateriais = CATEGORIAS.reduce((a,cat)=>a+totais[cat.key],0);
-    return {
-      colaborador:c, totais, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais,
-      percentualGeral: CATEGORIAS.reduce((a,cat)=>a+totais[cat.key],0) / CATEGORIAS.reduce((a,cat)=>a+(metas[cat.key]||cat.metaDefault),0) * 100
-    };
+    const totalMateriais = CATEGORIAS.reduce((a,cat)=>a+frescos[cat.key],0);
+    return { colaborador:c, totais, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais };
   });
   resultados.sort((a,b)=> b.pontuacao-a.pontuacao || b.mediaReal-a.mediaReal || a.colaborador.nome.localeCompare(b.colaborador.nome));
   let posAtual=0, vistos=0, ultimoScore=null, ultimaMedia=null;
@@ -439,6 +496,10 @@ function calcularResultadosMes(mes,ano,setorFiltro){
     ultimoScore = r.pontuacao; ultimaMedia = r.mediaReal;
   });
   return resultados;
+}
+function calcularResultadosMes(mes,ano,setorFiltro){
+  const saldos = calcularSaldosAcumulados(mes,ano);
+  return resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro);
 }
 function setoresExistentes(){
   return [...new Set(STATE.colaboradores.map(c=>c.setor).filter(Boolean))].sort();
@@ -593,10 +654,13 @@ function abrirAjuda(){
       <li><b>Cadastrar colaboradores:</b> vá em Colaboradores → Novo colaborador, ou importe uma planilha.</li>
       <li><b>Registrar entregas:</b> vá em Entregas → Nova entrega, escolha o colaborador, o tipo de material e a quantidade.</li>
       <li><b>Validar o material:</b> a Encarregada Financeira confirma a contagem em Entregas, marcando as assinaturas e o status "Validado". Só entregas validadas contam no ranking.</li>
+      <li><b>Excedente do mês:</b> se um colaborador entregar mais do que a meta pede em uma categoria, a sobra passa automaticamente para a meta do mês seguinte naquela mesma categoria.</li>
+      <li><b>Transferir material:</b> em Entregas → Transferir material, é possível mover o crédito de um colaborador para outro, ou trocar uma categoria por outra do mesmo colaborador, com autorização do administrador.</li>
       <li><b>Ver o ranking:</b> em Ranking mensal, escolha o mês e veja a posição de cada colaborador.</li>
+      <li><b>Acompanhar a campanha inteira:</b> o Painel geral mostra a evolução e um resumo de todos os colaboradores desde maio de 2026.</li>
       <li><b>Compartilhar no WhatsApp:</b> use os botões "Compartilhar resultado" ou "Gerar card do ranking" na tela de Ranking.</li>
     </ol>
-    <p class="small-note">Ações de cadastro, validação e exclusão exigem o modo administrador, disponível no menu lateral (ou em "Mais" no celular).</p>
+    <p class="small-note">Ações de cadastro, validação, transferência e exclusão exigem o modo administrador, disponível no menu lateral (ou em "Mais" no celular).</p>
   `);
 }
 window.abrirAjuda = abrirAjuda;
@@ -607,17 +671,20 @@ window.abrirAjuda = abrirAjuda;
 function renderDashboard(){
   const mes=STATE.dashMes, ano=STATE.dashAno;
   const resultados = calcularResultadosMes(mes,ano);
+  const saldosCompletos = calcularSaldosAcumulados(mes,ano);
   const ativos = STATE.colaboradores.filter(c=>c.status==='ativo').length;
   const entregasMes = entregasValidadasDoMes(mes,ano);
   const totalMateriais = resultados.reduce((a,r)=>a+r.totalMateriais,0);
   const atingiramMeta = resultados.filter(r=>r.metaAtingida).length;
   const mediaGeral = resultados.length? (resultados.reduce((a,r)=>a+r.pontuacao,0)/resultados.length) : 0;
   const primeiro = resultados[0];
-  const evolucao = ultimosMeses(6).map(({mes:m,ano:a})=>{
-    const r = calcularResultadosMes(m,a);
+  const mesesCampanha = todosMesesDesdeCampanhaAte(mes,ano);
+  const evolucao = mesesCampanha.map(({mes:m,ano:a})=>{
+    const r = resultadosDoMesUsandoSaldos(saldosCompletos, m, a);
     const media = r.length? r.reduce((x,y)=>x+y.pontuacao,0)/r.length : 0;
     return {label: nomeMes(m).slice(0,3)+'/'+String(a).slice(2), media};
   });
+  const resumoCampanha = calcularResumoCampanha(saldosCompletos, mesesCampanha);
   return `
     ${STATE.config.temDadosTeste? `<div class="banner amber"><span>${icon('leaf')}</span><div><b>Este ranking contém dados fictícios de demonstração.</b> Vá em Configurações para apagá-los quando começar a usar dados reais.</div></div>`:''}
     <div class="toolbar">
@@ -628,7 +695,7 @@ function renderDashboard(){
       <div class="card stat-card"><div class="stat-label">Colaboradores ativos</div><div class="stat-value">${ativos}</div><div class="stat-sub">${STATE.colaboradores.length} cadastrados no total</div></div>
       <div class="card stat-card"><div class="stat-label">Materiais arrecadados</div><div class="stat-value">${totalMateriais.toLocaleString('pt-BR')}</div><div class="stat-sub">unidades equivalentes em ${nomeMes(mes)}</div></div>
       <div class="card stat-card"><div class="stat-label">Atingiram a meta</div><div class="stat-value">${atingiramMeta}</div><div class="stat-sub">de ${resultados.length} participantes</div></div>
-      <div class="card stat-card"><div class="stat-label">Cumprimento médio</div><div class="stat-value">${mediaGeral.toFixed(0)}%</div><div class="stat-sub">média geral de pontuação</div></div>
+      <div class="card stat-card"><div class="stat-label">Cumprimento médio</div><div class="stat-value">${mediaGeral.toFixed(0)}%</div><div class="stat-sub">média geral de pontuação, já com excedente acumulado</div></div>
     </div>
     <div class="grid grid-2" style="margin-top:14px;">
       <div class="card">
@@ -644,14 +711,53 @@ function renderDashboard(){
         </div>
       </div>
       <div class="card">
-        <div class="stat-label">Evolução do cumprimento médio (últimos 6 meses)</div>
-        ${renderMiniBarChart(evolucao)}
+        <div class="stat-label">Evolução do cumprimento médio desde maio de 2026</div>
+        <div style="overflow-x:auto;">${renderMiniBarChart(evolucao)}</div>
+      </div>
+    </div>
+    <div class="section-title">Acompanhamento desde maio de 2026</div>
+    <div class="card" style="padding:0;">
+      <div class="table-wrap">
+        ${resumoCampanha.length===0? `<div class="table-empty">Ainda não há lançamentos desde o início da campanha.</div>` : `
+        <table><thead><tr><th>Colaborador</th><th>Setor</th><th>Meses participando</th><th>Pontuação média</th><th>Materiais arrecadados (total)</th><th>Meses com meta atingida</th></tr></thead>
+        <tbody>
+          ${resumoCampanha.map(r=>`
+            <tr>
+              <td style="font-weight:700;">${escapeHtml(r.colaborador.nome)}</td>
+              <td>${escapeHtml(r.colaborador.setor||'—')}</td>
+              <td>${r.mesesParticipando}</td>
+              <td>${r.mediaPontuacao.toFixed(0)}</td>
+              <td>${r.totalMateriais.toLocaleString('pt-BR')}</td>
+              <td>${r.mesesComMetaAtingida}</td>
+            </tr>`).join('')}
+        </tbody></table>`}
       </div>
     </div>
     <div class="section-title">Ranking resumido — ${nomeMes(mes)} de ${ano}</div>
     ${renderTabelaRanking(resultados.slice(0,5), false)}
     ${resultados.length>5? `<div style="margin-top:10px;"><button class="btn btn-outline" onclick="irPara('ranking')">${icon('ranking')}Ver ranking completo</button></div>`:''}
   `;
+}
+function calcularResumoCampanha(saldosCompletos, mesesCampanha){
+  const porColaborador = {};
+  mesesCampanha.forEach(({mes,ano})=>{
+    const resultados = resultadosDoMesUsandoSaldos(saldosCompletos, mes, ano);
+    resultados.forEach(r=>{
+      if(!porColaborador[r.colaborador.id]){
+        porColaborador[r.colaborador.id] = { colaborador:r.colaborador, mesesParticipando:0, somaPontuacao:0, totalMateriais:0, mesesComMetaAtingida:0 };
+      }
+      const acc = porColaborador[r.colaborador.id];
+      acc.mesesParticipando++;
+      acc.somaPontuacao += r.pontuacao;
+      acc.totalMateriais += r.totalMateriais;
+      if(r.metaAtingida) acc.mesesComMetaAtingida++;
+    });
+  });
+  const lista = Object.values(porColaborador).map(acc=> ({
+    ...acc, mediaPontuacao: acc.mesesParticipando? acc.somaPontuacao/acc.mesesParticipando : 0
+  }));
+  lista.sort((a,b)=> b.mediaPontuacao-a.mediaPontuacao || b.totalMateriais-a.totalMateriais);
+  return lista;
 }
 function ultimosMeses(n){
   const out=[]; let {mes,ano}=mesAnoAtual();
@@ -838,11 +944,17 @@ function renderEntregas(){
         <div><select id="filtroEntregaStatus" onchange="renderTabelaEntregas()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="validado">Validado</option></select></div>
       </div>
       <div class="toolbar-right">
+        <button class="btn btn-outline" onclick="abrirFormTransferencia()">${icon('ranking')}Transferir material</button>
         <button class="btn btn-primary" onclick="abrirFormEntrega()">${icon('plus')}Nova entrega</button>
       </div>
     </div>
     <div class="card" style="padding:0;">
       <div class="table-wrap" id="tabelaEntregasWrap"></div>
+    </div>
+    <div class="section-title">Transferências entre colaboradores / materiais no mês</div>
+    <p class="small-note" style="margin-top:-6px;">Usado para reatribuir material entre colaboradores ou trocar um tipo de material por outro, com autorização do administrador, conforme o regulamento.</p>
+    <div class="card" style="padding:0;">
+      <div class="table-wrap" id="tabelaTransferenciasWrap"></div>
     </div>
   `;
 }
@@ -855,7 +967,8 @@ function renderTabelaEntregas(){
   const chave = chaveMA(mes,ano);
   let lista = STATE.entregas.filter(e=> e.data && e.data.slice(0,7)===chave && (!status || e.statusValidacao===status));
   lista.sort((a,b)=> b.data.localeCompare(a.data));
-  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma entrega registrada neste período.</div>`; return; }
+  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma entrega registrada neste período.</div>`; }
+  else {
   wrap.innerHTML = `
     <table><thead><tr><th>Data</th><th>Colaborador</th><th>Material</th><th>Qtd.</th><th>Status</th><th></th></tr></thead>
     <tbody>
@@ -873,6 +986,33 @@ function renderTabelaEntregas(){
             <button class="btn btn-ghost btn-sm" onclick="abrirFormEntrega('${e.id}')">${icon('edit',16)}</button>
             <button class="btn btn-ghost btn-sm" onclick="confirmarExcluirEntrega('${e.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
           </td>
+        </tr>`;
+      }).join('')}
+    </tbody></table>
+  `;
+  }
+  renderTabelaTransferencias(mes,ano);
+}
+function renderTabelaTransferencias(mes,ano){
+  const wrap = document.getElementById('tabelaTransferenciasWrap');
+  if(!wrap) return;
+  const lista = transferenciasDoMes(mes,ano).slice().sort((a,b)=>b.data.localeCompare(a.data));
+  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma transferência registrada neste mês.</div>`; return; }
+  wrap.innerHTML = `
+    <table><thead><tr><th>Data</th><th>De</th><th>Para</th><th>Qtd.</th><th>Motivo</th><th></th></tr></thead>
+    <tbody>
+      ${lista.map(t=>{
+        const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
+        const destino = STATE.colaboradores.find(x=>x.id===t.colaboradorDestinoId);
+        const catOrigem = CATEGORIA_MAP[t.categoriaOrigem];
+        const catDestino = CATEGORIA_MAP[t.categoriaDestino];
+        return `<tr>
+          <td>${formatarData(t.data)}</td>
+          <td>${escapeHtml(origem?origem.nome:'(removido)')} <span class="small-note">— ${catOrigem?escapeHtml(catOrigem.label.split(' (')[0]):''}</span></td>
+          <td>${escapeHtml(destino?destino.nome:'(removido)')} <span class="small-note">— ${catDestino?escapeHtml(catDestino.label.split(' (')[0]):''}</span></td>
+          <td>${t.quantidade}</td>
+          <td>${escapeHtml(t.motivo||'—')}</td>
+          <td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="confirmarExcluirTransferencia('${t.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button></td>
         </tr>`;
       }).join('')}
     </tbody></table>
@@ -979,7 +1119,99 @@ async function excluirEntrega(id){
 }
 window.abrirFormEntrega=abrirFormEntrega; window.salvarEntrega=salvarEntrega;
 window.confirmarExcluirEntrega=confirmarExcluirEntrega; window.excluirEntrega=excluirEntrega;
-window.renderTabelaEntregas=renderTabelaEntregas;
+window.renderTabelaEntregas=renderTabelaEntregas; window.renderTabelaTransferencias=renderTabelaTransferencias;
+
+/* ---------- TRANSFERÊNCIAS ENTRE COLABORADORES / CATEGORIAS ---------- */
+function abrirFormTransferencia(){
+  if(!exigirAdmin()) return;
+  if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de transferir material.'); return; }
+  const opcoesColab = STATE.colaboradores.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
+  const opcoesCategoria = CATEGORIAS.map(c=>`<option value="${c.key}">${escapeHtml(c.label.split(' (')[0])}</option>`).join('');
+  abrirModal(`
+    <div class="modal-head"><h3>Transferir material</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p class="small-note" style="margin-top:-6px;">Move o crédito de material entre colaboradores, entre categorias, ou os dois ao mesmo tempo. Por exemplo, trocar latinhas por embalagens plásticas do mesmo colaborador, ou passar parte da meta de um colaborador para outro, com autorização administrativa.</p>
+    <div class="field"><label>Data da transferência</label><input type="date" id="tData" value="${new Date().toISOString().slice(0,10)}" onchange="atualizarSaldoTransferencia()"></div>
+    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">De (origem)</div>
+    <div class="grid grid-2">
+      <div class="field"><label>Colaborador</label><select id="tColabOrigem" onchange="atualizarSaldoTransferencia()">${opcoesColab}</select></div>
+      <div class="field"><label>Categoria</label><select id="tCategoriaOrigem" onchange="atualizarSaldoTransferencia()">${opcoesCategoria}</select></div>
+    </div>
+    <div class="small-note" id="saldoOrigemInfo" style="margin:-6px 0 14px 0;">—</div>
+    <div class="section-title" style="margin:0 0 8px 0;font-size:13.5px;">Para (destino)</div>
+    <div class="grid grid-2">
+      <div class="field"><label>Colaborador</label><select id="tColabDestino">${opcoesColab}</select></div>
+      <div class="field"><label>Categoria</label><select id="tCategoriaDestino">${opcoesCategoria}</select></div>
+    </div>
+    <div class="field"><label>Quantidade (unidades equivalentes)</label><input type="number" min="0" step="1" id="tQuantidade" oninput="atualizarSaldoTransferencia()"></div>
+    <div class="field"><label>Motivo / observação</label><input type="text" id="tMotivo" placeholder="Ex: acordo entre colaboradores, correção de lançamento"></div>
+    <div id="transfErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin-bottom:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary btn-block" onclick="salvarTransferencia()">${icon('check',16)}Transferir</button>
+    </div>
+  `);
+  setTimeout(atualizarSaldoTransferencia, 30);
+}
+function atualizarSaldoTransferencia(){
+  const dataEl = document.getElementById('tData');
+  const colabEl = document.getElementById('tColabOrigem');
+  const catEl = document.getElementById('tCategoriaOrigem');
+  const info = document.getElementById('saldoOrigemInfo');
+  if(!dataEl || !colabEl || !catEl || !info) return;
+  const data = dataEl.value; if(!data) return;
+  const mes = +data.slice(5,7), ano = +data.slice(0,4);
+  const saldo = saldoDisponivelAntes(colabEl.value, catEl.value, mes, ano);
+  const cat = CATEGORIA_MAP[catEl.value];
+  info.innerHTML = `Saldo disponível deste colaborador em ${escapeHtml(cat?cat.label.split(' (')[0]:'')} até ${nomeMes(mes)}/${ano}: <b>${saldo.toFixed(0)}</b> unidades equivalentes.`;
+}
+window.atualizarSaldoTransferencia = atualizarSaldoTransferencia;
+async function salvarTransferencia(){
+  const data = document.getElementById('tData').value;
+  const colaboradorOrigemId = document.getElementById('tColabOrigem').value;
+  const categoriaOrigem = document.getElementById('tCategoriaOrigem').value;
+  const colaboradorDestinoId = document.getElementById('tColabDestino').value;
+  const categoriaDestino = document.getElementById('tCategoriaDestino').value;
+  const quantidade = parseFloat(document.getElementById('tQuantidade').value);
+  const motivo = document.getElementById('tMotivo').value.trim();
+  const erroEl = document.getElementById('transfErro');
+  erroEl.style.display='none';
+  if(!data || !colaboradorOrigemId || !colaboradorDestinoId || isNaN(quantidade) || quantidade<=0){
+    erroEl.textContent = 'Preencha data, colaboradores e uma quantidade maior que zero.'; erroEl.style.display='block'; return;
+  }
+  if(colaboradorOrigemId===colaboradorDestinoId && categoriaOrigem===categoriaDestino){
+    erroEl.textContent = 'Origem e destino são iguais. Escolha um colaborador ou categoria diferente para o destino.'; erroEl.style.display='block'; return;
+  }
+  const mes = +data.slice(5,7), ano = +data.slice(0,4);
+  const saldoAtual = saldoDisponivelAntes(colaboradorOrigemId, categoriaOrigem, mes, ano);
+  if(quantidade > saldoAtual){
+    erroEl.textContent = `Quantidade maior que o saldo disponível na origem (${saldoAtual.toFixed(0)} unidades equivalentes até este mês).`; erroEl.style.display='block'; return;
+  }
+  STATE.transferencias.push({
+    id:uid(), data, colaboradorOrigemId, categoriaOrigem, colaboradorDestinoId, categoriaDestino,
+    quantidade, motivo, criadoEm:Date.now()
+  });
+  await garantirSnapshotMetas(mes,ano);
+  await salvarTransferencias();
+  fecharModal(); renderApp();
+}
+function confirmarExcluirTransferencia(id){
+  if(!exigirAdmin()) return;
+  abrirModal(`
+    <div class="modal-head"><h3>Excluir transferência</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p>Tem certeza que deseja excluir esta transferência? O material volta a contar para o colaborador e categoria de origem.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-danger btn-block" onclick="excluirTransferencia('${id}')">${icon('trash',16)}Excluir</button>
+    </div>
+  `);
+}
+async function excluirTransferencia(id){
+  STATE.transferencias = STATE.transferencias.filter(x=>x.id!==id);
+  await salvarTransferencias();
+  fecharModal(); renderApp();
+}
+window.abrirFormTransferencia=abrirFormTransferencia; window.salvarTransferencia=salvarTransferencia;
+window.confirmarExcluirTransferencia=confirmarExcluirTransferencia; window.excluirTransferencia=excluirTransferencia;
 
 /* =========================================================
    RANKING
@@ -1238,6 +1470,11 @@ function renderRelatorios(){
         <p class="small-note">Exporta a lista completa de colaboradores cadastrados.</p>
         <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvColaboradores()">${icon('download')}Exportar colaboradores</button>
       </div>
+      <div class="card">
+        <div class="stat-label">Transferências do mês (CSV)</div>
+        <p class="small-note">Exporta as transferências de material entre colaboradores e categorias no mês selecionado.</p>
+        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvTransferencias(${mes},${ano})">${icon('download')}Exportar transferências</button>
+      </div>
     </div>
     <div class="section-title">Mês de referência para os relatórios</div>
     <div class="card">${seletorMesAno('rank', mes, ano)} <span class="small-note">Este seletor é compartilhado com a tela de Ranking.</span></div>
@@ -1257,7 +1494,19 @@ function exportarCsvColaboradores(){
   STATE.colaboradores.forEach(c=>{ csv += [c.nome,c.setor||'',c.cargo||'',c.status,c.dataCadastro].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')+'\n'; });
   baixarArquivo(csv,'colaboradores.csv','text/csv;charset=utf-8;');
 }
-window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=exportarCsvColaboradores;
+function exportarCsvTransferencias(mes,ano){
+  const lista = transferenciasDoMes(mes,ano);
+  let csv = 'Data,ColaboradorOrigem,CategoriaOrigem,ColaboradorDestino,CategoriaDestino,Quantidade,Motivo\n';
+  lista.forEach(t=>{
+    const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
+    const destino = STATE.colaboradores.find(x=>x.id===t.colaboradorDestinoId);
+    const catO = CATEGORIA_MAP[t.categoriaOrigem], catD = CATEGORIA_MAP[t.categoriaDestino];
+    csv += [t.data, origem?origem.nome:'', catO?catO.label:'', destino?destino.nome:'', catD?catD.label:'', t.quantidade, (t.motivo||'').replace(/,/g,';')]
+      .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')+'\n';
+  });
+  baixarArquivo(csv, `transferencias-${nomeMes(mes)}-${ano}.csv`, 'text/csv;charset=utf-8;');
+}
+window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=exportarCsvColaboradores; window.exportarCsvTransferencias=exportarCsvTransferencias;
 
 /* =========================================================
    CONFIGURAÇÕES
