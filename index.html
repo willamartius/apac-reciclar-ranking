@@ -315,6 +315,7 @@ function defaultConfig(){
     metasDefault: Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault])),
     metasHistorico: {},
     temDadosTeste: true,
+    janelaPainelMeses: 6, // quantos meses mostrar no painel (número) ou 'campanha' para desde o início
   };
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -343,7 +344,7 @@ function gerarDadosTeste(){
         quantidade: Math.max(1, Math.round(cat.key==='latinhas'&&cat.aceitaKg? base/cat.unidadesPorKg*10 : base)),
         unidade: cat.key==='latinhas' ? 'kg-x10' : 'unidades',
         observacoes:'', responsavelContagem:'Encarregada Financeira',
-        statusValidacao:'validado', assinaturas:{coleta:true,colaborador:true,financeira:true},
+        statusValidacao:'validado',
         criadoEm:Date.now()
       });
     });
@@ -371,6 +372,7 @@ async function carregarDados(){
     }
     await storageSet('config', STATE.config);
   }
+  if(STATE.config.janelaPainelMeses===undefined) STATE.config.janelaPainelMeses = 6;
   const {mes,ano} = mesAnoAtual();
   STATE.dashMes=mes; STATE.dashAno=ano;
   STATE.rankMes=mes; STATE.rankAno=ano;
@@ -429,6 +431,23 @@ function todosMesesDesdeCampanhaAte(mesAlvo,anoAlvo){
   }
   return lista;
 }
+/* Janela de exibição do painel (não afeta o cálculo do excedente, só o que é mostrado
+   no gráfico de evolução e no resumo de acompanhamento). Padrão: últimos 6 meses.
+   O admin pode trocar para 3, 12, ou "desde o início da campanha" em maio/2026. */
+function mesesJanelaPainel(mesAlvo,anoAlvo){
+  const todos = todosMesesDesdeCampanhaAte(mesAlvo,anoAlvo);
+  const janela = STATE.config.janelaPainelMeses;
+  if(janela==='campanha') return todos;
+  const n = parseInt(janela,10) || 6;
+  return todos.slice(-n);
+}
+async function mudarJanelaPainel(valor){
+  if(!exigirAdmin()){ renderApp(); return; }
+  STATE.config.janelaPainelMeses = valor==='campanha' ? 'campanha' : parseInt(valor,10);
+  await salvarConfig();
+  renderApp();
+}
+window.mudarJanelaPainel = mudarJanelaPainel;
 /* Calcula, para cada colaborador e categoria, o saldo mês a mês desde o início da campanha
    até o mês alvo, já considerando: entregas validadas, transferências recebidas/enviadas, e
    o excedente (o que passou da meta) transportado automaticamente para o mês seguinte. */
@@ -483,7 +502,7 @@ function resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro){
     const percentuaisReais = CATEGORIAS.map(cat=>percentuais[cat.key]);
     const mediaReal = percentuaisReais.reduce((a,b)=>a+b,0)/CATEGORIAS.length;
     const metaAtingida = CATEGORIAS.every(cat=>percentuais[cat.key]>=100);
-    const totalMateriais = CATEGORIAS.reduce((a,cat)=>a+frescos[cat.key],0);
+    const totalMateriais = Math.round(CATEGORIAS.reduce((a,cat)=>a+frescos[cat.key],0));
     return { colaborador:c, totais, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais };
   });
   resultados.sort((a,b)=> b.pontuacao-a.pontuacao || b.mediaReal-a.mediaReal || a.colaborador.nome.localeCompare(b.colaborador.nome));
@@ -653,7 +672,7 @@ function abrirAjuda(){
     <ol class="checklist">
       <li><b>Cadastrar colaboradores:</b> vá em Colaboradores → Novo colaborador, ou importe uma planilha.</li>
       <li><b>Registrar entregas:</b> vá em Entregas → Nova entrega, escolha o colaborador, o tipo de material e a quantidade.</li>
-      <li><b>Validar o material:</b> a Encarregada Financeira confirma a contagem em Entregas, marcando as assinaturas e o status "Validado". Só entregas validadas contam no ranking.</li>
+      <li><b>Validar o material:</b> a Encarregada Financeira confere a contagem em Entregas e muda o status para "Validado". Só entregas validadas contam no ranking.</li>
       <li><b>Excedente do mês:</b> se um colaborador entregar mais do que a meta pede em uma categoria, a sobra passa automaticamente para a meta do mês seguinte naquela mesma categoria.</li>
       <li><b>Transferir material:</b> em Entregas → Transferir material, é possível mover o crédito de um colaborador para outro, ou trocar uma categoria por outra do mesmo colaborador, com autorização do administrador.</li>
       <li><b>Ver o ranking:</b> em Ranking mensal, escolha o mês e veja a posição de cada colaborador.</li>
@@ -678,13 +697,17 @@ function renderDashboard(){
   const atingiramMeta = resultados.filter(r=>r.metaAtingida).length;
   const mediaGeral = resultados.length? (resultados.reduce((a,r)=>a+r.pontuacao,0)/resultados.length) : 0;
   const primeiro = resultados[0];
-  const mesesCampanha = todosMesesDesdeCampanhaAte(mes,ano);
+  const mesesCampanha = mesesJanelaPainel(mes,ano);
   const evolucao = mesesCampanha.map(({mes:m,ano:a})=>{
     const r = resultadosDoMesUsandoSaldos(saldosCompletos, m, a);
     const media = r.length? r.reduce((x,y)=>x+y.pontuacao,0)/r.length : 0;
     return {label: nomeMes(m).slice(0,3)+'/'+String(a).slice(2), media};
   });
   const resumoCampanha = calcularResumoCampanha(saldosCompletos, mesesCampanha);
+  const janelaAtual = STATE.config.janelaPainelMeses;
+  const rotuloJanela = janelaAtual==='campanha'
+    ? `desde o início da campanha (${nomeMes(CAMPANHA_INICIO.mes)}/${CAMPANHA_INICIO.ano})`
+    : `nos últimos ${janelaAtual} meses`;
   return `
     ${STATE.config.temDadosTeste? `<div class="banner amber"><span>${icon('leaf')}</span><div><b>Este ranking contém dados fictícios de demonstração.</b> Vá em Configurações para apagá-los quando começar a usar dados reais.</div></div>`:''}
     <div class="toolbar">
@@ -711,14 +734,22 @@ function renderDashboard(){
         </div>
       </div>
       <div class="card">
-        <div class="stat-label">Evolução do cumprimento médio desde maio de 2026</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="stat-label">Evolução do cumprimento médio ${rotuloJanela}</div>
+          <select onchange="mudarJanelaPainel(this.value)" style="width:auto;padding:5px 8px;font-size:12px;">
+            <option value="3" ${janelaAtual===3?'selected':''}>Últimos 3 meses</option>
+            <option value="6" ${janelaAtual===6?'selected':''}>Últimos 6 meses</option>
+            <option value="12" ${janelaAtual===12?'selected':''}>Últimos 12 meses</option>
+            <option value="campanha" ${janelaAtual==='campanha'?'selected':''}>Desde o início da campanha</option>
+          </select>
+        </div>
         <div style="overflow-x:auto;">${renderMiniBarChart(evolucao)}</div>
       </div>
     </div>
-    <div class="section-title">Acompanhamento desde maio de 2026</div>
+    <div class="section-title">Acompanhamento ${rotuloJanela}</div>
     <div class="card" style="padding:0;">
       <div class="table-wrap">
-        ${resumoCampanha.length===0? `<div class="table-empty">Ainda não há lançamentos desde o início da campanha.</div>` : `
+        ${resumoCampanha.length===0? `<div class="table-empty">Ainda não há lançamentos neste período.</div>` : `
         <table><thead><tr><th>Colaborador</th><th>Setor</th><th>Meses participando</th><th>Pontuação média</th><th>Materiais arrecadados (total)</th><th>Meses com meta atingida</th></tr></thead>
         <tbody>
           ${resumoCampanha.map(r=>`
@@ -1037,13 +1068,6 @@ function abrirFormEntrega(id){
     </div>
     <div class="field"><label>Responsável pela contagem</label><input type="text" id="fResp" value="${e?escapeHtml(e.responsavelContagem||''):''}" placeholder="Ex: Encarregada Financeira"></div>
     <div class="field"><label>Observações</label><textarea id="fObs" rows="2" placeholder="Opcional">${e?escapeHtml(e.observacoes||''):''}</textarea></div>
-    <div class="field"><label>Confirmações / assinaturas</label>
-      <div class="sig-row">
-        <div class="sig-chip ${e&&e.assinaturas&&e.assinaturas.coleta?'on':''}" id="sigColeta" onclick="toggleSig('sigColeta')"><span class="dot"></span>Responsável pela coleta</div>
-        <div class="sig-chip ${e&&e.assinaturas&&e.assinaturas.colaborador?'on':''}" id="sigColaborador" onclick="toggleSig('sigColaborador')"><span class="dot"></span>Colaborador</div>
-        <div class="sig-chip ${e&&e.assinaturas&&e.assinaturas.financeira?'on':''}" id="sigFinanceira" onclick="toggleSig('sigFinanceira')"><span class="dot"></span>Encarregada financeira</div>
-      </div>
-    </div>
     <div class="field"><label>Status da validação</label>
       <select id="fStatusValid">
         <option value="pendente" ${!e||e.statusValidacao==='pendente'?'selected':''}>Pendente</option>
@@ -1070,7 +1094,6 @@ function atualizarCampoUnidadeEntrega(e){
   }
 }
 window.atualizarCampoUnidadeEntrega = atualizarCampoUnidadeEntrega;
-window.toggleSig = (id)=>{ document.getElementById(id).classList.toggle('on'); };
 async function salvarEntrega(id){
   const data = document.getElementById('fData').value;
   const colaboradorId = document.getElementById('fColab').value;
@@ -1082,15 +1105,7 @@ async function salvarEntrega(id){
   const observacoes = document.getElementById('fObs').value.trim();
   const statusValidacao = document.getElementById('fStatusValid').value;
   if(!data || !colaboradorId || !tipo || isNaN(quantidade) || quantidade<0){ alert('Preencha data, colaborador, tipo de material e uma quantidade válida.'); return; }
-  const assinaturas = {
-    coleta: document.getElementById('sigColeta').classList.contains('on'),
-    colaborador: document.getElementById('sigColaborador').classList.contains('on'),
-    financeira: document.getElementById('sigFinanceira').classList.contains('on'),
-  };
-  if(statusValidacao==='validado' && !assinaturas.financeira){
-    if(!confirm('A confirmação da Encarregada Financeira ainda não foi marcada. Deseja validar mesmo assim?')) return;
-  }
-  const payload = {data,colaboradorId,tipo,quantidade,unidade,responsavelContagem,observacoes,statusValidacao,assinaturas};
+  const payload = {data,colaboradorId,tipo,quantidade,unidade,responsavelContagem,observacoes,statusValidacao};
   if(id){
     const idx = STATE.entregas.findIndex(x=>x.id===id);
     STATE.entregas[idx] = {...STATE.entregas[idx], ...payload};
@@ -1513,8 +1528,23 @@ window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=ex
    ========================================================= */
 function renderConfig(){
   const metas = STATE.config.metasDefault;
+  const janelaAtual = STATE.config.janelaPainelMeses;
   return `
     ${!STATE.isAdmin? `<div class="banner"><span>${icon('config')}</span><div><b>Área protegida.</b> Entre no modo administrador para alterar metas, senha ou apagar dados de teste.</div></div>`:''}
+    <div class="section-title">Painel geral</div>
+    <div class="card">
+      <p class="small-note">Escolha quanto tempo o gráfico de evolução e o resumo de acompanhamento do Painel geral devem mostrar.</p>
+      <div class="field" style="max-width:280px;">
+        <label>Período mostrado no painel</label>
+        <select onchange="mudarJanelaPainel(this.value)">
+          <option value="3" ${janelaAtual===3?'selected':''}>Últimos 3 meses</option>
+          <option value="6" ${janelaAtual===6?'selected':''}>Últimos 6 meses</option>
+          <option value="12" ${janelaAtual===12?'selected':''}>Últimos 12 meses</option>
+          <option value="campanha" ${janelaAtual==='campanha'?'selected':''}>Desde o início da campanha (mai/2026)</option>
+        </select>
+      </div>
+    </div>
+
     <div class="section-title">Metas mensais (aplicadas a partir de agora)</div>
     <div class="card">
       <p class="small-note">Alterar uma meta aqui vale para os próximos meses. Meses já registrados mantêm a meta que estava em vigor na época, conforme o regulamento.</p>
