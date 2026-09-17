@@ -487,6 +487,7 @@ function resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro){
   const chave = chaveMA(mes,ano);
   let colaboradores = STATE.colaboradores.filter(c=> !setorFiltro || c.setor===setorFiltro);
   colaboradores = colaboradores.filter(c=> !c.dataCadastro || c.dataCadastro.slice(0,7) <= chave);
+  const entregasDoMes = entregasValidadasDoMes(mes,ano);
   const resultados = colaboradores.map(c=>{
     const totais = {}, percentuais = {}, frescos = {};
     CATEGORIAS.forEach(cat=>{
@@ -503,16 +504,23 @@ function resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro){
     const mediaReal = percentuaisReais.reduce((a,b)=>a+b,0)/CATEGORIAS.length;
     const metaAtingida = CATEGORIAS.every(cat=>percentuais[cat.key]>=100);
     const totalMateriais = Math.round(CATEGORIAS.reduce((a,cat)=>a+frescos[cat.key],0));
-    return { colaborador:c, totais, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais };
+    const datasDoColaborador = entregasDoMes.filter(e=>e.colaboradorId===c.id).map(e=>e.data).sort();
+    const primeiraEntrega = datasDoColaborador.length? datasDoColaborador[0] : null;
+    return { colaborador:c, totais, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais, primeiraEntrega };
   });
-  resultados.sort((a,b)=> b.pontuacao-a.pontuacao || b.mediaReal-a.mediaReal || a.colaborador.nome.localeCompare(b.colaborador.nome));
-  let posAtual=0, vistos=0, ultimoScore=null, ultimaMedia=null;
+  resultados.sort((a,b)=>
+    b.pontuacao-a.pontuacao
+    || b.mediaReal-a.mediaReal
+    || (a.primeiraEntrega||'9999-99-99').localeCompare(b.primeiraEntrega||'9999-99-99')
+    || a.colaborador.nome.localeCompare(b.colaborador.nome)
+  );
+  let posAtual=0, vistos=0, ultimoScore=null, ultimaMedia=null, ultimaData=null;
   resultados.forEach(r=>{
     vistos++;
-    const empatado = ultimoScore!==null && Math.abs(r.pontuacao-ultimoScore)<0.001 && Math.abs(r.mediaReal-ultimaMedia)<0.001;
+    const empatado = ultimoScore!==null && Math.abs(r.pontuacao-ultimoScore)<0.001 && Math.abs(r.mediaReal-ultimaMedia)<0.001 && (r.primeiraEntrega||null)===ultimaData;
     if(!empatado) posAtual = vistos;
     r.posicao = posAtual;
-    ultimoScore = r.pontuacao; ultimaMedia = r.mediaReal;
+    ultimoScore = r.pontuacao; ultimaMedia = r.mediaReal; ultimaData = r.primeiraEntrega||null;
   });
   return resultados;
 }
@@ -765,7 +773,7 @@ function renderDashboard(){
       </div>
     </div>
     <div class="section-title">Ranking resumido — ${nomeMes(mes)} de ${ano}</div>
-    ${renderTabelaRanking(resultados.slice(0,5), false)}
+    ${renderTabelaRanking(resultados.slice(0,5), false, mes, ano)}
     ${resultados.length>5? `<div style="margin-top:10px;"><button class="btn btn-outline" onclick="irPara('ranking')">${icon('ranking')}Ver ranking completo</button></div>`:''}
   `;
 }
@@ -979,6 +987,7 @@ function renderEntregas(){
         <button class="btn btn-primary" onclick="abrirFormEntrega()">${icon('plus')}Nova entrega</button>
       </div>
     </div>
+    <div class="card" id="saldoTransportadoWrap" style="display:none;"></div>
     <div class="card" style="padding:0;">
       <div class="table-wrap" id="tabelaEntregasWrap"></div>
     </div>
@@ -995,6 +1004,7 @@ function renderTabelaEntregas(){
   const mes = +document.getElementById('filtroEntregaMes').value;
   const ano = +document.getElementById('filtroEntregaAno').value;
   const status = document.getElementById('filtroEntregaStatus').value;
+  renderSaldoTransportado(mes,ano);
   const chave = chaveMA(mes,ano);
   let lista = STATE.entregas.filter(e=> e.data && e.data.slice(0,7)===chave && (!status || e.statusValidacao===status));
   lista.sort((a,b)=> b.data.localeCompare(a.data));
@@ -1132,6 +1142,29 @@ async function excluirEntrega(id){
   await salvarEntregas();
   fecharModal(); renderApp();
 }
+function renderSaldoTransportado(mes,ano){
+  const wrap = document.getElementById('saldoTransportadoWrap');
+  if(!wrap) return;
+  const chave = chaveMA(mes,ano);
+  const saldos = calcularSaldosAcumulados(mes,ano);
+  const linhas = [];
+  STATE.colaboradores.forEach(c=>{
+    CATEGORIAS.forEach(cat=>{
+      const s = saldos[c.id]?.[cat.key]?.[chave];
+      if(s && s.carryIn > 0) linhas.push({ nome:c.nome, categoria:cat.label.split(' (')[0], valor:s.carryIn });
+    });
+  });
+  if(linhas.length===0){ wrap.style.display='none'; wrap.innerHTML=''; return; }
+  wrap.style.display='block';
+  wrap.innerHTML = `
+    <div class="stat-label">Excedente trazido de meses anteriores para ${nomeMes(mes)}/${ano}</div>
+    <p class="small-note" style="margin:4px 0 10px 0;">Isso não é uma entrega nova, é o crédito que sobrou da meta batida em meses passados e que já entra automaticamente no cálculo deste mês.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${linhas.map(l=>`<span class="badge badge-green">${escapeHtml(l.nome)} · ${escapeHtml(l.categoria)}: +${Math.round(l.valor).toLocaleString('pt-BR')}</span>`).join('')}
+    </div>
+  `;
+}
+window.renderSaldoTransportado = renderSaldoTransportado;
 window.abrirFormEntrega=abrirFormEntrega; window.salvarEntrega=salvarEntrega;
 window.confirmarExcluirEntrega=confirmarExcluirEntrega; window.excluirEntrega=excluirEntrega;
 window.renderTabelaEntregas=renderTabelaEntregas; window.renderTabelaTransferencias=renderTabelaTransferencias;
@@ -1235,7 +1268,8 @@ function renderRanking(){
   const mes=STATE.rankMes, ano=STATE.rankAno;
   const resultados = calcularResultadosMes(mes,ano,STATE.rankSetor);
   const setores = setoresExistentes();
-  const top3 = resultados.slice(0,3);
+  const comAtividade = resultados.filter(r=> r.pontuacao>0 || r.totalMateriais>0);
+  const top3 = comAtividade.slice(0,3);
   return `
     <div class="toolbar">
       <div class="toolbar-left filters">
@@ -1252,12 +1286,13 @@ function renderRanking(){
       </div>
     </div>
     ${resultados.length===0? `<div class="card"><div class="empty-state"><div class="icon">${icon('ranking',44)}</div>Nenhum colaborador com entregas validadas neste período.</div></div>` : `
+      ${top3.length===0? `<div class="banner"><b>Ainda sem pódio este mês.</b><div>Nenhum colaborador tem entregas validadas neste período.</div></div>` : `
       <div class="podium-wrap">
         ${top3[1]?renderPodium(top3[1],'2','🥈'):'<div></div>'}
         ${top3[0]?renderPodium(top3[0],'1','🥇'):'<div></div>'}
         ${top3[2]?renderPodium(top3[2],'3','🥉'):'<div></div>'}
-      </div>
-      <div class="card" style="padding:0;"><div class="table-wrap">${renderTabelaRanking(resultados, true)}</div></div>
+      </div>`}
+      <div class="card" style="padding:0;"><div class="table-wrap">${renderTabelaRanking(resultados, true, mes, ano)}</div></div>
     `}
   `;
 }
@@ -1269,11 +1304,11 @@ function renderPodium(r,pos,medal){
     <div style="font-size:11px;opacity:.9;">${r.percentuais && r.pontuacao? Math.round(r.mediaReal)+'% da meta':''}</div>
   </div>`;
 }
-function renderTabelaRanking(resultados, completa){
+function renderTabelaRanking(resultados, completa, mes, ano){
   if(resultados.length===0) return `<div class="table-empty">Nenhum resultado neste período.</div>`;
   return `
     <table><thead><tr>
-      <th>Pos.</th><th>Colaborador</th><th>Setor</th><th>Pontuação</th><th>% cumprimento</th>${completa?'<th>Materiais</th>':''}<th>Meta</th>
+      <th>Pos.</th><th>Colaborador</th><th>Setor</th><th>Pontuação</th><th>% cumprimento</th>${completa?'<th>Materiais</th>':''}<th>Meta</th><th></th>
     </tr></thead>
     <tbody>
       ${resultados.map(r=>`
@@ -1285,10 +1320,37 @@ function renderTabelaRanking(resultados, completa){
           <td>${r.mediaReal.toFixed(0)}%</td>
           ${completa?`<td>${r.totalMateriais.toLocaleString('pt-BR')}</td>`:''}
           <td>${r.metaAtingida? '<span class="badge badge-green">Atingida</span>' : '<span class="badge badge-grey">Em andamento</span>'}</td>
+          <td>${mes&&ano? `<button class="btn btn-ghost btn-sm" onclick="abrirDetalhesColaborador('${r.colaborador.id}',${mes},${ano})">Detalhes</button>` : ''}</td>
         </tr>`).join('')}
     </tbody></table>
   `;
 }
+function abrirDetalhesColaborador(colaboradorId, mes, ano){
+  const resultados = calcularResultadosMes(mes,ano);
+  const r = resultados.find(x=>x.colaborador.id===colaboradorId);
+  if(!r) return;
+  abrirModal(`
+    <div class="modal-head"><h3>${escapeHtml(r.colaborador.nome)} — ${nomeMes(mes)}/${ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p class="small-note" style="margin-top:-6px;">A pontuação geral é a média do cumprimento das seis categorias abaixo, cada uma contando no máximo 100%. Por isso, entregar bastante em só uma ou duas categorias não é suficiente para uma pontuação alta: é preciso avançar nas seis.</p>
+    <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Disponível (com excedente)</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
+      <tbody>
+        ${CATEGORIAS.map(cat=>{
+          const total = r.totais[cat.key]||0;
+          const meta = getMetasDoMes(mes,ano)[cat.key]||cat.metaDefault;
+          const pct = r.percentuais[cat.key]||0;
+          return `<tr>
+            <td>${escapeHtml(cat.label.split(' (')[0])}</td>
+            <td>${Math.round(total).toLocaleString('pt-BR')} ${cat.unidade}</td>
+            <td>${meta.toLocaleString('pt-BR')} ${cat.unidade}</td>
+            <td>${pct>=100? '<span class="badge badge-green">'+pct.toFixed(0)+'%</span>' : pct.toFixed(0)+'%'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody></table>
+    </div>
+    <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das seis categorias, cada uma limitada a 100%).</p>
+  `, true);
+}
+window.abrirDetalhesColaborador = abrirDetalhesColaborador;
 
 /* ---------- COMPARTILHAMENTO WHATSAPP ---------- */
 function montarMensagemTop3(mes,ano){
@@ -1427,7 +1489,7 @@ function renderHistorico(){
     </div>
     ${meses.length===0? `<div class="card"><div class="empty-state">Nenhum histórico registrado ainda.</div></div>` : `
     <div class="section-title">Ranking de ${nomeMes(mes)} de ${ano}</div>
-    <div class="card" style="padding:0;">${renderTabelaRanking(resultados,true)}</div>
+    <div class="card" style="padding:0;">${renderTabelaRanking(resultados,true,mes,ano)}</div>
     <div class="section-title">Entregas realizadas no mês</div>
     <div class="card" style="padding:0;"><div class="table-wrap">${renderTabelaEntregasHistorico(mes,ano)}</div></div>
     `}
