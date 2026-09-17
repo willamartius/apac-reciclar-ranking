@@ -251,6 +251,7 @@ let STATE = {
   colaboradores: [],
   entregas: [],
   transferencias: [],
+  campanhas: [],
   config: null,
   isAdmin: false,
   view: 'dashboard',
@@ -315,10 +316,8 @@ async function storageSet(key, value){
 function defaultConfig(){
   return {
     senhaAdmin: '1234',
-    metasDefault: Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault])),
-    metasHistorico: {},
     temDadosTeste: true,
-    janelaPainelMeses: 6, // quantos meses mostrar no painel (número) ou 'campanha' para desde o início
+    painelPeriodo: { campanhaId: null, ano: null, tipo: '6' }, // ver calcularJanelaPainel()
   };
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -357,13 +356,62 @@ function gerarDadosTeste(){
 // nota: para simplificar a quantidade fictícia de latinhas, usamos "kg-x10" (décimos de kg) só nos dados de teste;
 // no registro real de entregas, latinhas usa 'kg' ou 'unidades' normalmente (ver normalizarQuantidade).
 
+/* ---------- CAMPANHAS ----------
+   Cada campanha tem seu próprio período (início/fim), suas próprias metas por
+   categoria (com histórico mês a mês, igual antes) e seu próprio acúmulo de
+   excedente: uma campanha nova sempre começa do zero, sem herdar saldo de
+   campanhas anteriores. A campanha de uma entrega ou transferência é sempre
+   deduzida pela DATA do registro, então nada precisou ser adicionado aos
+   registros de entregas e transferências já existentes. */
+const CAMPANHA_LEGADO_INICIO = { mes: 5, ano: 2026 }; // usado só na migração da 1ª vez
+function campanhasOrdenadas(){
+  return [...STATE.campanhas].sort((a,b)=> (a.anoInicio*12+a.mesInicio) - (b.anoInicio*12+b.mesInicio));
+}
+function encontrarCampanha(mes,ano){
+  const alvo = ano*12+mes;
+  return STATE.campanhas.find(c=>{
+    const inicio = c.anoInicio*12+c.mesInicio;
+    const fim = c.anoFim? (c.anoFim*12+c.mesFim) : Infinity;
+    return alvo>=inicio && alvo<=fim;
+  }) || null;
+}
+function campanhaAtiva(){
+  const ativas = STATE.campanhas.filter(c=>c.status==='ativa');
+  if(ativas.length) return campanhasOrdenadas().filter(c=>c.status==='ativa').slice(-1)[0];
+  const todas = campanhasOrdenadas();
+  return todas.length? todas[todas.length-1] : null;
+}
+function campanhaTemEntregas(campanhaId){
+  const campanha = STATE.campanhas.find(c=>c.id===campanhaId);
+  if(!campanha) return false;
+  return STATE.entregas.some(e=>{
+    if(!e.data) return false;
+    const c = encontrarCampanha(+e.data.slice(5,7), +e.data.slice(0,4));
+    return c && c.id===campanhaId;
+  });
+}
+async function salvarCampanhas(){ await storageSet('campanhas', STATE.campanhas); }
+async function migrarParaCampanhas(configAntigo){
+  const metasDefault = (configAntigo && configAntigo.metasDefault) || Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault]));
+  const metasHistorico = (configAntigo && configAntigo.metasHistorico) || {};
+  STATE.campanhas = [{
+    id: uid(),
+    nome: 'Reciclar é Cuidar da Casa Comum',
+    mesInicio: CAMPANHA_LEGADO_INICIO.mes, anoInicio: CAMPANHA_LEGADO_INICIO.ano,
+    mesFim: null, anoFim: null,
+    status: 'ativa',
+    metasDefault, metasHistorico,
+  }];
+  await salvarCampanhas();
+}
+
 /* ---------- CARREGAMENTO INICIAL ---------- */
-const CAMPANHA_INICIO = { mes: 5, ano: 2026 }; // a campanha e o acompanhamento acumulado começam em maio de 2026
 async function carregarDados(){
   STATE.colaboradores = await storageGet('colaboradores', []);
   STATE.entregas = await storageGet('entregas', []);
   STATE.transferencias = await storageGet('transferencias', []);
   STATE.config = await storageGet('config', null);
+  const configAntigoParaMigrar = STATE.config; // pode conter metasDefault/metasHistorico do formato anterior
   if(!STATE.config){
     STATE.config = defaultConfig();
     if(STATE.colaboradores.length===0 && STATE.entregas.length===0){
@@ -375,7 +423,11 @@ async function carregarDados(){
     }
     await storageSet('config', STATE.config);
   }
-  if(STATE.config.janelaPainelMeses===undefined) STATE.config.janelaPainelMeses = 6;
+  if(!STATE.config.painelPeriodo) STATE.config.painelPeriodo = { campanhaId: null, ano: null, tipo: '6' };
+  STATE.campanhas = await storageGet('campanhas', null);
+  if(!STATE.campanhas){
+    await migrarParaCampanhas(configAntigoParaMigrar);
+  }
   const {mes,ano} = mesAnoAtual();
   STATE.dashMes=mes; STATE.dashAno=ano;
   STATE.rankMes=mes; STATE.rankAno=ano;
@@ -398,15 +450,19 @@ function normalizarQuantidadeUnidades(entrega){
   return entrega.quantidade;
 }
 function getMetasDoMes(mes,ano){
+  const campanha = encontrarCampanha(mes,ano);
+  if(!campanha) return Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault]));
   const chave = chaveMA(mes,ano);
-  if(STATE.config.metasHistorico[chave]) return STATE.config.metasHistorico[chave];
-  return STATE.config.metasDefault;
+  if(campanha.metasHistorico[chave]) return campanha.metasHistorico[chave];
+  return campanha.metasDefault;
 }
 async function garantirSnapshotMetas(mes,ano){
+  const campanha = encontrarCampanha(mes,ano);
+  if(!campanha) return;
   const chave = chaveMA(mes,ano);
-  if(!STATE.config.metasHistorico[chave]){
-    STATE.config.metasHistorico[chave] = {...STATE.config.metasDefault};
-    await salvarConfig();
+  if(!campanha.metasHistorico[chave]){
+    campanha.metasHistorico[chave] = {...campanha.metasDefault};
+    await salvarCampanhas();
   }
 }
 function entregasValidadasDoMes(mes,ano){
@@ -420,42 +476,87 @@ function transferenciasDoMes(mes,ano){
 function mesAnteriorDe(mes,ano){
   let m=mes-1, a=ano;
   if(m<1){ m=12; a--; }
-  if(a<CAMPANHA_INICIO.ano || (a===CAMPANHA_INICIO.ano && m<CAMPANHA_INICIO.mes)) return null;
+  const campanhaAtual = encontrarCampanha(mes,ano);
+  const campanhaAnterior = encontrarCampanha(m,a);
+  if(!campanhaAtual || !campanhaAnterior || campanhaAtual.id!==campanhaAnterior.id) return null; // reseta na fronteira da campanha
   return {mes:m, ano:a};
 }
-function todosMesesDesdeCampanhaAte(mesAlvo,anoAlvo){
+function todosMesesEntre(mesA,anoA,mesB,anoB){
   const lista = [];
-  let m=CAMPANHA_INICIO.mes, a=CAMPANHA_INICIO.ano;
-  // se o mês alvo for anterior ao início da campanha, considera só ele mesmo (evita lista vazia)
-  if(anoAlvo<a || (anoAlvo===a && mesAlvo<m)) return [{mes:mesAlvo,ano:anoAlvo}];
-  while(a<anoAlvo || (a===anoAlvo && m<=mesAlvo)){
+  let m=mesA, a=anoA;
+  if(anoA*12+mesA > anoB*12+mesB) return lista;
+  while(a<anoB || (a===anoB && m<=mesB)){
     lista.push({mes:m,ano:a});
     m++; if(m>12){ m=1; a++; }
   }
   return lista;
 }
-/* Janela de exibição do painel (não afeta o cálculo do excedente, só o que é mostrado
-   no gráfico de evolução e no resumo de acompanhamento). Padrão: últimos 6 meses.
-   O admin pode trocar para 3, 12, ou "desde o início da campanha" em maio/2026. */
-function mesesJanelaPainel(mesAlvo,anoAlvo){
-  const todos = todosMesesDesdeCampanhaAte(mesAlvo,anoAlvo);
-  const janela = STATE.config.janelaPainelMeses;
-  if(janela==='campanha') return todos;
-  const n = parseInt(janela,10) || 6;
-  return todos.slice(-n);
+function todosMesesDaCampanhaAte(mesAlvo,anoAlvo){
+  const campanha = encontrarCampanha(mesAlvo,anoAlvo);
+  if(!campanha) return [{mes:mesAlvo,ano:anoAlvo}];
+  return todosMesesEntre(campanha.mesInicio,campanha.anoInicio,mesAlvo,anoAlvo);
 }
-async function mudarJanelaPainel(valor){
+/* Janela de exibição do painel geral (gráfico de evolução + resumo de acompanhamento).
+   Independente do cálculo de pontuação: aqui o usuário escolhe qual campanha, ano e
+   período (3/6/12 meses, ano inteiro, ou intervalo personalizado) quer visualizar. */
+function ultimoMesValidoNoAno(campanha, anoSelecionado){
+  const hoje = mesAnoAtual();
+  if(anoSelecionado > hoje.ano) return null;
+  let mes = (anoSelecionado===hoje.ano) ? hoje.mes : 12;
+  let ano = anoSelecionado;
+  if(campanha && campanha.anoFim){
+    const fimCampanha = campanha.anoFim*12+campanha.mesFim;
+    if(ano*12+mes > fimCampanha){
+      if(campanha.anoFim!==anoSelecionado) return null;
+      mes = campanha.mesFim; ano = campanha.anoFim;
+    }
+  }
+  if(campanha){
+    const inicioCampanha = campanha.anoInicio*12+campanha.mesInicio;
+    if(ano*12+mes < inicioCampanha) return null;
+  }
+  return {mes,ano};
+}
+function calcularJanelaPainel(){
+  const pref = STATE.config.painelPeriodo;
+  const campanha = STATE.campanhas.find(c=>c.id===pref.campanhaId) || campanhaAtiva();
+  if(!campanha) return { campanha:null, meses:[] };
+  let meses = [];
+  if(pref.tipo==='personalizado' && pref.mesInicio && pref.anoInicio && pref.mesFim && pref.anoFim){
+    meses = todosMesesEntre(pref.mesInicio,pref.anoInicio,pref.mesFim,pref.anoFim);
+  } else {
+    const anoSel = pref.ano || mesAnoAtual().ano;
+    const alvo = ultimoMesValidoNoAno(campanha, anoSel);
+    if(!alvo) return { campanha, meses:[] };
+    if(pref.tipo==='anoAtual'){
+      meses = todosMesesEntre(1, anoSel, alvo.mes, alvo.ano);
+    } else {
+      const n = parseInt(pref.tipo,10) || 6;
+      const todos = todosMesesEntre(campanha.mesInicio, campanha.anoInicio, alvo.mes, alvo.ano);
+      meses = todos.slice(-n);
+    }
+  }
+  const ini = campanha.anoInicio*12+campanha.mesInicio;
+  const fim = campanha.anoFim? (campanha.anoFim*12+campanha.mesFim) : Infinity;
+  meses = meses.filter(({mes,ano})=>{ const v=ano*12+mes; return v>=ini && v<=fim; });
+  return { campanha, meses };
+}
+async function mudarPainelPeriodo(campo, valor){
   if(!exigirAdmin()){ renderApp(); return; }
-  STATE.config.janelaPainelMeses = valor==='campanha' ? 'campanha' : parseInt(valor,10);
+  const pref = STATE.config.painelPeriodo;
+  if(campo==='campanhaId') pref.campanhaId = valor || null;
+  else if(campo==='ano') pref.ano = valor? parseInt(valor,10) : null;
+  else if(campo==='tipo') pref.tipo = valor;
+  else if(['mesInicio','anoInicio','mesFim','anoFim'].includes(campo)) pref[campo] = parseInt(valor,10);
   await salvarConfig();
   renderApp();
 }
-window.mudarJanelaPainel = mudarJanelaPainel;
+window.mudarPainelPeriodo = mudarPainelPeriodo;
 /* Calcula, para cada colaborador e categoria, o saldo mês a mês desde o início da campanha
    até o mês alvo, já considerando: entregas validadas, transferências recebidas/enviadas, e
    o excedente (o que passou da meta) transportado automaticamente para o mês seguinte. */
 function calcularSaldosAcumulados(mesAlvo,anoAlvo){
-  const meses = todosMesesDesdeCampanhaAte(mesAlvo,anoAlvo);
+  const meses = todosMesesDaCampanhaAte(mesAlvo,anoAlvo);
   const saldos = {};
   STATE.colaboradores.forEach(c=>{ saldos[c.id]={}; CATEGORIAS.forEach(cat=> saldos[c.id][cat.key]={}); });
   meses.forEach(({mes,ano})=>{
@@ -538,7 +639,7 @@ function setoresExistentes(){
 function mesesComDados(){
   const chaves = new Set();
   STATE.entregas.forEach(e=>{ if(e.data) chaves.add(e.data.slice(0,7)); });
-  Object.keys(STATE.config.metasHistorico||{}).forEach(k=>chaves.add(k));
+  STATE.campanhas.forEach(c=> Object.keys(c.metasHistorico||{}).forEach(k=>chaves.add(k)));
   return [...chaves].sort().reverse();
 }
 
@@ -702,28 +803,27 @@ window.abrirAjuda = abrirAjuda;
 function renderDashboard(){
   const mes=STATE.dashMes, ano=STATE.dashAno;
   const resultados = calcularResultadosMes(mes,ano);
-  const saldosCompletos = calcularSaldosAcumulados(mes,ano);
   const ativos = STATE.colaboradores.filter(c=>c.status==='ativo').length;
   const entregasMes = entregasValidadasDoMes(mes,ano);
   const totalMateriais = resultados.reduce((a,r)=>a+r.totalMateriais,0);
   const atingiramMeta = resultados.filter(r=>r.metaAtingida).length;
   const mediaGeral = resultados.length? (resultados.reduce((a,r)=>a+r.pontuacao,0)/resultados.length) : 0;
   const primeiro = resultados[0];
-  const mesesCampanha = mesesJanelaPainel(mes,ano);
-  const evolucao = mesesCampanha.map(({mes:m,ano:a})=>{
-    const r = resultadosDoMesUsandoSaldos(saldosCompletos, m, a);
+
+  const { campanha: campanhaPainel, meses: mesesPainel } = calcularJanelaPainel();
+  const ultimoMesPainel = mesesPainel[mesesPainel.length-1];
+  const saldosPainel = ultimoMesPainel ? calcularSaldosAcumulados(ultimoMesPainel.mes, ultimoMesPainel.ano) : {};
+  const evolucao = mesesPainel.map(({mes:m,ano:a})=>{
+    const r = resultadosDoMesUsandoSaldos(saldosPainel, m, a);
     const media = r.length? r.reduce((x,y)=>x+y.pontuacao,0)/r.length : 0;
     return {label: nomeMes(m).slice(0,3)+'/'+String(a).slice(2), media};
   });
-  const resumoCampanha = calcularResumoCampanha(saldosCompletos, mesesCampanha);
-  const janelaAtual = STATE.config.janelaPainelMeses;
-  const rotuloJanela = janelaAtual==='campanha'
-    ? `desde o início da campanha (${nomeMes(CAMPANHA_INICIO.mes)}/${CAMPANHA_INICIO.ano})`
-    : `nos últimos ${janelaAtual} meses`;
+  const resumoCampanha = calcularResumoCampanha(saldosPainel, mesesPainel);
+
   return `
     ${STATE.config.temDadosTeste? `<div class="banner amber"><span>${icon('leaf')}</span><div><b>Este ranking contém dados fictícios de demonstração.</b> Vá em Configurações para apagá-los quando começar a usar dados reais.</div></div>`:''}
     <div class="toolbar">
-      <div class="toolbar-left"><span class="small-note">Período do painel</span></div>
+      <div class="toolbar-left"><span class="small-note">Mês de referência do painel</span></div>
       <div class="toolbar-right">${seletorMesAno('dash', mes, ano)}</div>
     </div>
     <div class="grid grid-4">
@@ -746,20 +846,15 @@ function renderDashboard(){
         </div>
       </div>
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-          <div class="stat-label">Evolução do cumprimento médio ${rotuloJanela}</div>
-          <select onchange="mudarJanelaPainel(this.value)" style="width:auto;padding:5px 8px;font-size:12px;">
-            <option value="3" ${janelaAtual===3?'selected':''}>Últimos 3 meses</option>
-            <option value="6" ${janelaAtual===6?'selected':''}>Últimos 6 meses</option>
-            <option value="12" ${janelaAtual===12?'selected':''}>Últimos 12 meses</option>
-            <option value="campanha" ${janelaAtual==='campanha'?'selected':''}>Desde o início da campanha</option>
-          </select>
-        </div>
+        <div class="stat-label">Evolução do cumprimento médio</div>
         <div style="overflow-x:auto;">${renderMiniBarChart(evolucao)}</div>
       </div>
     </div>
-    <div class="section-title">Acompanhamento ${rotuloJanela}</div>
-    <div class="card" style="padding:0;">
+    <div class="section-title">Acompanhamento</div>
+    <div class="card">
+      ${renderSeletorPainelPeriodo(campanhaPainel)}
+    </div>
+    <div class="card" style="padding:0;margin-top:12px;">
       <div class="table-wrap">
         ${resumoCampanha.length===0? `<div class="table-empty">Ainda não há lançamentos neste período.</div>` : `
         <table><thead><tr><th>Colaborador</th><th>Setor</th><th>Meses participando</th><th>Pontuação média</th><th>Materiais arrecadados (total)</th><th>Meses com meta atingida</th></tr></thead>
@@ -779,6 +874,60 @@ function renderDashboard(){
     <div class="section-title">Ranking resumido — ${nomeMes(mes)} de ${ano}</div>
     ${renderTabelaRanking(resultados.slice(0,5), false, mes, ano)}
     ${resultados.length>5? `<div style="margin-top:10px;"><button class="btn btn-outline" onclick="irPara('ranking')">${icon('ranking')}Ver ranking completo</button></div>`:''}
+  `;
+}
+function renderSeletorPainelPeriodo(campanhaPainel){
+  const pref = STATE.config.painelPeriodo;
+  const campanhas = campanhasOrdenadas();
+  const campanhaSelecionadaId = campanhaPainel? campanhaPainel.id : (pref.campanhaId || (campanhaAtiva()||{}).id);
+  const hoje = mesAnoAtual();
+  const anoMin = campanhaPainel? campanhaPainel.anoInicio : hoje.ano;
+  const anoMax = campanhaPainel? (campanhaPainel.anoFim || hoje.ano) : hoje.ano;
+  const anos = []; for(let a=anoMin; a<=anoMax; a++) anos.push(a);
+  const anoSelecionado = pref.ano || hoje.ano;
+  const tipo = pref.tipo || '6';
+  return `
+    <div class="filters">
+      <div>
+        <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">Campanha</label>
+        <select onchange="mudarPainelPeriodo('campanhaId', this.value)">
+          ${campanhas.map(c=>`<option value="${c.id}" ${c.id===campanhaSelecionadaId?'selected':''}>${escapeHtml(c.nome)}${c.status==='ativa'?' (ativa)':''}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">Ano</label>
+        <select onchange="mudarPainelPeriodo('ano', this.value)">
+          ${anos.map(a=>`<option value="${a}" ${a===anoSelecionado?'selected':''}>${a}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">Período</label>
+        <select onchange="mudarPainelPeriodo('tipo', this.value)">
+          <option value="3" ${tipo==='3'?'selected':''}>Últimos 3 meses</option>
+          <option value="6" ${tipo==='6'?'selected':''}>Últimos 6 meses</option>
+          <option value="12" ${tipo==='12'?'selected':''}>Últimos 12 meses</option>
+          <option value="anoAtual" ${tipo==='anoAtual'?'selected':''}>Ano selecionado inteiro</option>
+          <option value="personalizado" ${tipo==='personalizado'?'selected':''}>Período personalizado</option>
+        </select>
+      </div>
+    </div>
+    ${tipo==='personalizado'? `
+    <div class="filters" style="margin-top:10px;">
+      <div>
+        <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">De (mês/ano)</label>
+        <div style="display:flex;gap:6px;">
+          <select onchange="mudarPainelPeriodo('mesInicio', this.value)">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${pref.mesInicio===i+1?'selected':''}>${m}</option>`).join('')}</select>
+          <select onchange="mudarPainelPeriodo('anoInicio', this.value)">${anos.map(a=>`<option value="${a}" ${pref.anoInicio===a?'selected':''}>${a}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div>
+        <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">Até (mês/ano)</label>
+        <div style="display:flex;gap:6px;">
+          <select onchange="mudarPainelPeriodo('mesFim', this.value)">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${pref.mesFim===i+1?'selected':''}>${m}</option>`).join('')}</select>
+          <select onchange="mudarPainelPeriodo('anoFim', this.value)">${anos.map(a=>`<option value="${a}" ${pref.anoFim===a?'selected':''}>${a}</option>`).join('')}</select>
+        </div>
+      </div>
+    </div>` : ''}
   `;
 }
 function calcularResumoCampanha(saldosCompletos, mesesCampanha){
@@ -1630,37 +1779,28 @@ window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=ex
    CONFIGURAÇÕES
    ========================================================= */
 function renderConfig(){
-  const metas = STATE.config.metasDefault;
-  const janelaAtual = STATE.config.janelaPainelMeses;
   return `
-    ${!STATE.isAdmin? `<div class="banner"><span>${icon('config')}</span><div><b>Área protegida.</b> Entre no modo administrador para alterar metas, senha ou apagar dados de teste.</div></div>`:''}
-    <div class="section-title">Painel geral</div>
+    ${!STATE.isAdmin? `<div class="banner"><span>${icon('config')}</span><div><b>Área protegida.</b> Entre no modo administrador para gerenciar campanhas, metas, senha ou apagar dados de teste.</div></div>`:''}
+    <div class="section-title">Campanhas</div>
     <div class="card">
-      <p class="small-note">Escolha quanto tempo o gráfico de evolução e o resumo de acompanhamento do Painel geral devem mostrar.</p>
-      <div class="field" style="max-width:280px;">
-        <label>Período mostrado no painel</label>
-        <select onchange="mudarJanelaPainel(this.value)">
-          <option value="3" ${janelaAtual===3?'selected':''}>Últimos 3 meses</option>
-          <option value="6" ${janelaAtual===6?'selected':''}>Últimos 6 meses</option>
-          <option value="12" ${janelaAtual===12?'selected':''}>Últimos 12 meses</option>
-          <option value="campanha" ${janelaAtual==='campanha'?'selected':''}>Desde o início da campanha (mai/2026)</option>
-        </select>
+      <p class="small-note">Cada campanha tem seu próprio período, suas próprias metas por material e seu próprio acúmulo de excedente. Uma campanha nova sempre começa do zero, sem herdar saldo de campanhas anteriores. O seletor de período do Painel geral usa as campanhas cadastradas aqui.</p>
+      <div class="table-wrap" style="margin-top:12px;">
+        <table><thead><tr><th>Nome</th><th>Início</th><th>Fim</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${campanhasOrdenadas().map(c=>`
+            <tr>
+              <td style="font-weight:700;">${escapeHtml(c.nome)}</td>
+              <td>${nomeMes(c.mesInicio)}/${c.anoInicio}</td>
+              <td>${c.anoFim? nomeMes(c.mesFim)+'/'+c.anoFim : 'Em andamento'}</td>
+              <td>${c.status==='ativa'?'<span class="badge badge-green">Ativa</span>':c.status==='encerrada'?'<span class="badge badge-grey">Encerrada</span>':'<span class="badge badge-amber">Planejada</span>'}</td>
+              <td style="text-align:right;white-space:nowrap;">
+                <button class="btn btn-ghost btn-sm" ${!STATE.isAdmin?'disabled':''} onclick="abrirFormCampanha('${c.id}')">${icon('edit',16)}</button>
+                <button class="btn btn-ghost btn-sm" ${!STATE.isAdmin?'disabled':''} onclick="confirmarExcluirCampanha('${c.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
+              </td>
+            </tr>`).join('')}
+        </tbody></table>
       </div>
-    </div>
-
-    <div class="section-title">Metas mensais (aplicadas a partir de agora)</div>
-    <div class="card">
-      <p class="small-note">Alterar uma meta aqui vale para os próximos meses. Meses já registrados mantêm a meta que estava em vigor na época, conforme o regulamento.</p>
-      <div class="grid grid-2" style="margin-top:12px;">
-        ${CATEGORIAS.map(c=>`
-          <div class="field"><label>${escapeHtml(c.label)}</label>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <input type="number" min="0" id="meta_${c.key}" value="${metas[c.key]}" ${!STATE.isAdmin?'disabled':''}>
-              <span class="small-note" style="white-space:nowrap;">${c.unidade}</span>
-            </div>
-          </div>`).join('')}
-      </div>
-      <button class="btn btn-primary" ${!STATE.isAdmin?'disabled':''} onclick="salvarMetasDefault()">${icon('check',16)}Salvar novas metas</button>
+      <button class="btn btn-primary" style="margin-top:12px;" ${!STATE.isAdmin?'disabled':''} onclick="abrirFormCampanha()">${icon('plus',16)}Nova campanha</button>
     </div>
 
     <div class="section-title">Segurança</div>
@@ -1698,15 +1838,113 @@ function renderConfig(){
     </div>
   `;
 }
-async function salvarMetasDefault(){
+function abrirFormCampanha(id){
   if(!exigirAdmin()) return;
-  const novasMetas = {};
-  CATEGORIAS.forEach(c=>{ novasMetas[c.key] = parseFloat(document.getElementById('meta_'+c.key).value) || c.metaDefault; });
-  STATE.config.metasDefault = novasMetas;
-  await salvarConfig();
-  alert('Metas atualizadas para os próximos meses.');
-  renderApp();
+  const c = id? STATE.campanhas.find(x=>x.id===id) : null;
+  const hoje = mesAnoAtual();
+  const metas = c? c.metasDefault : Object.fromEntries(CATEGORIAS.map(cat=>[cat.key,cat.metaDefault]));
+  abrirModal(`
+    <div class="modal-head"><h3>${c?'Editar campanha':'Nova campanha'}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <div class="field"><label>Nome da campanha</label><input type="text" id="cpNome" value="${c?escapeHtml(c.nome):''}" placeholder="Ex: Reciclar é Cuidar da Casa Comum 2027"></div>
+    <div class="grid grid-2">
+      <div class="field"><label>Mês de início</label><select id="cpMesInicio">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${(c?c.mesInicio:hoje.mes)===i+1?'selected':''}>${m}</option>`).join('')}</select></div>
+      <div class="field"><label>Ano de início</label><input type="number" id="cpAnoInicio" value="${c?c.anoInicio:hoje.ano}"></div>
+    </div>
+    <div class="field"><label>Status</label>
+      <select id="cpStatus" onchange="atualizarCampoFimCampanha()">
+        <option value="planejada" ${c&&c.status==='planejada'?'selected':''}>Planejada</option>
+        <option value="ativa" ${!c||c.status==='ativa'?'selected':''}>Ativa</option>
+        <option value="encerrada" ${c&&c.status==='encerrada'?'selected':''}>Encerrada</option>
+      </select>
+    </div>
+    <div class="grid grid-2" id="cpFimWrap" style="display:${c&&c.status==='encerrada'?'grid':'none'};">
+      <div class="field"><label>Mês de encerramento</label><select id="cpMesFim">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${c&&c.mesFim===i+1?'selected':''}>${m}</option>`).join('')}</select></div>
+      <div class="field"><label>Ano de encerramento</label><input type="number" id="cpAnoFim" value="${c&&c.anoFim?c.anoFim:hoje.ano}"></div>
+    </div>
+    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Metas mensais desta campanha</div>
+    <p class="small-note" style="margin-top:-4px;">Alterar uma meta aqui vale para os próximos meses da campanha. Meses já registrados mantêm a meta que estava em vigor na época.</p>
+    <div class="grid grid-2" style="margin-top:8px;">
+      ${CATEGORIAS.map(cat=>`
+        <div class="field"><label>${escapeHtml(cat.label)}</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="number" min="0" id="cpMeta_${cat.key}" value="${metas[cat.key]}">
+            <span class="small-note" style="white-space:nowrap;">${cat.unidade}</span>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div id="campanhaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin:8px 0;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary btn-block" onclick="salvarCampanha('${id||''}')">${icon('check',16)}Salvar</button>
+    </div>
+  `);
 }
+function atualizarCampoFimCampanha(){
+  const status = document.getElementById('cpStatus').value;
+  document.getElementById('cpFimWrap').style.display = status==='encerrada' ? 'grid' : 'none';
+}
+window.atualizarCampoFimCampanha = atualizarCampoFimCampanha;
+async function salvarCampanha(id){
+  const nome = document.getElementById('cpNome').value.trim();
+  const mesInicio = +document.getElementById('cpMesInicio').value;
+  const anoInicio = +document.getElementById('cpAnoInicio').value;
+  const status = document.getElementById('cpStatus').value;
+  const erroEl = document.getElementById('campanhaErro');
+  erroEl.style.display='none';
+  if(!nome){ erroEl.textContent='Informe o nome da campanha.'; erroEl.style.display='block'; return; }
+  let mesFim=null, anoFim=null;
+  if(status==='encerrada'){
+    mesFim = +document.getElementById('cpMesFim').value;
+    anoFim = +document.getElementById('cpAnoFim').value;
+    if(anoFim*12+mesFim < anoInicio*12+mesInicio){ erroEl.textContent='A data de encerramento não pode ser antes da data de início.'; erroEl.style.display='block'; return; }
+  }
+  const metasDefault = {};
+  CATEGORIAS.forEach(cat=>{ metasDefault[cat.key] = parseFloat(document.getElementById('cpMeta_'+cat.key).value) || cat.metaDefault; });
+  // impedir sobreposição de período com outra campanha já cadastrada
+  const inicioNovo = anoInicio*12+mesInicio, fimNovo = anoFim? anoFim*12+mesFim : Infinity;
+  const conflito = STATE.campanhas.some(c=>{
+    if(c.id===id) return false;
+    const ini = c.anoInicio*12+c.mesInicio, fim = c.anoFim? c.anoFim*12+c.mesFim : Infinity;
+    return inicioNovo<=fim && fimNovo>=ini;
+  });
+  if(conflito){ erroEl.textContent='O período desta campanha se sobrepõe a outra campanha já cadastrada.'; erroEl.style.display='block'; return; }
+  if(id){
+    const c = STATE.campanhas.find(x=>x.id===id);
+    Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault});
+  } else {
+    STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{} });
+  }
+  await salvarCampanhas();
+  fecharModal(); renderApp();
+}
+function confirmarExcluirCampanha(id){
+  if(!exigirAdmin()) return;
+  const c = STATE.campanhas.find(x=>x.id===id);
+  if(campanhaTemEntregas(id)){
+    abrirModal(`
+      <div class="modal-head"><h3>Não é possível excluir</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+      <p>A campanha <b>${escapeHtml(c.nome)}</b> já tem entregas registradas no seu período. Para preservar o histórico, marque-a como "Encerrada" em vez de excluir.</p>
+      <div class="modal-actions"><button class="btn btn-primary btn-block" onclick="fecharModal()">Entendi</button></div>
+    `);
+    return;
+  }
+  abrirModal(`
+    <div class="modal-head"><h3>Excluir campanha</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p>Tem certeza que deseja excluir a campanha <b>${escapeHtml(c.nome)}</b>? Essa ação não pode ser desfeita.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-danger btn-block" onclick="excluirCampanha('${id}')">${icon('trash',16)}Excluir</button>
+    </div>
+  `);
+}
+async function excluirCampanha(id){
+  STATE.campanhas = STATE.campanhas.filter(x=>x.id!==id);
+  if(STATE.config.painelPeriodo.campanhaId===id) STATE.config.painelPeriodo.campanhaId = null;
+  await salvarCampanhas(); await salvarConfig();
+  fecharModal(); renderApp();
+}
+window.abrirFormCampanha=abrirFormCampanha; window.salvarCampanha=salvarCampanha;
+window.confirmarExcluirCampanha=confirmarExcluirCampanha; window.excluirCampanha=excluirCampanha;
 async function alterarSenhaAdmin(){
   if(!exigirAdmin()) return;
   const v = document.getElementById('novaSenhaAdmin').value.trim();
@@ -1724,7 +1962,7 @@ async function apagarDadosTeste(){
   await salvarColaboradores(); await salvarEntregas(); await salvarConfig();
   renderApp();
 }
-window.salvarMetasDefault=salvarMetasDefault; window.alterarSenhaAdmin=alterarSenhaAdmin; window.apagarDadosTeste=apagarDadosTeste;
+window.alterarSenhaAdmin=alterarSenhaAdmin; window.apagarDadosTeste=apagarDadosTeste;
 
 /* =========================================================
    INICIALIZAÇÃO
