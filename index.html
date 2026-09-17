@@ -182,11 +182,14 @@ tr:last-child td{border-bottom:none;}
 .podium-medal{font-size:22px;}
 .podium-name{font-weight:800;font-size:13.5px;margin-top:4px;}
 .podium-score{font-family:'Fraunces',serif;font-size:20px;margin-top:2px;}
+.podium-vazio{background:#EDF1EE !important;color:var(--text-muted) !important;border:1.5px dashed var(--border);}
 @media(max-width:600px){.podium-wrap{grid-template-columns:1fr;}
   .podium-1,.podium-2,.podium-3{order:0;padding-top:16px;}}
 
 .filters{display:flex;flex-wrap:wrap;gap:10px;}
-.filters > div{min-width:130px;flex:1;}
+.filters > div{min-width:150px;flex:1 1 150px;}
+.filters > div.filtro-status{min-width:180px;flex:1 1 180px;}
+select{text-overflow:ellipsis;}
 
 .banner{background:var(--verde-100);border:1px solid var(--verde-300);border-radius:12px;padding:13px 16px;font-size:13px;color:var(--verde-800);margin-bottom:16px;display:flex;gap:10px;align-items:flex-start;}
 .banner.amber{background:#FBF0DC;border-color:#E9CE94;color:#7A5A0F;}
@@ -516,6 +519,7 @@ function resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro){
   );
   let posAtual=0, vistos=0, ultimoScore=null, ultimaMedia=null, ultimaData=null;
   resultados.forEach(r=>{
+    if(r.pontuacao<=0){ r.posicao = null; return; } // sem pontuação: não ocupa posição nem recebe medalha
     vistos++;
     const empatado = ultimoScore!==null && Math.abs(r.pontuacao-ultimoScore)<0.001 && Math.abs(r.mediaReal-ultimaMedia)<0.001 && (r.primeiraEntrega||null)===ultimaData;
     if(!empatado) posAtual = vistos;
@@ -980,7 +984,7 @@ function renderEntregas(){
       <div class="toolbar-left filters">
         <div><select id="filtroEntregaMes" onchange="renderTabelaEntregas()">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${i+1===mesAnoAtual().mes?'selected':''}>${m}</option>`).join('')}</select></div>
         <div><select id="filtroEntregaAno" onchange="renderTabelaEntregas()">${[mesAnoAtual().ano-1,mesAnoAtual().ano,mesAnoAtual().ano+1].map(a=>`<option ${a===mesAnoAtual().ano?'selected':''}>${a}</option>`).join('')}</select></div>
-        <div><select id="filtroEntregaStatus" onchange="renderTabelaEntregas()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="validado">Validado</option></select></div>
+        <div class="filtro-status"><select id="filtroEntregaStatus" onchange="renderTabelaEntregas()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="validado">Validado</option></select></div>
       </div>
       <div class="toolbar-right">
         <button class="btn btn-outline" onclick="abrirFormTransferencia()">${icon('ranking')}Transferir material</button>
@@ -1147,23 +1151,51 @@ function renderSaldoTransportado(mes,ano){
   if(!wrap) return;
   const chave = chaveMA(mes,ano);
   const saldos = calcularSaldosAcumulados(mes,ano);
-  const linhas = [];
+  const porColaborador = {};
   STATE.colaboradores.forEach(c=>{
     CATEGORIAS.forEach(cat=>{
       const s = saldos[c.id]?.[cat.key]?.[chave];
-      if(s && s.carryIn > 0) linhas.push({ nome:c.nome, categoria:cat.label.split(' (')[0], valor:s.carryIn });
+      if(s && s.carryIn > 0){
+        if(!porColaborador[c.id]) porColaborador[c.id] = { colaborador:c, total:0, itens:[] };
+        porColaborador[c.id].total += s.carryIn;
+        porColaborador[c.id].itens.push({ categoria: cat.label.split(' (')[0], valor: s.carryIn });
+      }
     });
   });
-  if(linhas.length===0){ wrap.style.display='none'; wrap.innerHTML=''; return; }
+  const lista = Object.values(porColaborador).sort((a,b)=> b.total-a.total);
+  if(lista.length===0){ wrap.style.display='none'; wrap.innerHTML=''; return; }
   wrap.style.display='block';
+  window._excedentesPorColaborador = lista;
   wrap.innerHTML = `
     <div class="stat-label">Excedente trazido de meses anteriores para ${nomeMes(mes)}/${ano}</div>
-    <p class="small-note" style="margin:4px 0 10px 0;">Isso não é uma entrega nova, é o crédito que sobrou da meta batida em meses passados e que já entra automaticamente no cálculo deste mês.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;">
-      ${linhas.map(l=>`<span class="badge badge-green">${escapeHtml(l.nome)} · ${escapeHtml(l.categoria)}: +${Math.round(l.valor).toLocaleString('pt-BR')}</span>`).join('')}
+    <p class="small-note" style="margin:4px 0 10px 0;">Crédito que sobrou da meta batida em meses passados, já incluído automaticamente no cálculo deste mês. ${lista.length} colaborador(es) com excedente.</p>
+    <div class="table-wrap">
+      <table><thead><tr><th>Colaborador</th><th>Setor</th><th>Categorias com excedente</th><th>Total excedente</th><th></th></tr></thead>
+      <tbody>
+        ${lista.map((item,i)=>`
+          <tr>
+            <td style="font-weight:700;">${escapeHtml(item.colaborador.nome)}</td>
+            <td>${escapeHtml(item.colaborador.setor||'—')}</td>
+            <td>${item.itens.length}</td>
+            <td><span class="badge badge-green">+${Math.round(item.total).toLocaleString('pt-BR')}</span></td>
+            <td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="abrirDetalhesExcedente(${i})">Ver detalhes</button></td>
+          </tr>`).join('')}
+      </tbody></table>
     </div>
   `;
 }
+function abrirDetalhesExcedente(indice){
+  const item = (window._excedentesPorColaborador||[])[indice];
+  if(!item) return;
+  abrirModal(`
+    <div class="modal-head"><h3>Excedente de ${escapeHtml(item.colaborador.nome)}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Material</th><th>Excedente trazido</th></tr></thead>
+      <tbody>${item.itens.map(it=>`<tr><td>${escapeHtml(it.categoria)}</td><td>+${Math.round(it.valor).toLocaleString('pt-BR')}</td></tr>`).join('')}</tbody>
+    </table></div>
+    <p class="small-note" style="margin-top:12px;">Total: <b>+${Math.round(item.total).toLocaleString('pt-BR')}</b> unidades equivalentes.</p>
+  `);
+}
+window.abrirDetalhesExcedente = abrirDetalhesExcedente;
 window.renderSaldoTransportado = renderSaldoTransportado;
 window.abrirFormEntrega=abrirFormEntrega; window.salvarEntrega=salvarEntrega;
 window.confirmarExcluirEntrega=confirmarExcluirEntrega; window.excluirEntrega=excluirEntrega;
@@ -1286,22 +1318,28 @@ function renderRanking(){
       </div>
     </div>
     ${resultados.length===0? `<div class="card"><div class="empty-state"><div class="icon">${icon('ranking',44)}</div>Nenhum colaborador com entregas validadas neste período.</div></div>` : `
-      ${top3.length===0? `<div class="banner"><b>Ainda sem pódio este mês.</b><div>Nenhum colaborador tem entregas validadas neste período.</div></div>` : `
       <div class="podium-wrap">
-        ${top3[1]?renderPodium(top3[1],'2','🥈'):'<div></div>'}
-        ${top3[0]?renderPodium(top3[0],'1','🥇'):'<div></div>'}
-        ${top3[2]?renderPodium(top3[2],'3','🥉'):'<div></div>'}
-      </div>`}
+        ${renderPodium(top3[1],'2','🥈')}
+        ${renderPodium(top3[0],'1','🥇')}
+        ${renderPodium(top3[2],'3','🥉')}
+      </div>
       <div class="card" style="padding:0;"><div class="table-wrap">${renderTabelaRanking(resultados, true, mes, ano)}</div></div>
     `}
   `;
 }
 function renderPodium(r,pos,medal){
+  if(!r){
+    return `<div class="podium-card podium-${pos} podium-vazio">
+      <div class="podium-medal" style="opacity:.35;">${medal}</div>
+      <div class="podium-name" style="opacity:.7;">A definir</div>
+      <div class="podium-score" style="opacity:.6;">—</div>
+    </div>`;
+  }
   return `<div class="podium-card podium-${pos}">
     <div class="podium-medal">${medal}</div>
     <div class="podium-name">${escapeHtml(r.colaborador.nome)}</div>
     <div class="podium-score">${r.pontuacao.toFixed(0)} pts</div>
-    <div style="font-size:11px;opacity:.9;">${r.percentuais && r.pontuacao? Math.round(r.mediaReal)+'% da meta':''}</div>
+    <div style="font-size:11px;opacity:.9;">${Math.round(r.mediaReal)}% da meta</div>
   </div>`;
 }
 function renderTabelaRanking(resultados, completa, mes, ano){
@@ -1313,7 +1351,7 @@ function renderTabelaRanking(resultados, completa, mes, ano){
     <tbody>
       ${resultados.map(r=>`
         <tr>
-          <td><b>${r.posicao}º</b>${r.posicao<=3?' '+({1:'🥇',2:'🥈',3:'🥉'}[r.posicao]||''):''}</td>
+          <td>${r.posicao? `<b>${r.posicao}º</b>${r.posicao<=3?' '+({1:'🥇',2:'🥈',3:'🥉'}[r.posicao]||''):''}` : '<span class="small-note">—</span>'}</td>
           <td style="font-weight:700;">${escapeHtml(r.colaborador.nome)}</td>
           <td>${escapeHtml(r.colaborador.setor||'—')}</td>
           <td style="min-width:120px;"><div style="display:flex;align-items:center;gap:8px;"><div class="progress" style="flex:1;"><div style="width:${Math.min(100,r.pontuacao)}%"></div></div><span>${r.pontuacao.toFixed(0)}</span></div></td>
@@ -1375,8 +1413,11 @@ function montarMensagemTop3(mes,ano){
 }
 function montarMensagemCompleta(mes,ano){
   const resultados = calcularResultadosMes(mes,ano);
+  const comPosicao = resultados.filter(r=>r.posicao);
+  const semPosicao = resultados.filter(r=>!r.posicao);
   let msg = `♻️ RANKING COMPLETO — RECICLAR É CUIDAR DA CASA COMUM\nAPAC DE IMPERATRIZ\n${nomeMes(mes)} de ${ano}\n\n`;
-  resultados.forEach(r=>{ msg += `${r.posicao}º — ${r.colaborador.nome}: ${r.pontuacao.toFixed(0)} pontos (${r.mediaReal.toFixed(0)}% da meta)\n`; });
+  comPosicao.forEach(r=>{ msg += `${r.posicao}º — ${r.colaborador.nome}: ${r.pontuacao.toFixed(0)} pontos (${r.mediaReal.toFixed(0)}% da meta)\n`; });
+  if(semPosicao.length){ msg += `\nAinda sem entregas pontuadas neste mês: ${semPosicao.map(r=>r.colaborador.nome).join(', ')}\n`; }
   msg += `\n🌱 Cuidar da casa comum é responsabilidade de todos!`;
   return msg;
 }
