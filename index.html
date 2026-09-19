@@ -1843,23 +1843,22 @@ function abrirFormCampanha(id){
   const c = id? STATE.campanhas.find(x=>x.id===id) : null;
   const hoje = mesAnoAtual();
   const metas = c? c.metasDefault : Object.fromEntries(CATEGORIAS.map(cat=>[cat.key,cat.metaDefault]));
+  const dataInicioValor = c? `${c.anoInicio}-${String(c.mesInicio).padStart(2,'0')}-01` : `${hoje.ano}-${String(hoje.mes).padStart(2,'0')}-01`;
+  const dataFimValor = c && c.anoFim? `${c.anoFim}-${String(c.mesFim).padStart(2,'0')}-01` : '';
   abrirModal(`
     <div class="modal-head"><h3>${c?'Editar campanha':'Nova campanha'}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <div class="field"><label>Nome da campanha</label><input type="text" id="cpNome" value="${c?escapeHtml(c.nome):''}" placeholder="Ex: Reciclar é Cuidar da Casa Comum 2027"></div>
     <div class="grid grid-2">
-      <div class="field"><label>Mês de início</label><select id="cpMesInicio">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${(c?c.mesInicio:hoje.mes)===i+1?'selected':''}>${m}</option>`).join('')}</select></div>
-      <div class="field"><label>Ano de início</label><input type="number" id="cpAnoInicio" value="${c?c.anoInicio:hoje.ano}"></div>
+      <div class="field"><label>Data de início</label><input type="date" id="cpDataInicio" value="${dataInicioValor}"></div>
+      <div class="field"><label>Data de encerramento (opcional)</label><input type="date" id="cpDataFim" value="${dataFimValor}"></div>
     </div>
+    <p class="small-note" style="margin-top:-8px;">O sistema controla as metas por mês, então só o mês e o ano da data escolhida são considerados. Deixe o encerramento em branco para uma campanha em andamento, sem data para acabar.</p>
     <div class="field"><label>Status</label>
-      <select id="cpStatus" onchange="atualizarCampoFimCampanha()">
+      <select id="cpStatus">
         <option value="planejada" ${c&&c.status==='planejada'?'selected':''}>Planejada</option>
         <option value="ativa" ${!c||c.status==='ativa'?'selected':''}>Ativa</option>
         <option value="encerrada" ${c&&c.status==='encerrada'?'selected':''}>Encerrada</option>
       </select>
-    </div>
-    <div class="grid grid-2" id="cpFimWrap" style="display:${c&&c.status==='encerrada'?'grid':'none'};">
-      <div class="field"><label>Mês de encerramento</label><select id="cpMesFim">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${c&&c.mesFim===i+1?'selected':''}>${m}</option>`).join('')}</select></div>
-      <div class="field"><label>Ano de encerramento</label><input type="number" id="cpAnoFim" value="${c&&c.anoFim?c.anoFim:hoje.ano}"></div>
     </div>
     <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Metas mensais desta campanha</div>
     <p class="small-note" style="margin-top:-4px;">Alterar uma meta aqui vale para os próximos meses da campanha. Meses já registrados mantêm a meta que estava em vigor na época.</p>
@@ -1879,23 +1878,19 @@ function abrirFormCampanha(id){
     </div>
   `);
 }
-function atualizarCampoFimCampanha(){
-  const status = document.getElementById('cpStatus').value;
-  document.getElementById('cpFimWrap').style.display = status==='encerrada' ? 'grid' : 'none';
-}
-window.atualizarCampoFimCampanha = atualizarCampoFimCampanha;
 async function salvarCampanha(id){
   const nome = document.getElementById('cpNome').value.trim();
-  const mesInicio = +document.getElementById('cpMesInicio').value;
-  const anoInicio = +document.getElementById('cpAnoInicio').value;
+  const dataInicio = document.getElementById('cpDataInicio').value;
+  const dataFim = document.getElementById('cpDataFim').value;
   const status = document.getElementById('cpStatus').value;
   const erroEl = document.getElementById('campanhaErro');
   erroEl.style.display='none';
   if(!nome){ erroEl.textContent='Informe o nome da campanha.'; erroEl.style.display='block'; return; }
+  if(!dataInicio){ erroEl.textContent='Informe a data de início.'; erroEl.style.display='block'; return; }
+  const mesInicio = +dataInicio.slice(5,7), anoInicio = +dataInicio.slice(0,4);
   let mesFim=null, anoFim=null;
-  if(status==='encerrada'){
-    mesFim = +document.getElementById('cpMesFim').value;
-    anoFim = +document.getElementById('cpAnoFim').value;
+  if(dataFim){
+    mesFim = +dataFim.slice(5,7); anoFim = +dataFim.slice(0,4);
     if(anoFim*12+mesFim < anoInicio*12+mesInicio){ erroEl.textContent='A data de encerramento não pode ser antes da data de início.'; erroEl.style.display='block'; return; }
   }
   const metasDefault = {};
@@ -1907,7 +1902,7 @@ async function salvarCampanha(id){
     const ini = c.anoInicio*12+c.mesInicio, fim = c.anoFim? c.anoFim*12+c.mesFim : Infinity;
     return inicioNovo<=fim && fimNovo>=ini;
   });
-  if(conflito){ erroEl.textContent='O período desta campanha se sobrepõe a outra campanha já cadastrada.'; erroEl.style.display='block'; return; }
+  if(conflito){ erroEl.textContent='O período desta campanha se sobrepõe a outra campanha já cadastrada. Defina uma data de encerramento para a campanha existente antes de iniciar uma nova.'; erroEl.style.display='block'; return; }
   if(id){
     const c = STATE.campanhas.find(x=>x.id===id);
     Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault});
