@@ -439,6 +439,22 @@ async function carregarDados(){
       await storageSet('colaboradores', STATE.colaboradores);
       await storageSet('entregas', STATE.entregas);
     }
+  } else {
+    // Correção de auto-cura: entregas ou transferências criadas por uma versão intermediária
+    // do app (sem o campo campanhaId ainda implementado) ficariam invisíveis para sempre, já
+    // que a migração só roda quando a coleção de campanhas ainda não existe. Aqui, toda vez
+    // que o app carrega, qualquer registro sem campanhaId é associado à campanha legada,
+    // sem tocar em nenhum registro que já tenha uma campanha definida.
+    const legado = campanhaPorId(CAMPANHA_LEGADO_ID)
+      || STATE.campanhas.find(c => c.nome === 'Reciclar é Cuidar da Casa Comum')
+      || campanhaAtiva();
+    if(legado){
+      let mudouEntregas=false, mudouTransf=false;
+      STATE.entregas.forEach(e=>{ if(!e.campanhaId){ e.campanhaId = legado.id; mudouEntregas=true; } });
+      STATE.transferencias.forEach(t=>{ if(!t.campanhaId){ t.campanhaId = legado.id; mudouTransf=true; } });
+      if(mudouEntregas) await salvarEntregas();
+      if(mudouTransf) await salvarTransferencias();
+    }
   }
   STATE.campanhaSelecionadaId = (campanhaAtiva()||{}).id || null;
   const {mes,ano} = mesAnoAtual();
