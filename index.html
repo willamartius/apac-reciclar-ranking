@@ -252,7 +252,6 @@ let STATE = {
   entregas: [],
   transferencias: [],
   campanhas: [],
-  campanhaSelecionadaId: null,
   config: null,
   isAdmin: false,
   view: 'dashboard',
@@ -312,16 +311,13 @@ async function storageSet(key, value){
     if(STORAGE_MODE==='claude'){ await window.storage.set(key, JSON.stringify(value), true); return true; }
     if(STORAGE_MODE==='firestore'){ await FIREBASE_DB.collection('reciclar-apac').doc(key).set({value: JSON.stringify(value)}); return true; }
     localStorage.setItem('reciclar-apac:'+key, JSON.stringify(value)); return true;
-  }catch(e){
-    console.error('Erro ao salvar', key, e);
-    return false;
-  }
+  }catch(e){ console.error('Erro ao salvar', key, e); return false; }
 }
 function defaultConfig(){
   return {
     senhaAdmin: '1234',
     temDadosTeste: true,
-    painelPeriodo: { ano: null, tipo: '6' }, // ver calcularJanelaPainel() — a campanha é escolhida à parte, em STATE.campanhaSelecionadaId
+    painelPeriodo: { campanhaId: null, ano: null, tipo: '6' }, // ver calcularJanelaPainel()
   };
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -331,7 +327,7 @@ function chaveMA(mes,ano){ return ano+'-'+String(mes).padStart(2,'0'); }
 function nomeMes(mes){ return MESES_PT[mes-1]; }
 
 /* ---------- DADOS FICTÍCIOS DE DEMONSTRAÇÃO ---------- */
-function gerarDadosTeste(campanhaId){
+function gerarDadosTeste(){
   const {mes,ano} = mesAnoAtual();
   const setores = ['Administrativo','Marcenaria','Costura','Cozinha','Horta'];
   const nomes = ['Antônio Souza','Maria Aparecida Lima','José Carlos Ferreira','Francisca Nascimento','Raimundo Pereira','Luzia Costa','Pedro Henrique Alves','Cícera Santos'];
@@ -345,7 +341,7 @@ function gerarDadosTeste(campanhaId){
     CATEGORIAS.forEach(cat=>{
       const base = cat.metaDefault*fator*(0.7+Math.random()*0.5);
       entregas.push({
-        id: uid(), campanhaId, data:new Date(ano,mes-1,8+ (i%15)).toISOString().slice(0,10),
+        id: uid(), data:new Date(ano,mes-1,8+ (i%15)).toISOString().slice(0,10),
         colaboradorId:c.id, tipo:cat.key,
         quantidade: Math.max(1, Math.round(cat.key==='latinhas'&&cat.aceitaKg? base/cat.unidadesPorKg*10 : base)),
         unidade: cat.key==='latinhas' ? 'kg-x10' : 'unidades',
@@ -361,59 +357,52 @@ function gerarDadosTeste(campanhaId){
 // no registro real de entregas, latinhas usa 'kg' ou 'unidades' normalmente (ver normalizarQuantidade).
 
 /* ---------- CAMPANHAS ----------
-   Cada campanha é uma entidade independente e explícita: toda entrega e toda
-   transferência guardam o campo campanhaId dizendo a qual campanha pertencem.
-   A data do registro NUNCA decide a campanha — duas campanhas podem ter
-   períodos sobrepostos, ou até entregas na mesma data, sem nenhum conflito.
-   Cada campanha tem suas próprias metas (com histórico mês a mês) e seu
-   próprio acúmulo de excedente, isolado das demais. */
+   Cada campanha tem seu próprio período (início/fim), suas próprias metas por
+   categoria (com histórico mês a mês, igual antes) e seu próprio acúmulo de
+   excedente: uma campanha nova sempre começa do zero, sem herdar saldo de
+   campanhas anteriores. A campanha de uma entrega ou transferência é sempre
+   deduzida pela DATA do registro, então nada precisou ser adicionado aos
+   registros de entregas e transferências já existentes. */
 const CAMPANHA_LEGADO_INICIO = { mes: 5, ano: 2026 }; // usado só na migração da 1ª vez
-const CAMPANHA_LEGADO_ID = 'campanha-legado-reciclar-2026'; // id estável — nunca gerado de novo a cada migração
 function campanhasOrdenadas(){
   return [...STATE.campanhas].sort((a,b)=> (a.anoInicio*12+a.mesInicio) - (b.anoInicio*12+b.mesInicio));
 }
-function campanhaPorId(id){ return STATE.campanhas.find(c=>c.id===id) || null; }
+function encontrarCampanha(mes,ano){
+  const alvo = ano*12+mes;
+  return STATE.campanhas.find(c=>{
+    const inicio = c.anoInicio*12+c.mesInicio;
+    const fim = c.anoFim? (c.anoFim*12+c.mesFim) : Infinity;
+    return alvo>=inicio && alvo<=fim;
+  }) || null;
+}
 function campanhaAtiva(){
-  const ordenadas = campanhasOrdenadas();
-  const ativas = ordenadas.filter(c=>c.status==='ativa');
-  if(ativas.length) return ativas[ativas.length-1];
-  return ordenadas.length? ordenadas[ordenadas.length-1] : null;
+  const ativas = STATE.campanhas.filter(c=>c.status==='ativa');
+  if(ativas.length) return campanhasOrdenadas().filter(c=>c.status==='ativa').slice(-1)[0];
+  const todas = campanhasOrdenadas();
+  return todas.length? todas[todas.length-1] : null;
 }
 function campanhaTemEntregas(campanhaId){
-  return STATE.entregas.some(e=>e.campanhaId===campanhaId) || STATE.transferencias.some(t=>t.campanhaId===campanhaId);
+  const campanha = STATE.campanhas.find(c=>c.id===campanhaId);
+  if(!campanha) return false;
+  return STATE.entregas.some(e=>{
+    if(!e.data) return false;
+    const c = encontrarCampanha(+e.data.slice(5,7), +e.data.slice(0,4));
+    return c && c.id===campanhaId;
+  });
 }
 async function salvarCampanhas(){ await storageSet('campanhas', STATE.campanhas); }
 async function migrarParaCampanhas(configAntigo){
-  // Idempotente: nunca substitui a lista de campanhas já existente, nunca gera um id novo
-  // para a campanha histórica, e só toca em entregas/transferências que ainda não têm
-  // campanhaId. Rodar esta função mais de uma vez não deve mudar nada que já esteja migrado.
-  let campanhas = Array.isArray(STATE.campanhas) && STATE.campanhas.length ? [...STATE.campanhas] : [];
-  let campanhaLegado = campanhas.find(c => c.id === CAMPANHA_LEGADO_ID)
-    || campanhas.find(c => c.nome === 'Reciclar é Cuidar da Casa Comum'); // reconhece a legada mesmo se já existir com outro id
-  if(!campanhaLegado){
-    const metasDefault = (configAntigo && configAntigo.metasDefault) || Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault]));
-    const metasHistorico = (configAntigo && configAntigo.metasHistorico) || {};
-    campanhaLegado = {
-      id: CAMPANHA_LEGADO_ID,
-      nome: 'Reciclar é Cuidar da Casa Comum',
-      mesInicio: CAMPANHA_LEGADO_INICIO.mes, anoInicio: CAMPANHA_LEGADO_INICIO.ano,
-      mesFim: null, anoFim: null,
-      status: 'ativa',
-      metasDefault, metasHistorico,
-    };
-    campanhas.push(campanhaLegado);
-  }
-  STATE.campanhas = campanhas;
+  const metasDefault = (configAntigo && configAntigo.metasDefault) || Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault]));
+  const metasHistorico = (configAntigo && configAntigo.metasHistorico) || {};
+  STATE.campanhas = [{
+    id: uid(),
+    nome: 'Reciclar é Cuidar da Casa Comum',
+    mesInicio: CAMPANHA_LEGADO_INICIO.mes, anoInicio: CAMPANHA_LEGADO_INICIO.ano,
+    mesFim: null, anoFim: null,
+    status: 'ativa',
+    metasDefault, metasHistorico,
+  }];
   await salvarCampanhas();
-  // registros já existentes (entregas e transferências anteriores a esta versão) que ainda não
-  // têm campanhaId são associados à campanha legada; registros que já têm campanhaId — de
-  // qualquer campanha — nunca são alterados.
-  let mudouEntregas=false, mudouTransf=false;
-  STATE.entregas.forEach(e=>{ if(!e.campanhaId){ e.campanhaId = campanhaLegado.id; mudouEntregas=true; } });
-  STATE.transferencias.forEach(t=>{ if(!t.campanhaId){ t.campanhaId = campanhaLegado.id; mudouTransf=true; } });
-  if(mudouEntregas) await salvarEntregas();
-  if(mudouTransf) await salvarTransferencias();
-  return campanhaLegado;
 }
 
 /* ---------- CARREGAMENTO INICIAL ---------- */
@@ -423,24 +412,22 @@ async function carregarDados(){
   STATE.transferencias = await storageGet('transferencias', []);
   STATE.config = await storageGet('config', null);
   const configAntigoParaMigrar = STATE.config; // pode conter metasDefault/metasHistorico do formato anterior
-  const primeiraExecucao = !STATE.config;
   if(!STATE.config){
     STATE.config = defaultConfig();
-    await storageSet('config', STATE.config);
-  }
-  if(!STATE.config.painelPeriodo) STATE.config.painelPeriodo = { ano: null, tipo: '6' };
-  STATE.campanhas = await storageGet('campanhas', null);
-  if(!STATE.campanhas){
-    const campanhaLegado = await migrarParaCampanhas(configAntigoParaMigrar);
-    if(primeiraExecucao && STATE.colaboradores.length===0 && STATE.entregas.length===0){
-      const demo = gerarDadosTeste(campanhaLegado.id);
+    if(STATE.colaboradores.length===0 && STATE.entregas.length===0){
+      const demo = gerarDadosTeste();
       STATE.colaboradores = demo.colaboradores;
       STATE.entregas = demo.entregas;
       await storageSet('colaboradores', STATE.colaboradores);
       await storageSet('entregas', STATE.entregas);
     }
+    await storageSet('config', STATE.config);
   }
-  STATE.campanhaSelecionadaId = (campanhaAtiva()||{}).id || null;
+  if(!STATE.config.painelPeriodo) STATE.config.painelPeriodo = { campanhaId: null, ano: null, tipo: '6' };
+  STATE.campanhas = await storageGet('campanhas', null);
+  if(!STATE.campanhas){
+    await migrarParaCampanhas(configAntigoParaMigrar);
+  }
   const {mes,ano} = mesAnoAtual();
   STATE.dashMes=mes; STATE.dashAno=ano;
   STATE.rankMes=mes; STATE.rankAno=ano;
@@ -450,25 +437,6 @@ async function salvarColaboradores(){ await storageSet('colaboradores', STATE.co
 async function salvarEntregas(){ await storageSet('entregas', STATE.entregas); }
 async function salvarTransferencias(){ await storageSet('transferencias', STATE.transferencias); }
 async function salvarConfig(){ await storageSet('config', STATE.config); }
-function mudarCampanhaSelecionada(id){ STATE.campanhaSelecionadaId = id; renderApp(); }
-window.mudarCampanhaSelecionada = mudarCampanhaSelecionada;
-/* A campanha nunca é escolhida pela data — mas, depois de escolhida, a data do
-   registro precisa estar dentro do período daquela campanha específica. */
-function dataDentroDaCampanha(campanhaId, dataISO){
-  const campanha = campanhaPorId(campanhaId);
-  if(!campanha || !dataISO) return { ok:false, motivo:'Selecione uma campanha válida.' };
-  const mes = +dataISO.slice(5,7), ano = +dataISO.slice(0,4);
-  const alvo = ano*12+mes;
-  const inicio = campanha.anoInicio*12+campanha.mesInicio;
-  const fim = campanha.anoFim? (campanha.anoFim*12+campanha.mesFim) : Infinity;
-  if(alvo<inicio){
-    return { ok:false, motivo:`Essa data é anterior ao início da campanha "${campanha.nome}" (${nomeMes(campanha.mesInicio)}/${campanha.anoInicio}).` };
-  }
-  if(alvo>fim){
-    return { ok:false, motivo:`Essa data é posterior ao encerramento da campanha "${campanha.nome}" (${nomeMes(campanha.mesFim)}/${campanha.anoFim}).` };
-  }
-  return { ok:true };
-}
 
 /* ---------- LÓGICA DE NEGÓCIO ---------- */
 function normalizarQuantidadeUnidades(entrega){
@@ -481,15 +449,15 @@ function normalizarQuantidadeUnidades(entrega){
   }
   return entrega.quantidade;
 }
-function getMetasDoMes(campanhaId, mes, ano){
-  const campanha = campanhaPorId(campanhaId);
+function getMetasDoMes(mes,ano){
+  const campanha = encontrarCampanha(mes,ano);
   if(!campanha) return Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault]));
   const chave = chaveMA(mes,ano);
   if(campanha.metasHistorico[chave]) return campanha.metasHistorico[chave];
   return campanha.metasDefault;
 }
-async function garantirSnapshotMetas(campanhaId, mes, ano){
-  const campanha = campanhaPorId(campanhaId);
+async function garantirSnapshotMetas(mes,ano){
+  const campanha = encontrarCampanha(mes,ano);
   if(!campanha) return;
   const chave = chaveMA(mes,ano);
   if(!campanha.metasHistorico[chave]){
@@ -497,20 +465,20 @@ async function garantirSnapshotMetas(campanhaId, mes, ano){
     await salvarCampanhas();
   }
 }
-function entregasValidadasDoMes(campanhaId, mes, ano){
+function entregasValidadasDoMes(mes,ano){
   const chave = chaveMA(mes,ano);
-  return STATE.entregas.filter(e=>e.campanhaId===campanhaId && e.statusValidacao==='validado' && e.data && e.data.slice(0,7)===chave);
+  return STATE.entregas.filter(e=>e.statusValidacao==='validado' && e.data && e.data.slice(0,7)===chave);
 }
-function transferenciasDoMes(campanhaId, mes, ano){
+function transferenciasDoMes(mes,ano){
   const chave = chaveMA(mes,ano);
-  return STATE.transferencias.filter(t=>t.campanhaId===campanhaId && t.data && t.data.slice(0,7)===chave);
+  return STATE.transferencias.filter(t=>t.data && t.data.slice(0,7)===chave);
 }
-function mesAnteriorDe(campanhaId, mes, ano){
+function mesAnteriorDe(mes,ano){
   let m=mes-1, a=ano;
   if(m<1){ m=12; a--; }
-  const campanha = campanhaPorId(campanhaId);
-  if(!campanha) return null;
-  if(a<campanha.anoInicio || (a===campanha.anoInicio && m<campanha.mesInicio)) return null; // antes do início da campanha
+  const campanhaAtual = encontrarCampanha(mes,ano);
+  const campanhaAnterior = encontrarCampanha(m,a);
+  if(!campanhaAtual || !campanhaAnterior || campanhaAtual.id!==campanhaAnterior.id) return null; // reseta na fronteira da campanha
   return {mes:m, ano:a};
 }
 function todosMesesEntre(mesA,anoA,mesB,anoB){
@@ -523,15 +491,14 @@ function todosMesesEntre(mesA,anoA,mesB,anoB){
   }
   return lista;
 }
-function todosMesesDaCampanhaAte(campanhaId, mesAlvo,anoAlvo){
-  const campanha = campanhaPorId(campanhaId);
+function todosMesesDaCampanhaAte(mesAlvo,anoAlvo){
+  const campanha = encontrarCampanha(mesAlvo,anoAlvo);
   if(!campanha) return [{mes:mesAlvo,ano:anoAlvo}];
   return todosMesesEntre(campanha.mesInicio,campanha.anoInicio,mesAlvo,anoAlvo);
 }
 /* Janela de exibição do painel geral (gráfico de evolução + resumo de acompanhamento).
-   Independente do cálculo de pontuação: aqui o usuário escolhe o ano e o período
-   (3/6/12 meses, ano inteiro, ou intervalo personalizado) para a campanha já
-   selecionada em STATE.campanhaSelecionadaId. */
+   Independente do cálculo de pontuação: aqui o usuário escolhe qual campanha, ano e
+   período (3/6/12 meses, ano inteiro, ou intervalo personalizado) quer visualizar. */
 function ultimoMesValidoNoAno(campanha, anoSelecionado){
   const hoje = mesAnoAtual();
   if(anoSelecionado > hoje.ano) return null;
@@ -552,7 +519,7 @@ function ultimoMesValidoNoAno(campanha, anoSelecionado){
 }
 function calcularJanelaPainel(){
   const pref = STATE.config.painelPeriodo;
-  const campanha = campanhaPorId(STATE.campanhaSelecionadaId) || campanhaAtiva();
+  const campanha = STATE.campanhas.find(c=>c.id===pref.campanhaId) || campanhaAtiva();
   if(!campanha) return { campanha:null, meses:[] };
   let meses = [];
   if(pref.tipo==='personalizado' && pref.mesInicio && pref.anoInicio && pref.mesFim && pref.anoFim){
@@ -577,7 +544,8 @@ function calcularJanelaPainel(){
 async function mudarPainelPeriodo(campo, valor){
   if(!exigirAdmin()){ renderApp(); return; }
   const pref = STATE.config.painelPeriodo;
-  if(campo==='ano') pref.ano = valor? parseInt(valor,10) : null;
+  if(campo==='campanhaId') pref.campanhaId = valor || null;
+  else if(campo==='ano') pref.ano = valor? parseInt(valor,10) : null;
   else if(campo==='tipo') pref.tipo = valor;
   else if(['mesInicio','anoInicio','mesFim','anoFim'].includes(campo)) pref[campo] = parseInt(valor,10);
   await salvarConfig();
@@ -586,18 +554,17 @@ async function mudarPainelPeriodo(campo, valor){
 window.mudarPainelPeriodo = mudarPainelPeriodo;
 /* Calcula, para cada colaborador e categoria, o saldo mês a mês desde o início da campanha
    até o mês alvo, já considerando: entregas validadas, transferências recebidas/enviadas, e
-   o excedente (o que passou da meta) transportado automaticamente para o mês seguinte.
-   Tudo isolado dentro da campanha informada — nada aqui vaza para outra campanha. */
-function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
-  const meses = todosMesesDaCampanhaAte(campanhaId, mesAlvo,anoAlvo);
+   o excedente (o que passou da meta) transportado automaticamente para o mês seguinte. */
+function calcularSaldosAcumulados(mesAlvo,anoAlvo){
+  const meses = todosMesesDaCampanhaAte(mesAlvo,anoAlvo);
   const saldos = {};
   STATE.colaboradores.forEach(c=>{ saldos[c.id]={}; CATEGORIAS.forEach(cat=> saldos[c.id][cat.key]={}); });
   meses.forEach(({mes,ano})=>{
     const chave = chaveMA(mes,ano);
-    const metas = getMetasDoMes(campanhaId, mes,ano);
-    const entregas = entregasValidadasDoMes(campanhaId, mes,ano);
-    const transferencias = transferenciasDoMes(campanhaId, mes,ano);
-    const anterior = mesAnteriorDe(campanhaId, mes,ano);
+    const metas = getMetasDoMes(mes,ano);
+    const entregas = entregasValidadasDoMes(mes,ano);
+    const transferencias = transferenciasDoMes(mes,ano);
+    const anterior = mesAnteriorDe(mes,ano);
     const chaveAnterior = anterior? chaveMA(anterior.mes,anterior.ano) : null;
     STATE.colaboradores.forEach(c=>{
       CATEGORIAS.forEach(cat=>{
@@ -615,22 +582,22 @@ function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
   });
   return saldos;
 }
-function saldoDisponivelAntes(campanhaId, colaboradorId, categoria, mes, ano){
-  const saldos = calcularSaldosAcumulados(campanhaId, mes,ano);
+function saldoDisponivelAntes(colaboradorId, categoria, mes, ano){
+  const saldos = calcularSaldosAcumulados(mes,ano);
   const s = saldos[colaboradorId]?.[categoria]?.[chaveMA(mes,ano)];
   return s? s.totalDisponivel : 0;
 }
-function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
+function resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro){
   const chave = chaveMA(mes,ano);
   let colaboradores = STATE.colaboradores.filter(c=> !setorFiltro || c.setor===setorFiltro);
   colaboradores = colaboradores.filter(c=> !c.dataCadastro || c.dataCadastro.slice(0,7) <= chave);
-  const entregasDoMes = entregasValidadasDoMes(campanhaId, mes,ano);
+  const entregasDoMes = entregasValidadasDoMes(mes,ano);
   const resultados = colaboradores.map(c=>{
     const totais = {}, percentuais = {}, frescos = {};
     CATEGORIAS.forEach(cat=>{
       const s = saldos[c.id]?.[cat.key]?.[chave];
       const totalDisponivel = s? s.totalDisponivel : 0;
-      const meta = s? s.meta : (getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault);
+      const meta = s? s.meta : (getMetasDoMes(mes,ano)[cat.key]||cat.metaDefault);
       totais[cat.key] = totalDisponivel;
       frescos[cat.key] = Math.max(0, s? s.creditos : 0);
       percentuais[cat.key] = meta>0 ? (totalDisponivel/meta*100) : 0;
@@ -662,18 +629,17 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
   });
   return resultados;
 }
-function calcularResultadosMes(campanhaId, mes,ano,setorFiltro){
-  const saldos = calcularSaldosAcumulados(campanhaId, mes,ano);
-  return resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro);
+function calcularResultadosMes(mes,ano,setorFiltro){
+  const saldos = calcularSaldosAcumulados(mes,ano);
+  return resultadosDoMesUsandoSaldos(saldos, mes, ano, setorFiltro);
 }
 function setoresExistentes(){
   return [...new Set(STATE.colaboradores.map(c=>c.setor).filter(Boolean))].sort();
 }
-function mesesComDados(campanhaId){
+function mesesComDados(){
   const chaves = new Set();
-  STATE.entregas.forEach(e=>{ if(e.campanhaId===campanhaId && e.data) chaves.add(e.data.slice(0,7)); });
-  const campanha = campanhaPorId(campanhaId);
-  if(campanha) Object.keys(campanha.metasHistorico||{}).forEach(k=>chaves.add(k));
+  STATE.entregas.forEach(e=>{ if(e.data) chaves.add(e.data.slice(0,7)); });
+  STATE.campanhas.forEach(c=> Object.keys(c.metasHistorico||{}).forEach(k=>chaves.add(k)));
   return [...chaves].sort().reverse();
 }
 
@@ -703,44 +669,21 @@ const ICONS = {
 function icon(name,size=18){ return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`; }
 
 /* ---------- ROTEAMENTO / RENDER RAIZ ---------- */
-const NAV_ITEMS_BASE = [
+const NAV_ITEMS = [
   {key:'dashboard', label:'Painel geral', icon:'dashboard'},
   {key:'colaboradores', label:'Colaboradores', icon:'colaboradores'},
   {key:'entregas', label:'Entregas', icon:'entregas'},
   {key:'ranking', label:'Ranking mensal', icon:'ranking'},
   {key:'historico', label:'Histórico', icon:'historico'},
   {key:'relatorios', label:'Relatórios', icon:'relatorios'},
+  {key:'config', label:'Configurações', icon:'config'},
 ];
-const NAV_ITEM_CONFIG = {key:'config', label:'Configurações', icon:'config'};
-function navItemsVisiveis(){
-  return STATE.isAdmin ? [...NAV_ITEMS_BASE, NAV_ITEM_CONFIG] : NAV_ITEMS_BASE;
-}
-function irPara(view){
-  if(view==='config' && !STATE.isAdmin){ abrirLoginAdmin(); return; }
-  STATE.view=view; renderApp(); window.scrollTo(0,0);
-}
+function irPara(view){ STATE.view=view; renderApp(); window.scrollTo(0,0); }
 window.irPara = irPara;
-
-function renderSeletorCampanhaTopo(){
-  const campanhas = campanhasOrdenadas();
-  if(campanhas.length===0) return '';
-  const atualId = STATE.campanhaSelecionadaId || (campanhaAtiva()||{}).id || '';
-  return `
-    <div style="display:flex;align-items:center;gap:6px;">
-      <span class="small-note" style="white-space:nowrap;">Campanha:</span>
-      <select onchange="mudarCampanhaSelecionada(this.value)" style="min-width:170px;">
-        ${campanhas.map(c=>`<option value="${c.id}" ${c.id===atualId?'selected':''}>${escapeHtml(c.nome)}${c.status==='ativa'?' (ativa)':c.status==='encerrada'?' (encerrada)':' (planejada)'}</option>`).join('')}
-      </select>
-    </div>
-  `;
-}
-window.renderSeletorCampanhaTopo = renderSeletorCampanhaTopo;
 
 function renderApp(){
   const app = document.getElementById('app');
-  const navItems = navItemsVisiveis();
-  const current = navItems.find(n=>n.key===STATE.view) || navItems[0];
-  if(STATE.view==='config' && !STATE.isAdmin) STATE.view='dashboard';
+  const current = NAV_ITEMS.find(n=>n.key===STATE.view) || NAV_ITEMS[0];
   app.innerHTML = `
     <div class="sidebar">
       <div class="brand">
@@ -751,7 +694,7 @@ function renderApp(){
         </div>
       </div>
       <div class="nav">
-        ${navItems.map(n=>`<button class="${n.key===STATE.view?'active':''}" onclick="irPara('${n.key}')">${icon(n.icon)}${n.label}</button>`).join('')}
+        ${NAV_ITEMS.map(n=>`<button class="${n.key===STATE.view?'active':''}" onclick="irPara('${n.key}')">${icon(n.icon)}${n.label}</button>`).join('')}
       </div>
       <div class="sidebar-foot">
         <div class="admin-pill">
@@ -766,16 +709,13 @@ function renderApp(){
           <h1>${current.label}</h1>
           <div class="desc">APAC de Imperatriz · Maranhão</div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-          ${renderSeletorCampanhaTopo()}
-          <button class="help-btn" onclick="abrirAjuda()" title="Como usar">?</button>
-        </div>
+        <button class="help-btn" onclick="abrirAjuda()" title="Como usar">?</button>
       </div>
       <div class="content" id="viewContent"></div>
     </div>
     <div class="bottomnav">
       <div class="bottomnav-row">
-        ${navItems.slice(0,4).map(n=>`<button class="${n.key===STATE.view?'active':''}" onclick="irPara('${n.key}')">${icon(n.icon,20)}<span>${n.label.split(' ')[0]}</span></button>`).join('')}
+        ${[NAV_ITEMS[0],NAV_ITEMS[1],NAV_ITEMS[2],NAV_ITEMS[3]].map(n=>`<button class="${n.key===STATE.view?'active':''}" onclick="irPara('${n.key}')">${icon(n.icon,20)}<span>${n.label.split(' ')[0]}</span></button>`).join('')}
         <button class="${['historico','relatorios','config'].includes(STATE.view)?'active':''}" onclick="abrirMaisSheet()">${icon('more',20)}<span>Mais</span></button>
       </div>
     </div>
@@ -789,13 +729,11 @@ function renderApp(){
 }
 
 function abrirMaisSheet(){
-  const extras = STATE.isAdmin? ['historico','relatorios','config'] : ['historico','relatorios'];
   abrirModal(`
     <div class="modal-head"><h3>Mais opções</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <div style="display:flex;flex-direction:column;gap:8px;">
-      ${extras.map(k=>{
-        const n = navItemsVisiveis().find(i=>i.key===k);
-        if(!n) return '';
+      ${['historico','relatorios','config'].map(k=>{
+        const n = NAV_ITEMS.find(i=>i.key===k);
         return `<button class="btn btn-outline btn-block" style="justify-content:flex-start" onclick="fecharModal();irPara('${k}')">${icon(n.icon)}${n.label}</button>`;
       }).join('')}
     </div>
@@ -815,9 +753,7 @@ function abrirModal(innerHtml, wide){
 function fecharModal(){ const m=document.getElementById('modalOverlay'); if(m) m.remove(); }
 window.fecharModal = fecharModal;
 
-/* ---------- ADMIN ----------
-   Acesso administrativo por senha simples, guardada no documento de configuração.
-   Vale para todos os modos de armazenamento (Claude, Firestore ou local). */
+/* ---------- ADMIN ---------- */
 function abrirLoginAdmin(){
   abrirModal(`
     <div class="modal-head"><h3>Área administrativa</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
@@ -836,11 +772,7 @@ function confirmarLoginAdmin(){
   if(v === STATE.config.senhaAdmin){ STATE.isAdmin=true; sessionStorage.setItem('reciclar-apac:isAdmin','1'); fecharModal(); renderApp(); }
   else { document.getElementById('loginErro').style.display='block'; }
 }
-function sairAdmin(){
-  STATE.isAdmin=false;
-  sessionStorage.removeItem('reciclar-apac:isAdmin');
-  renderApp();
-}
+function sairAdmin(){ STATE.isAdmin=false; sessionStorage.removeItem('reciclar-apac:isAdmin'); renderApp(); }
 window.abrirLoginAdmin=abrirLoginAdmin; window.confirmarLoginAdmin=confirmarLoginAdmin; window.sairAdmin=sairAdmin;
 function exigirAdmin(acaoLabel){
   if(!STATE.isAdmin){ abrirLoginAdmin(); return false; }
@@ -869,14 +801,10 @@ window.abrirAjuda = abrirAjuda;
    DASHBOARD
    ========================================================= */
 function renderDashboard(){
-  if(!STATE.campanhaSelecionadaId){
-    return `<div class="card"><div class="empty-state">Nenhuma campanha cadastrada ainda. ${STATE.isAdmin? 'Crie uma em Configurações → Campanhas.' : 'Fale com o administrador do sistema.'}</div></div>`;
-  }
-  const campanhaId = STATE.campanhaSelecionadaId;
   const mes=STATE.dashMes, ano=STATE.dashAno;
-  const resultados = calcularResultadosMes(campanhaId, mes,ano);
+  const resultados = calcularResultadosMes(mes,ano);
   const ativos = STATE.colaboradores.filter(c=>c.status==='ativo').length;
-  const entregasMes = entregasValidadasDoMes(campanhaId, mes,ano);
+  const entregasMes = entregasValidadasDoMes(mes,ano);
   const totalMateriais = resultados.reduce((a,r)=>a+r.totalMateriais,0);
   const atingiramMeta = resultados.filter(r=>r.metaAtingida).length;
   const mediaGeral = resultados.length? (resultados.reduce((a,r)=>a+r.pontuacao,0)/resultados.length) : 0;
@@ -884,13 +812,13 @@ function renderDashboard(){
 
   const { campanha: campanhaPainel, meses: mesesPainel } = calcularJanelaPainel();
   const ultimoMesPainel = mesesPainel[mesesPainel.length-1];
-  const saldosPainel = ultimoMesPainel ? calcularSaldosAcumulados(campanhaId, ultimoMesPainel.mes, ultimoMesPainel.ano) : {};
+  const saldosPainel = ultimoMesPainel ? calcularSaldosAcumulados(ultimoMesPainel.mes, ultimoMesPainel.ano) : {};
   const evolucao = mesesPainel.map(({mes:m,ano:a})=>{
-    const r = resultadosDoMesUsandoSaldos(saldosPainel, campanhaId, m, a);
+    const r = resultadosDoMesUsandoSaldos(saldosPainel, m, a);
     const media = r.length? r.reduce((x,y)=>x+y.pontuacao,0)/r.length : 0;
     return {label: nomeMes(m).slice(0,3)+'/'+String(a).slice(2), media};
   });
-  const resumoCampanha = calcularResumoCampanha(saldosPainel, campanhaId, mesesPainel);
+  const resumoCampanha = calcularResumoCampanha(saldosPainel, mesesPainel);
 
   return `
     ${STATE.config.temDadosTeste? `<div class="banner amber"><span>${icon('leaf')}</span><div><b>Este ranking contém dados fictícios de demonstração.</b> Vá em Configurações para apagá-los quando começar a usar dados reais.</div></div>`:''}
@@ -951,7 +879,7 @@ function renderDashboard(){
 function renderSeletorPainelPeriodo(campanhaPainel){
   const pref = STATE.config.painelPeriodo;
   const campanhas = campanhasOrdenadas();
-  const campanhaSelecionadaId = STATE.campanhaSelecionadaId;
+  const campanhaSelecionadaId = campanhaPainel? campanhaPainel.id : (pref.campanhaId || (campanhaAtiva()||{}).id);
   const hoje = mesAnoAtual();
   const anoMin = campanhaPainel? campanhaPainel.anoInicio : hoje.ano;
   const anoMax = campanhaPainel? (campanhaPainel.anoFim || hoje.ano) : hoje.ano;
@@ -962,7 +890,7 @@ function renderSeletorPainelPeriodo(campanhaPainel){
     <div class="filters">
       <div>
         <label style="display:block;font-size:11.5px;font-weight:700;color:var(--text-muted);margin-bottom:4px;">Campanha</label>
-        <select onchange="mudarCampanhaSelecionada(this.value)">
+        <select onchange="mudarPainelPeriodo('campanhaId', this.value)">
           ${campanhas.map(c=>`<option value="${c.id}" ${c.id===campanhaSelecionadaId?'selected':''}>${escapeHtml(c.nome)}${c.status==='ativa'?' (ativa)':''}</option>`).join('')}
         </select>
       </div>
@@ -978,7 +906,7 @@ function renderSeletorPainelPeriodo(campanhaPainel){
           <option value="3" ${tipo==='3'?'selected':''}>Últimos 3 meses</option>
           <option value="6" ${tipo==='6'?'selected':''}>Últimos 6 meses</option>
           <option value="12" ${tipo==='12'?'selected':''}>Últimos 12 meses</option>
-          <option value="anoAtual" ${tipo==='anoAtual'?'selected':''}>Ano completo</option>
+          <option value="anoAtual" ${tipo==='anoAtual'?'selected':''}>Ano selecionado inteiro</option>
           <option value="personalizado" ${tipo==='personalizado'?'selected':''}>Período personalizado</option>
         </select>
       </div>
@@ -1002,10 +930,10 @@ function renderSeletorPainelPeriodo(campanhaPainel){
     </div>` : ''}
   `;
 }
-function calcularResumoCampanha(saldosCompletos, campanhaId, mesesCampanha){
+function calcularResumoCampanha(saldosCompletos, mesesCampanha){
   const porColaborador = {};
   mesesCampanha.forEach(({mes,ano})=>{
-    const resultados = resultadosDoMesUsandoSaldos(saldosCompletos, campanhaId, mes, ano);
+    const resultados = resultadosDoMesUsandoSaldos(saldosCompletos, mes, ano);
     resultados.forEach(r=>{
       if(!porColaborador[r.colaborador.id]){
         porColaborador[r.colaborador.id] = { colaborador:r.colaborador, mesesParticipando:0, somaPontuacao:0, totalMateriais:0, mesesComMetaAtingida:0 };
@@ -1067,11 +995,10 @@ function renderColaboradores(){
       <div class="toolbar-left">
         <input type="text" id="buscaColab" placeholder="Buscar por nome ou setor…" style="min-width:220px;" oninput="renderTabelaColaboradores()">
       </div>
-      ${STATE.isAdmin? `
       <div class="toolbar-right">
         <button class="btn btn-outline" onclick="abrirImportarCsv()">${icon('upload')}Importar planilha</button>
         <button class="btn btn-primary" onclick="abrirFormColaborador()">${icon('plus')}Novo colaborador</button>
-      </div>` : ''}
+      </div>
     </div>
     <div class="card" style="padding:0;">
       <div class="table-wrap" id="tabelaColaboradoresWrap"></div>
@@ -1086,7 +1013,7 @@ function renderTabelaColaboradores(){
     .sort((a,b)=>a.nome.localeCompare(b.nome));
   if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhum colaborador cadastrado ainda.</div>`; return; }
   wrap.innerHTML = `
-    <table><thead><tr><th>Nome</th><th>Setor</th><th>Cargo</th><th>Status</th><th>Cadastro</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Nome</th><th>Setor</th><th>Cargo</th><th>Status</th><th>Cadastro</th><th></th></tr></thead>
     <tbody>
       ${lista.map(c=>`
         <tr>
@@ -1095,10 +1022,10 @@ function renderTabelaColaboradores(){
           <td>${escapeHtml(c.cargo||'—')}</td>
           <td>${c.status==='ativo'? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-grey">Desligado</span>'}</td>
           <td>${formatarData(c.dataCadastro)}</td>
-          ${STATE.isAdmin? `<td style="text-align:right;white-space:nowrap;">
+          <td style="text-align:right;white-space:nowrap;">
             <button class="btn btn-ghost btn-sm" onclick="abrirFormColaborador('${c.id}')">${icon('edit',16)}</button>
             <button class="btn btn-ghost btn-sm" onclick="confirmarExcluirColaborador('${c.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
-          </td>` : ''}
+          </td>
         </tr>`).join('')}
     </tbody></table>
   `;
@@ -1200,10 +1127,7 @@ window.renderTabelaColaboradores=renderTabelaColaboradores;
    ENTREGAS
    ========================================================= */
 function renderEntregas(){
-  const campanhaId = STATE.campanhaSelecionadaId;
-  if(!campanhaId){
-    return `<div class="card"><div class="empty-state">Nenhuma campanha cadastrada ainda. ${STATE.isAdmin? 'Crie uma em Configurações → Campanhas.' : ''}</div></div>`;
-  }
+  const setores = setoresExistentes();
   return `
     <div class="toolbar">
       <div class="toolbar-left filters">
@@ -1211,11 +1135,10 @@ function renderEntregas(){
         <div><select id="filtroEntregaAno" onchange="renderTabelaEntregas()">${[mesAnoAtual().ano-1,mesAnoAtual().ano,mesAnoAtual().ano+1].map(a=>`<option ${a===mesAnoAtual().ano?'selected':''}>${a}</option>`).join('')}</select></div>
         <div class="filtro-status"><select id="filtroEntregaStatus" onchange="renderTabelaEntregas()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="validado">Validado</option></select></div>
       </div>
-      ${STATE.isAdmin? `
       <div class="toolbar-right">
         <button class="btn btn-outline" onclick="abrirFormTransferencia()">${icon('ranking')}Transferir material</button>
         <button class="btn btn-primary" onclick="abrirFormEntrega()">${icon('plus')}Nova entrega</button>
-      </div>` : ''}
+      </div>
     </div>
     <div class="card" id="saldoTransportadoWrap" style="display:none;"></div>
     <div class="card" style="padding:0;">
@@ -1231,18 +1154,17 @@ function renderEntregas(){
 function renderTabelaEntregas(){
   const wrap = document.getElementById('tabelaEntregasWrap');
   if(!wrap) return;
-  const campanhaId = STATE.campanhaSelecionadaId;
   const mes = +document.getElementById('filtroEntregaMes').value;
   const ano = +document.getElementById('filtroEntregaAno').value;
   const status = document.getElementById('filtroEntregaStatus').value;
   renderSaldoTransportado(mes,ano);
   const chave = chaveMA(mes,ano);
-  let lista = STATE.entregas.filter(e=> e.campanhaId===campanhaId && e.data && e.data.slice(0,7)===chave && (!status || e.statusValidacao===status));
+  let lista = STATE.entregas.filter(e=> e.data && e.data.slice(0,7)===chave && (!status || e.statusValidacao===status));
   lista.sort((a,b)=> b.data.localeCompare(a.data));
-  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma entrega registrada nesta campanha e período.</div>`; }
+  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma entrega registrada neste período.</div>`; }
   else {
   wrap.innerHTML = `
-    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Material</th><th>Qtd.</th><th>Status</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Material</th><th>Qtd.</th><th>Status</th><th></th></tr></thead>
     <tbody>
       ${lista.map(e=>{
         const c = STATE.colaboradores.find(x=>x.id===e.colaboradorId);
@@ -1254,10 +1176,10 @@ function renderTabelaEntregas(){
           <td>${cat? escapeHtml(cat.label.split(' (')[0]) : 'Outros materiais'}</td>
           <td>${e.quantidade} ${unidLabel}</td>
           <td>${e.statusValidacao==='validado'? '<span class="badge badge-green">Validado</span>' : '<span class="badge badge-amber">Pendente</span>'}</td>
-          ${STATE.isAdmin? `<td style="text-align:right;white-space:nowrap;">
+          <td style="text-align:right;white-space:nowrap;">
             <button class="btn btn-ghost btn-sm" onclick="abrirFormEntrega('${e.id}')">${icon('edit',16)}</button>
             <button class="btn btn-ghost btn-sm" onclick="confirmarExcluirEntrega('${e.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
-          </td>` : ''}
+          </td>
         </tr>`;
       }).join('')}
     </tbody></table>
@@ -1268,11 +1190,10 @@ function renderTabelaEntregas(){
 function renderTabelaTransferencias(mes,ano){
   const wrap = document.getElementById('tabelaTransferenciasWrap');
   if(!wrap) return;
-  const campanhaId = STATE.campanhaSelecionadaId;
-  const lista = transferenciasDoMes(campanhaId, mes,ano).slice().sort((a,b)=>b.data.localeCompare(a.data));
+  const lista = transferenciasDoMes(mes,ano).slice().sort((a,b)=>b.data.localeCompare(a.data));
   if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma transferência registrada neste mês.</div>`; return; }
   wrap.innerHTML = `
-    <table><thead><tr><th>Data</th><th>De</th><th>Para</th><th>Qtd.</th><th>Motivo</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Data</th><th>De</th><th>Para</th><th>Qtd.</th><th>Motivo</th><th></th></tr></thead>
     <tbody>
       ${lista.map(t=>{
         const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
@@ -1285,22 +1206,20 @@ function renderTabelaTransferencias(mes,ano){
           <td>${escapeHtml(destino?destino.nome:'(removido)')} <span class="small-note">— ${catDestino?escapeHtml(catDestino.label.split(' (')[0]):''}</span></td>
           <td>${t.quantidade}</td>
           <td>${escapeHtml(t.motivo||'—')}</td>
-          ${STATE.isAdmin? `<td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="confirmarExcluirTransferencia('${t.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button></td>` : ''}
+          <td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="confirmarExcluirTransferencia('${t.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button></td>
         </tr>`;
       }).join('')}
     </tbody></table>
   `;
 }
 function abrirFormEntrega(id){
-  if(!exigirAdmin()) return;
   const e = id? STATE.entregas.find(x=>x.id===id) : null;
+  if(id && !exigirAdmin()) return;
   if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de registrar entregas.'); return; }
-  const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const catOpcoes = CATEGORIAS.map(c=>`<option value="${c.key}" ${e&&e.tipo===c.key?'selected':''}>${escapeHtml(c.label)}</option>`).join('')
     + `<option value="${TIPO_OUTROS}" ${e&&e.tipo===TIPO_OUTROS?'selected':''}>Outros materiais aceitos</option>`;
   abrirModal(`
     <div class="modal-head"><h3>${e?'Editar entrega':'Nova entrega'}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <div class="banner" style="margin-bottom:14px;"><span>${icon('ranking')}</span><div>Campanha: <b>${escapeHtml(campanha?campanha.nome:'—')}</b></div></div>
     <div class="grid grid-2">
       <div class="field"><label>Data da entrega</label><input type="date" id="fData" value="${e?e.data:new Date().toISOString().slice(0,10)}"></div>
       <div class="field"><label>Colaborador</label><select id="fColab">${STATE.colaboradores.filter(c=>c.status==='ativo'||c.id===(e&&e.colaboradorId)).map(c=>`<option value="${c.id}" ${e&&e.colaboradorId===c.id?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}</select></div>
@@ -1349,17 +1268,14 @@ async function salvarEntrega(id){
   const observacoes = document.getElementById('fObs').value.trim();
   const statusValidacao = document.getElementById('fStatusValid').value;
   if(!data || !colaboradorId || !tipo || isNaN(quantidade) || quantidade<0){ alert('Preencha data, colaborador, tipo de material e uma quantidade válida.'); return; }
-  const campanhaId = id? STATE.entregas.find(x=>x.id===id).campanhaId : STATE.campanhaSelecionadaId;
-  const validacao = dataDentroDaCampanha(campanhaId, data);
-  if(!validacao.ok){ alert(validacao.motivo); return; }
-  const payload = {data,colaboradorId,tipo,quantidade,unidade,responsavelContagem,observacoes,statusValidacao,campanhaId};
+  const payload = {data,colaboradorId,tipo,quantidade,unidade,responsavelContagem,observacoes,statusValidacao};
   if(id){
     const idx = STATE.entregas.findIndex(x=>x.id===id);
     STATE.entregas[idx] = {...STATE.entregas[idx], ...payload};
   } else {
     STATE.entregas.push({id:uid(), criadoEm:Date.now(), ...payload});
   }
-  await garantirSnapshotMetas(campanhaId, +data.slice(5,7), +data.slice(0,4));
+  await garantirSnapshotMetas(+data.slice(5,7), +data.slice(0,4));
   await salvarEntregas();
   fecharModal(); renderApp();
 }
@@ -1382,9 +1298,8 @@ async function excluirEntrega(id){
 function renderSaldoTransportado(mes,ano){
   const wrap = document.getElementById('saldoTransportadoWrap');
   if(!wrap) return;
-  const campanhaId = STATE.campanhaSelecionadaId;
   const chave = chaveMA(mes,ano);
-  const saldos = calcularSaldosAcumulados(campanhaId, mes,ano);
+  const saldos = calcularSaldosAcumulados(mes,ano);
   const porColaborador = {};
   STATE.colaboradores.forEach(c=>{
     CATEGORIAS.forEach(cat=>{
@@ -1439,12 +1354,10 @@ window.renderTabelaEntregas=renderTabelaEntregas; window.renderTabelaTransferenc
 function abrirFormTransferencia(){
   if(!exigirAdmin()) return;
   if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de transferir material.'); return; }
-  const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const opcoesColab = STATE.colaboradores.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
   const opcoesCategoria = CATEGORIAS.map(c=>`<option value="${c.key}">${escapeHtml(c.label.split(' (')[0])}</option>`).join('');
   abrirModal(`
     <div class="modal-head"><h3>Transferir material</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <div class="banner" style="margin-bottom:14px;"><span>${icon('ranking')}</span><div>Campanha: <b>${escapeHtml(campanha?campanha.nome:'—')}</b></div></div>
     <p class="small-note" style="margin-top:-6px;">Move o crédito de material entre colaboradores, entre categorias, ou os dois ao mesmo tempo. Por exemplo, trocar latinhas por embalagens plásticas do mesmo colaborador, ou passar parte da meta de um colaborador para outro, com autorização administrativa.</p>
     <div class="field"><label>Data da transferência</label><input type="date" id="tData" value="${new Date().toISOString().slice(0,10)}" onchange="atualizarSaldoTransferencia()"></div>
     <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">De (origem)</div>
@@ -1476,7 +1389,7 @@ function atualizarSaldoTransferencia(){
   if(!dataEl || !colabEl || !catEl || !info) return;
   const data = dataEl.value; if(!data) return;
   const mes = +data.slice(5,7), ano = +data.slice(0,4);
-  const saldo = saldoDisponivelAntes(STATE.campanhaSelecionadaId, colabEl.value, catEl.value, mes, ano);
+  const saldo = saldoDisponivelAntes(colabEl.value, catEl.value, mes, ano);
   const cat = CATEGORIA_MAP[catEl.value];
   info.innerHTML = `Saldo disponível deste colaborador em ${escapeHtml(cat?cat.label.split(' (')[0]:'')} até ${nomeMes(mes)}/${ano}: <b>${saldo.toFixed(0)}</b> unidades equivalentes.`;
 }
@@ -1497,19 +1410,16 @@ async function salvarTransferencia(){
   if(colaboradorOrigemId===colaboradorDestinoId && categoriaOrigem===categoriaDestino){
     erroEl.textContent = 'Origem e destino são iguais. Escolha um colaborador ou categoria diferente para o destino.'; erroEl.style.display='block'; return;
   }
-  const validacaoData = dataDentroDaCampanha(STATE.campanhaSelecionadaId, data);
-  if(!validacaoData.ok){ erroEl.textContent = validacaoData.motivo; erroEl.style.display='block'; return; }
   const mes = +data.slice(5,7), ano = +data.slice(0,4);
-  const campanhaId = STATE.campanhaSelecionadaId;
-  const saldoAtual = saldoDisponivelAntes(campanhaId, colaboradorOrigemId, categoriaOrigem, mes, ano);
+  const saldoAtual = saldoDisponivelAntes(colaboradorOrigemId, categoriaOrigem, mes, ano);
   if(quantidade > saldoAtual){
     erroEl.textContent = `Quantidade maior que o saldo disponível na origem (${saldoAtual.toFixed(0)} unidades equivalentes até este mês).`; erroEl.style.display='block'; return;
   }
   STATE.transferencias.push({
-    id:uid(), campanhaId, data, colaboradorOrigemId, categoriaOrigem, colaboradorDestinoId, categoriaDestino,
+    id:uid(), data, colaboradorOrigemId, categoriaOrigem, colaboradorDestinoId, categoriaDestino,
     quantidade, motivo, criadoEm:Date.now()
   });
-  await garantirSnapshotMetas(campanhaId, mes,ano);
+  await garantirSnapshotMetas(mes,ano);
   await salvarTransferencias();
   fecharModal(); renderApp();
 }
@@ -1536,12 +1446,8 @@ window.confirmarExcluirTransferencia=confirmarExcluirTransferencia; window.exclu
    RANKING
    ========================================================= */
 function renderRanking(){
-  const campanhaId = STATE.campanhaSelecionadaId;
-  if(!campanhaId){
-    return `<div class="card"><div class="empty-state">Nenhuma campanha cadastrada ainda.</div></div>`;
-  }
   const mes=STATE.rankMes, ano=STATE.rankAno;
-  const resultados = calcularResultadosMes(campanhaId, mes,ano,STATE.rankSetor);
+  const resultados = calcularResultadosMes(mes,ano,STATE.rankSetor);
   const setores = setoresExistentes();
   const comAtividade = resultados.filter(r=> r.pontuacao>0 || r.totalMateriais>0);
   const top3 = comAtividade.slice(0,3);
@@ -1607,8 +1513,7 @@ function renderTabelaRanking(resultados, completa, mes, ano){
   `;
 }
 function abrirDetalhesColaborador(colaboradorId, mes, ano){
-  const campanhaId = STATE.campanhaSelecionadaId;
-  const resultados = calcularResultadosMes(campanhaId, mes,ano);
+  const resultados = calcularResultadosMes(mes,ano);
   const r = resultados.find(x=>x.colaborador.id===colaboradorId);
   if(!r) return;
   abrirModal(`
@@ -1618,7 +1523,7 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
       <tbody>
         ${CATEGORIAS.map(cat=>{
           const total = r.totais[cat.key]||0;
-          const meta = getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault;
+          const meta = getMetasDoMes(mes,ano)[cat.key]||cat.metaDefault;
           const pct = r.percentuais[cat.key]||0;
           return `<tr>
             <td>${escapeHtml(cat.label.split(' (')[0])}</td>
@@ -1636,8 +1541,8 @@ window.abrirDetalhesColaborador = abrirDetalhesColaborador;
 
 /* ---------- COMPARTILHAMENTO WHATSAPP ---------- */
 function montarMensagemTop3(mes,ano){
-  const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
-  const top3 = resultados.filter(r=> r.pontuacao>0 || r.totalMateriais>0).slice(0,3);
+  const resultados = calcularResultadosMes(mes,ano);
+  const top3 = resultados.slice(0,3);
   const medalhas = ['🥇 1º lugar','🥈 2º lugar','🥉 3º lugar'];
   let msg = `♻️ RANKING RECICLAR É CUIDAR DA CASA COMUM\n`;
   msg += `APAC DE IMPERATRIZ\n\n`;
@@ -1656,7 +1561,7 @@ function montarMensagemTop3(mes,ano){
   return msg;
 }
 function montarMensagemCompleta(mes,ano){
-  const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
+  const resultados = calcularResultadosMes(mes,ano);
   const comPosicao = resultados.filter(r=>r.posicao);
   const semPosicao = resultados.filter(r=>!r.posicao);
   let msg = `♻️ RANKING COMPLETO — RECICLAR É CUIDAR DA CASA COMUM\nAPAC DE IMPERATRIZ\n${nomeMes(mes)} de ${ano}\n\n`;
@@ -1694,8 +1599,8 @@ window.copiarTextoCompartilhar=copiarTextoCompartilhar; window.enviarParaWhatsap
 
 /* ---------- CARD PNG PARA WHATSAPP ---------- */
 function gerarCardRanking(mes,ano){
-  const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
-  const top3 = resultados.filter(r=> r.pontuacao>0 || r.totalMateriais>0).slice(0,3);
+  const resultados = calcularResultadosMes(mes,ano);
+  const top3 = resultados.slice(0,3);
   const W=1080,H=1350;
   const canvas = document.createElement('canvas'); canvas.width=W; canvas.height=H;
   const ctx = canvas.getContext('2d');
@@ -1764,19 +1669,15 @@ window.gerarCardRanking = gerarCardRanking;
    HISTÓRICO
    ========================================================= */
 function renderHistorico(){
-  const campanhaId = STATE.campanhaSelecionadaId;
-  if(!campanhaId){
-    return `<div class="card"><div class="empty-state">Nenhuma campanha cadastrada ainda.</div></div>`;
-  }
-  const meses = mesesComDados(campanhaId);
+  const meses = mesesComDados();
   const mes=STATE.histMes, ano=STATE.histAno;
-  const resultados = calcularResultadosMes(campanhaId, mes,ano);
+  const resultados = calcularResultadosMes(mes,ano);
   return `
     <div class="toolbar">
       <div class="toolbar-left filters">${seletorMesAno('hist', mes, ano)}</div>
       <div class="toolbar-right"><button class="btn btn-outline" onclick="exportarCsvEntregas(${mes},${ano})">${icon('download')}Exportar entregas (CSV)</button></div>
     </div>
-    ${meses.length===0? `<div class="card"><div class="empty-state">Nenhum histórico registrado ainda nesta campanha.</div></div>` : `
+    ${meses.length===0? `<div class="card"><div class="empty-state">Nenhum histórico registrado ainda.</div></div>` : `
     <div class="section-title">Ranking de ${nomeMes(mes)} de ${ano}</div>
     <div class="card" style="padding:0;">${renderTabelaRanking(resultados,true,mes,ano)}</div>
     <div class="section-title">Entregas realizadas no mês</div>
@@ -1785,9 +1686,8 @@ function renderHistorico(){
   `;
 }
 function renderTabelaEntregasHistorico(mes,ano){
-  const campanhaId = STATE.campanhaSelecionadaId;
   const chave = chaveMA(mes,ano);
-  const lista = STATE.entregas.filter(e=>e.campanhaId===campanhaId && e.data && e.data.slice(0,7)===chave).sort((a,b)=>b.data.localeCompare(a.data));
+  const lista = STATE.entregas.filter(e=>e.data && e.data.slice(0,7)===chave).sort((a,b)=>b.data.localeCompare(a.data));
   if(lista.length===0) return `<div class="table-empty">Nenhuma entrega neste mês.</div>`;
   return `<table><thead><tr><th>Data</th><th>Colaborador</th><th>Material</th><th>Qtd.</th><th>Status</th></tr></thead>
     <tbody>${lista.map(e=>{
@@ -1802,9 +1702,8 @@ function baixarArquivo(conteudo, nome, tipo){
   const a = document.createElement('a'); a.href=url; a.download=nome; document.body.appendChild(a); a.click(); a.remove();
 }
 function exportarCsvEntregas(mes,ano){
-  const campanhaId = STATE.campanhaSelecionadaId;
   const chave = chaveMA(mes,ano);
-  const lista = STATE.entregas.filter(e=>e.campanhaId===campanhaId && e.data && e.data.slice(0,7)===chave);
+  const lista = STATE.entregas.filter(e=>e.data && e.data.slice(0,7)===chave);
   let csv = 'Data,Colaborador,Setor,Material,Quantidade,Unidade,Status,ResponsavelContagem,Observacoes\n';
   lista.forEach(e=>{
     const c = STATE.colaboradores.find(x=>x.id===e.colaboradorId);
@@ -1849,7 +1748,7 @@ function renderRelatorios(){
   `;
 }
 function exportarCsvRanking(mes,ano){
-  const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
+  const resultados = calcularResultadosMes(mes,ano);
   let csv = 'Posicao,Colaborador,Setor,Pontuacao,PercentualMedio,MetaAtingida,TotalMateriais\n';
   resultados.forEach(r=>{
     csv += [r.posicao, r.colaborador.nome, r.colaborador.setor||'', r.pontuacao.toFixed(1), r.mediaReal.toFixed(1), r.metaAtingida?'Sim':'Nao', r.totalMateriais]
@@ -1863,7 +1762,7 @@ function exportarCsvColaboradores(){
   baixarArquivo(csv,'colaboradores.csv','text/csv;charset=utf-8;');
 }
 function exportarCsvTransferencias(mes,ano){
-  const lista = transferenciasDoMes(STATE.campanhaSelecionadaId, mes,ano);
+  const lista = transferenciasDoMes(mes,ano);
   let csv = 'Data,ColaboradorOrigem,CategoriaOrigem,ColaboradorDestino,CategoriaDestino,Quantidade,Motivo\n';
   lista.forEach(t=>{
     const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
@@ -1880,26 +1779,36 @@ window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=ex
    CONFIGURAÇÕES
    ========================================================= */
 function renderConfig(){
-  if(!STATE.isAdmin){
-    return `<div class="card"><div class="empty-state">Esta área é restrita ao administrador.</div></div>`;
-  }
   return `
+    ${!STATE.isAdmin? `<div class="banner"><span>${icon('config')}</span><div><b>Área protegida.</b> Entre no modo administrador para gerenciar campanhas, metas, senha ou apagar dados de teste.</div></div>`:''}
     <div class="section-title">Campanhas</div>
     <div class="card">
-      <p class="small-note">Cada campanha é independente: pode coexistir com outras, mesmo com períodos sobrepostos. Uma entrega ou transferência sempre pertence a uma campanha específica, escolhida no momento do registro, nunca deduzida pela data. Cada campanha tem suas próprias metas e seu próprio acúmulo de excedente.</p>
-      <div class="filters" style="margin-top:12px;">
-        <div><select id="filtroStatusCampanha" onchange="renderTabelaCampanhas()"><option value="">Todos os status</option><option value="ativa">Ativas</option><option value="planejada">Planejadas</option><option value="encerrada">Encerradas</option></select></div>
+      <p class="small-note">Cada campanha tem seu próprio período, suas próprias metas por material e seu próprio acúmulo de excedente. Uma campanha nova sempre começa do zero, sem herdar saldo de campanhas anteriores. O seletor de período do Painel geral usa as campanhas cadastradas aqui.</p>
+      <div class="table-wrap" style="margin-top:12px;">
+        <table><thead><tr><th>Nome</th><th>Início</th><th>Fim</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${campanhasOrdenadas().map(c=>`
+            <tr>
+              <td style="font-weight:700;">${escapeHtml(c.nome)}</td>
+              <td>${nomeMes(c.mesInicio)}/${c.anoInicio}</td>
+              <td>${c.anoFim? nomeMes(c.mesFim)+'/'+c.anoFim : 'Em andamento'}</td>
+              <td>${c.status==='ativa'?'<span class="badge badge-green">Ativa</span>':c.status==='encerrada'?'<span class="badge badge-grey">Encerrada</span>':'<span class="badge badge-amber">Planejada</span>'}</td>
+              <td style="text-align:right;white-space:nowrap;">
+                <button class="btn btn-ghost btn-sm" ${!STATE.isAdmin?'disabled':''} onclick="abrirFormCampanha('${c.id}')">${icon('edit',16)}</button>
+                <button class="btn btn-ghost btn-sm" ${!STATE.isAdmin?'disabled':''} onclick="confirmarExcluirCampanha('${c.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
+              </td>
+            </tr>`).join('')}
+        </tbody></table>
       </div>
-      <div class="table-wrap" style="margin-top:12px;" id="tabelaCampanhasWrap"></div>
-      <button class="btn btn-primary" style="margin-top:12px;" onclick="abrirFormCampanha()">${icon('plus',16)}Nova campanha</button>
+      <button class="btn btn-primary" style="margin-top:12px;" ${!STATE.isAdmin?'disabled':''} onclick="abrirFormCampanha()">${icon('plus',16)}Nova campanha</button>
     </div>
 
     <div class="section-title">Segurança</div>
     <div class="card">
       <div class="field"><label>Alterar senha do administrador</label>
         <div style="display:flex;gap:8px;">
-          <input type="password" id="novaSenhaAdmin" placeholder="Nova senha">
-          <button class="btn btn-outline" onclick="alterarSenhaAdmin()">Salvar</button>
+          <input type="password" id="novaSenhaAdmin" placeholder="Nova senha" ${!STATE.isAdmin?'disabled':''}>
+          <button class="btn btn-outline" ${!STATE.isAdmin?'disabled':''} onclick="alterarSenhaAdmin()">Salvar</button>
         </div>
       </div>
     </div>
@@ -1908,13 +1817,13 @@ function renderConfig(){
     <div class="section-title">Dados de demonstração</div>
     <div class="card">
       <p class="small-note">O aplicativo foi iniciado com colaboradores e entregas fictícias para mostrar como o ranking funciona. Apague-os quando começar a usar dados reais.</p>
-      <button class="btn btn-danger" onclick="apagarDadosTeste()">${icon('trash',16)}Apagar dados de teste</button>
+      <button class="btn btn-danger" ${!STATE.isAdmin?'disabled':''} onclick="apagarDadosTeste()">${icon('trash',16)}Apagar dados de teste</button>
     </div>` : ''}
 
     <div class="section-title">Conexão dos dados</div>
     <div class="card">
       ${STORAGE_MODE==='claude'? `<p class="small-note">Os dados estão salvos no armazenamento do Claude, compartilhado com qualquer pessoa que abra este mesmo link.</p>`
-        : STORAGE_MODE==='firestore'? `<p class="small-note">Os dados estão salvos no banco de dados Firebase deste app, compartilhado com qualquer pessoa que abra este site. O acesso administrativo é controlado pela senha abaixo, dentro do próprio app.</p>`
+        : STORAGE_MODE==='firestore'? `<p class="small-note">Os dados estão salvos no banco de dados Firebase deste app, compartilhado com qualquer pessoa que abra este site.</p>`
         : `<div class="banner amber"><b>Atenção: modo local.</b><div>Os dados estão salvos só neste navegador e não são vistos por outras pessoas nem por outros aparelhos. Isso normalmente acontece antes de o banco de dados Firebase ser configurado no código do app.</div></div>`}
     </div>
 
@@ -1986,6 +1895,14 @@ async function salvarCampanha(id){
   }
   const metasDefault = {};
   CATEGORIAS.forEach(cat=>{ metasDefault[cat.key] = parseFloat(document.getElementById('cpMeta_'+cat.key).value) || cat.metaDefault; });
+  // impedir sobreposição de período com outra campanha já cadastrada
+  const inicioNovo = anoInicio*12+mesInicio, fimNovo = anoFim? anoFim*12+mesFim : Infinity;
+  const conflito = STATE.campanhas.some(c=>{
+    if(c.id===id) return false;
+    const ini = c.anoInicio*12+c.mesInicio, fim = c.anoFim? c.anoFim*12+c.mesFim : Infinity;
+    return inicioNovo<=fim && fimNovo>=ini;
+  });
+  if(conflito){ erroEl.textContent='O período desta campanha se sobrepõe a outra campanha já cadastrada. Defina uma data de encerramento para a campanha existente antes de iniciar uma nova.'; erroEl.style.display='block'; return; }
   if(id){
     const c = STATE.campanhas.find(x=>x.id===id);
     Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault});
@@ -1993,7 +1910,6 @@ async function salvarCampanha(id){
     STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{} });
   }
   await salvarCampanhas();
-  if(!STATE.campanhaSelecionadaId) STATE.campanhaSelecionadaId = STATE.campanhas[STATE.campanhas.length-1].id;
   fecharModal(); renderApp();
 }
 function confirmarExcluirCampanha(id){
@@ -2018,36 +1934,12 @@ function confirmarExcluirCampanha(id){
 }
 async function excluirCampanha(id){
   STATE.campanhas = STATE.campanhas.filter(x=>x.id!==id);
-  if(STATE.campanhaSelecionadaId===id) STATE.campanhaSelecionadaId = (campanhaAtiva()||{}).id || null;
-  await salvarCampanhas();
+  if(STATE.config.painelPeriodo.campanhaId===id) STATE.config.painelPeriodo.campanhaId = null;
+  await salvarCampanhas(); await salvarConfig();
   fecharModal(); renderApp();
 }
 window.abrirFormCampanha=abrirFormCampanha; window.salvarCampanha=salvarCampanha;
 window.confirmarExcluirCampanha=confirmarExcluirCampanha; window.excluirCampanha=excluirCampanha;
-function renderTabelaCampanhas(){
-  const wrap = document.getElementById('tabelaCampanhasWrap');
-  if(!wrap) return;
-  const filtro = document.getElementById('filtroStatusCampanha')?.value || '';
-  const lista = campanhasOrdenadas().filter(c=> !filtro || c.status===filtro);
-  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma campanha ${filtro?'com esse status':'cadastrada'} ainda.</div>`; return; }
-  wrap.innerHTML = `
-    <table><thead><tr><th>Nome</th><th>Início</th><th>Fim</th><th>Status</th><th></th></tr></thead>
-    <tbody>
-      ${lista.map(c=>`
-        <tr>
-          <td style="font-weight:700;">${escapeHtml(c.nome)}</td>
-          <td>${nomeMes(c.mesInicio)}/${c.anoInicio}</td>
-          <td>${c.anoFim? nomeMes(c.mesFim)+'/'+c.anoFim : 'Em andamento'}</td>
-          <td>${c.status==='ativa'?'<span class="badge badge-green">Ativa</span>':c.status==='encerrada'?'<span class="badge badge-grey">Encerrada</span>':'<span class="badge badge-amber">Planejada</span>'}</td>
-          <td style="text-align:right;white-space:nowrap;">
-            <button class="btn btn-ghost btn-sm" onclick="abrirFormCampanha('${c.id}')">${icon('edit',16)}</button>
-            <button class="btn btn-ghost btn-sm" onclick="confirmarExcluirCampanha('${c.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
-          </td>
-        </tr>`).join('')}
-    </tbody></table>
-  `;
-}
-window.renderTabelaCampanhas = renderTabelaCampanhas;
 async function alterarSenhaAdmin(){
   if(!exigirAdmin()) return;
   const v = document.getElementById('novaSenhaAdmin').value.trim();
@@ -2073,23 +1965,19 @@ window.alterarSenhaAdmin=alterarSenhaAdmin; window.apagarDadosTeste=apagarDadosT
 async function iniciar(){
   await detectarModoArmazenamento();
   await carregarDados();
-  if(sessionStorage.getItem('reciclar-apac:isAdmin')==='1'){
-    STATE.isAdmin = true;
-  }
+  if(sessionStorage.getItem('reciclar-apac:isAdmin')==='1') STATE.isAdmin = true;
   document.getElementById('loading').style.display='none';
   document.getElementById('app').style.display='flex';
   renderApp();
   // pós-render: preencher tabelas filtráveis que dependem de elementos já no DOM
   if(STATE.view==='colaboradores') renderTabelaColaboradores();
   if(STATE.view==='entregas') renderTabelaEntregas();
-  if(STATE.view==='config') renderTabelaCampanhas();
 }
 const _origRenderApp = renderApp;
 renderApp = function(){
   _origRenderApp();
   if(STATE.view==='colaboradores') setTimeout(renderTabelaColaboradores,0);
   if(STATE.view==='entregas') setTimeout(renderTabelaEntregas,0);
-  if(STATE.view==='config') setTimeout(renderTabelaCampanhas,0);
 };
 iniciar();
 </script>
