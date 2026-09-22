@@ -245,6 +245,22 @@ const CATEGORIAS = [
 const TIPO_OUTROS = 'outros';
 const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const CATEGORIA_MAP = Object.fromEntries(CATEGORIAS.map(c=>[c.key,c]));
+/* Cada campanha pode personalizar o nome exibido das seis categorias oficiais do
+   regulamento (a chave interna nunca muda, só o rótulo) e também cadastrar materiais
+   extras próprios, com sua própria meta. categoriasDaCampanha() devolve a lista completa
+   (oficiais + extras) que o cálculo de pontuação, os formulários e os relatórios usam. */
+function categoriasDaCampanha(campanha){
+  const oficiais = CATEGORIAS.map(cat => ({
+    ...cat,
+    label: (campanha && campanha.nomesPersonalizados && campanha.nomesPersonalizados[cat.key]) || cat.label,
+  }));
+  const extras = (campanha && campanha.materiaisExtras) || [];
+  return [...oficiais, ...extras];
+}
+function resolverCategoria(campanhaId, tipoKey){
+  const campanha = campanhaPorId(campanhaId);
+  return categoriasDaCampanha(campanha).find(cat => cat.key === tipoKey) || null;
+}
 
 /* ---------- ESTADO ---------- */
 let STATE = {
@@ -488,9 +504,8 @@ function dataDentroDaCampanha(campanhaId, dataISO){
 
 /* ---------- LÓGICA DE NEGÓCIO ---------- */
 function normalizarQuantidadeUnidades(entrega){
-  const cat = CATEGORIA_MAP[entrega.tipo];
-  if(!cat) return 0;
   if(entrega.tipo==='latinhas'){
+    const cat = CATEGORIA_MAP.latinhas;
     if(entrega.unidade==='kg') return entrega.quantidade * cat.unidadesPorKg;
     if(entrega.unidade==='kg-x10') return (entrega.quantidade/10) * cat.unidadesPorKg;
     return entrega.quantidade;
@@ -606,8 +621,9 @@ window.mudarPainelPeriodo = mudarPainelPeriodo;
    Tudo isolado dentro da campanha informada — nada aqui vaza para outra campanha. */
 function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
   const meses = todosMesesDaCampanhaAte(campanhaId, mesAlvo,anoAlvo);
+  const categorias = categoriasDaCampanha(campanhaPorId(campanhaId));
   const saldos = {};
-  STATE.colaboradores.forEach(c=>{ saldos[c.id]={}; CATEGORIAS.forEach(cat=> saldos[c.id][cat.key]={}); });
+  STATE.colaboradores.forEach(c=>{ saldos[c.id]={}; categorias.forEach(cat=> saldos[c.id][cat.key]={}); });
   meses.forEach(({mes,ano})=>{
     const chave = chaveMA(mes,ano);
     const metas = getMetasDoMes(campanhaId, mes,ano);
@@ -616,7 +632,7 @@ function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
     const anterior = mesAnteriorDe(campanhaId, mes,ano);
     const chaveAnterior = anterior? chaveMA(anterior.mes,anterior.ano) : null;
     STATE.colaboradores.forEach(c=>{
-      CATEGORIAS.forEach(cat=>{
+      categorias.forEach(cat=>{
         let creditos = 0;
         entregas.filter(e=>e.colaboradorId===c.id && e.tipo===cat.key).forEach(e=> creditos += normalizarQuantidadeUnidades(e));
         transferencias.filter(t=>t.colaboradorDestinoId===c.id && t.categoriaDestino===cat.key).forEach(t=> creditos += t.quantidade);
@@ -638,12 +654,13 @@ function saldoDisponivelAntes(campanhaId, colaboradorId, categoria, mes, ano){
 }
 function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
   const chave = chaveMA(mes,ano);
+  const categorias = categoriasDaCampanha(campanhaPorId(campanhaId));
   let colaboradores = STATE.colaboradores.filter(c=> !setorFiltro || c.setor===setorFiltro);
   colaboradores = colaboradores.filter(c=> !c.dataCadastro || c.dataCadastro.slice(0,7) <= chave);
   const entregasDoMes = entregasValidadasDoMes(campanhaId, mes,ano);
   const resultados = colaboradores.map(c=>{
     const totais = {}, percentuais = {}, frescos = {};
-    CATEGORIAS.forEach(cat=>{
+    categorias.forEach(cat=>{
       const s = saldos[c.id]?.[cat.key]?.[chave];
       const totalDisponivel = s? s.totalDisponivel : 0;
       const meta = s? s.meta : (getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault);
@@ -651,12 +668,12 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
       frescos[cat.key] = Math.max(0, s? s.creditos : 0);
       percentuais[cat.key] = meta>0 ? (totalDisponivel/meta*100) : 0;
     });
-    const percentuaisCapped = CATEGORIAS.map(cat=>Math.min(100,percentuais[cat.key]));
-    const pontuacao = percentuaisCapped.reduce((a,b)=>a+b,0)/CATEGORIAS.length;
-    const percentuaisReais = CATEGORIAS.map(cat=>percentuais[cat.key]);
-    const mediaReal = percentuaisReais.reduce((a,b)=>a+b,0)/CATEGORIAS.length;
-    const metaAtingida = CATEGORIAS.every(cat=>percentuais[cat.key]>=100);
-    const totalMateriais = Math.round(CATEGORIAS.reduce((a,cat)=>a+frescos[cat.key],0));
+    const percentuaisCapped = categorias.map(cat=>Math.min(100,percentuais[cat.key]));
+    const pontuacao = percentuaisCapped.reduce((a,b)=>a+b,0)/categorias.length;
+    const percentuaisReais = categorias.map(cat=>percentuais[cat.key]);
+    const mediaReal = percentuaisReais.reduce((a,b)=>a+b,0)/categorias.length;
+    const metaAtingida = categorias.every(cat=>percentuais[cat.key]>=100);
+    const totalMateriais = Math.round(categorias.reduce((a,cat)=>a+frescos[cat.key],0));
     const datasDoColaborador = entregasDoMes.filter(e=>e.colaboradorId===c.id).map(e=>e.data).sort();
     const primeiraEntrega = datasDoColaborador.length? datasDoColaborador[0] : null;
     return { colaborador:c, totais, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais, primeiraEntrega };
@@ -1262,7 +1279,7 @@ function renderTabelaEntregas(){
     <tbody>
       ${lista.map(e=>{
         const c = STATE.colaboradores.find(x=>x.id===e.colaboradorId);
-        const cat = CATEGORIA_MAP[e.tipo];
+        const cat = resolverCategoria(campanhaId, e.tipo);
         const unidLabel = e.tipo==='latinhas'? (e.unidade==='kg'?'kg':'unid.') : (cat?cat.unidade.replace('unidades','unid.').replace('cartelas','cartelas'):'');
         return `<tr>
           <td>${formatarData(e.data)}</td>
@@ -1293,8 +1310,8 @@ function renderTabelaTransferencias(mes,ano){
       ${lista.map(t=>{
         const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
         const destino = STATE.colaboradores.find(x=>x.id===t.colaboradorDestinoId);
-        const catOrigem = CATEGORIA_MAP[t.categoriaOrigem];
-        const catDestino = CATEGORIA_MAP[t.categoriaDestino];
+        const catOrigem = resolverCategoria(campanhaId, t.categoriaOrigem);
+        const catDestino = resolverCategoria(campanhaId, t.categoriaDestino);
         return `<tr>
           <td>${formatarData(t.data)}</td>
           <td>${escapeHtml(origem?origem.nome:'(removido)')} <span class="small-note">— ${catOrigem?escapeHtml(catOrigem.label.split(' (')[0]):''}</span></td>
@@ -1312,7 +1329,7 @@ function abrirFormEntrega(id){
   const e = id? STATE.entregas.find(x=>x.id===id) : null;
   if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de registrar entregas.'); return; }
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
-  const catOpcoes = CATEGORIAS.map(c=>`<option value="${c.key}" ${e&&e.tipo===c.key?'selected':''}>${escapeHtml(c.label)}</option>`).join('')
+  const catOpcoes = categoriasDaCampanha(campanha).map(c=>`<option value="${c.key}" ${e&&e.tipo===c.key?'selected':''}>${escapeHtml(c.label)}</option>`).join('')
     + `<option value="${TIPO_OUTROS}" ${e&&e.tipo===TIPO_OUTROS?'selected':''}>Outros materiais aceitos</option>`;
   abrirModal(`
     <div class="modal-head"><h3>${e?'Editar entrega':'Nova entrega'}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
@@ -1349,7 +1366,7 @@ function atualizarCampoUnidadeEntrega(e){
   } else if(tipo===TIPO_OUTROS){
     holder.innerHTML = `<input type="text" id="fUnidade" value="${e&&e.unidade?escapeHtml(e.unidade):'unidades'}" placeholder="Ex: kg, sacos, unidades">`;
   } else {
-    const cat = CATEGORIA_MAP[tipo];
+    const cat = resolverCategoria(STATE.campanhaSelecionadaId, tipo);
     holder.innerHTML = `<input type="text" value="${cat?cat.unidade:''}" disabled style="background:#F3F5F3;color:var(--text-muted);"><input type="hidden" id="fUnidade" value="unidades">`;
   }
 }
@@ -1402,8 +1419,9 @@ function renderSaldoTransportado(mes,ano){
   const chave = chaveMA(mes,ano);
   const saldos = calcularSaldosAcumulados(campanhaId, mes,ano);
   const porColaborador = {};
+  const categorias = categoriasDaCampanha(campanhaPorId(campanhaId));
   STATE.colaboradores.forEach(c=>{
-    CATEGORIAS.forEach(cat=>{
+    categorias.forEach(cat=>{
       const s = saldos[c.id]?.[cat.key]?.[chave];
       if(s && s.carryIn > 0){
         if(!porColaborador[c.id]) porColaborador[c.id] = { colaborador:c, total:0, itens:[] };
@@ -1457,7 +1475,7 @@ function abrirFormTransferencia(){
   if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de transferir material.'); return; }
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const opcoesColab = STATE.colaboradores.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
-  const opcoesCategoria = CATEGORIAS.map(c=>`<option value="${c.key}">${escapeHtml(c.label.split(' (')[0])}</option>`).join('');
+  const opcoesCategoria = categoriasDaCampanha(campanha).map(c=>`<option value="${c.key}">${escapeHtml(c.label.split(' (')[0])}</option>`).join('');
   abrirModal(`
     <div class="modal-head"><h3>Transferir material</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <div class="banner" style="margin-bottom:14px;"><span>${icon('ranking')}</span><div>Campanha: <b>${escapeHtml(campanha?campanha.nome:'—')}</b></div></div>
@@ -1493,7 +1511,7 @@ function atualizarSaldoTransferencia(){
   const data = dataEl.value; if(!data) return;
   const mes = +data.slice(5,7), ano = +data.slice(0,4);
   const saldo = saldoDisponivelAntes(STATE.campanhaSelecionadaId, colabEl.value, catEl.value, mes, ano);
-  const cat = CATEGORIA_MAP[catEl.value];
+  const cat = resolverCategoria(STATE.campanhaSelecionadaId, catEl.value);
   info.innerHTML = `Saldo disponível deste colaborador em ${escapeHtml(cat?cat.label.split(' (')[0]:'')} até ${nomeMes(mes)}/${ano}: <b>${saldo.toFixed(0)}</b> unidades equivalentes.`;
 }
 window.atualizarSaldoTransferencia = atualizarSaldoTransferencia;
@@ -1624,15 +1642,16 @@ function renderTabelaRanking(resultados, completa, mes, ano){
 }
 function abrirDetalhesColaborador(colaboradorId, mes, ano){
   const campanhaId = STATE.campanhaSelecionadaId;
+  const categorias = categoriasDaCampanha(campanhaPorId(campanhaId));
   const resultados = calcularResultadosMes(campanhaId, mes,ano);
   const r = resultados.find(x=>x.colaborador.id===colaboradorId);
   if(!r) return;
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(r.colaborador.nome)} — ${nomeMes(mes)}/${ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note" style="margin-top:-6px;">A pontuação geral é a média do cumprimento das seis categorias abaixo, cada uma contando no máximo 100%. Por isso, entregar bastante em só uma ou duas categorias não é suficiente para uma pontuação alta: é preciso avançar nas seis.</p>
+    <p class="small-note" style="margin-top:-6px;">A pontuação geral é a média do cumprimento das ${categorias.length} categorias abaixo, cada uma contando no máximo 100%. Por isso, entregar bastante em só uma ou duas categorias não é suficiente para uma pontuação alta: é preciso avançar em todas.</p>
     <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Disponível (com excedente)</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
       <tbody>
-        ${CATEGORIAS.map(cat=>{
+        ${categorias.map(cat=>{
           const total = r.totais[cat.key]||0;
           const meta = getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault;
           const pct = r.percentuais[cat.key]||0;
@@ -1645,7 +1664,7 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
         }).join('')}
       </tbody></table>
     </div>
-    <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das seis categorias, cada uma limitada a 100%).</p>
+    <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%).</p>
   `, true);
 }
 window.abrirDetalhesColaborador = abrirDetalhesColaborador;
@@ -1808,7 +1827,7 @@ function renderTabelaEntregasHistorico(mes,ano){
   return `<table><thead><tr><th>Data</th><th>Colaborador</th><th>Material</th><th>Qtd.</th><th>Status</th></tr></thead>
     <tbody>${lista.map(e=>{
       const c = STATE.colaboradores.find(x=>x.id===e.colaboradorId);
-      const cat = CATEGORIA_MAP[e.tipo];
+      const cat = resolverCategoria(campanhaId, e.tipo);
       return `<tr><td>${formatarData(e.data)}</td><td>${escapeHtml(c?c.nome:'(removido)')}</td><td>${cat?escapeHtml(cat.label.split(' (')[0]):'Outros'}</td><td>${e.quantidade}</td><td>${e.statusValidacao==='validado'?'<span class="badge badge-green">Validado</span>':'<span class="badge badge-amber">Pendente</span>'}</td></tr>`;
     }).join('')}</tbody></table>`;
 }
@@ -1824,7 +1843,7 @@ function exportarCsvEntregas(mes,ano){
   let csv = 'Data,Colaborador,Setor,Material,Quantidade,Unidade,Status,ResponsavelContagem,Observacoes\n';
   lista.forEach(e=>{
     const c = STATE.colaboradores.find(x=>x.id===e.colaboradorId);
-    const cat = CATEGORIA_MAP[e.tipo];
+    const cat = resolverCategoria(campanhaId, e.tipo);
     const linha = [e.data, c?c.nome:'', c?c.setor:'', cat?cat.label:'Outros', e.quantidade, e.unidade, e.statusValidacao, e.responsavelContagem||'', (e.observacoes||'').replace(/,/g,';')];
     csv += linha.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')+'\n';
   });
@@ -1884,7 +1903,7 @@ function exportarCsvTransferencias(mes,ano){
   lista.forEach(t=>{
     const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
     const destino = STATE.colaboradores.find(x=>x.id===t.colaboradorDestinoId);
-    const catO = CATEGORIA_MAP[t.categoriaOrigem], catD = CATEGORIA_MAP[t.categoriaDestino];
+    const catO = resolverCategoria(STATE.campanhaSelecionadaId, t.categoriaOrigem), catD = resolverCategoria(STATE.campanhaSelecionadaId, t.categoriaDestino);
     csv += [t.data, origem?origem.nome:'', catO?catO.label:'', destino?destino.nome:'', catD?catD.label:'', t.quantidade, (t.motivo||'').replace(/,/g,';')]
       .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')+'\n';
   });
@@ -1950,6 +1969,8 @@ function abrirFormCampanha(id){
   const c = id? STATE.campanhas.find(x=>x.id===id) : null;
   const hoje = mesAnoAtual();
   const metas = c? c.metasDefault : Object.fromEntries(CATEGORIAS.map(cat=>[cat.key,cat.metaDefault]));
+  const nomesPersonalizados = (c && c.nomesPersonalizados) || {};
+  window._materiaisExtrasForm = c ? JSON.parse(JSON.stringify(c.materiaisExtras||[])) : [];
   const dataInicioValor = c? `${c.anoInicio}-${String(c.mesInicio).padStart(2,'0')}-01` : `${hoje.ano}-${String(hoje.mes).padStart(2,'0')}-01`;
   const dataFimValor = c && c.anoFim? `${c.anoFim}-${String(c.mesFim).padStart(2,'0')}-01` : '';
   abrirModal(`
@@ -1967,24 +1988,58 @@ function abrirFormCampanha(id){
         <option value="encerrada" ${c&&c.status==='encerrada'?'selected':''}>Encerrada</option>
       </select>
     </div>
-    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Metas mensais desta campanha</div>
-    <p class="small-note" style="margin-top:-4px;">Alterar uma meta aqui vale para os próximos meses da campanha. Meses já registrados mantêm a meta que estava em vigor na época.</p>
+    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Materiais e metas mensais desta campanha</div>
+    <p class="small-note" style="margin-top:-4px;">O nome de cada material pode ser personalizado para esta campanha. Alterar uma meta aqui vale para os próximos meses; meses já registrados mantêm a meta que estava em vigor na época.</p>
     <div class="grid grid-2" style="margin-top:8px;">
       ${CATEGORIAS.map(cat=>`
-        <div class="field"><label>${escapeHtml(cat.label)}</label>
-          <div style="display:flex;gap:8px;align-items:center;">
+        <div class="field"><label>Nome do material</label>
+          <input type="text" id="cpNomeCat_${cat.key}" value="${escapeHtml(nomesPersonalizados[cat.key]||cat.label)}">
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
             <input type="number" min="0" id="cpMeta_${cat.key}" value="${metas[cat.key]}">
             <span class="small-note" style="white-space:nowrap;">${cat.unidade}</span>
           </div>
         </div>`).join('')}
     </div>
+    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Materiais extras desta campanha</div>
+    <p class="small-note" style="margin-top:-4px;">Além dos seis materiais do regulamento, esta campanha pode aceitar outros materiais próprios, cada um com sua meta mensal.</p>
+    <div id="extrasWrap" style="margin-top:8px;"></div>
+    <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="adicionarMaterialExtra()">${icon('plus',14)}Adicionar material</button>
     <div id="campanhaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin:8px 0;"></div>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-primary btn-block" onclick="salvarCampanha('${id||''}')">${icon('check',16)}Salvar</button>
     </div>
   `);
+  renderMateriaisExtrasForm();
 }
+function renderMateriaisExtrasForm(){
+  const wrap = document.getElementById('extrasWrap');
+  if(!wrap) return;
+  const lista = window._materiaisExtrasForm || [];
+  if(lista.length===0){ wrap.innerHTML = `<p class="small-note">Nenhum material extra cadastrado ainda.</p>`; return; }
+  wrap.innerHTML = lista.map(item => `
+    <div class="grid grid-3" style="align-items:flex-end;margin-bottom:8px;" data-extra-key="${item.key}">
+      <div class="field" style="margin-bottom:0;"><label>Nome do material</label><input type="text" id="extraNome_${item.key}" value="${escapeHtml(item.label||'')}" placeholder="Ex: Cobre"></div>
+      <div class="field" style="margin-bottom:0;"><label>Meta mensal</label><input type="number" min="0" id="extraMeta_${item.key}" value="${item.metaDefault||0}"></div>
+      <div class="field" style="margin-bottom:0;display:flex;gap:8px;align-items:center;">
+        <input type="text" id="extraUnidade_${item.key}" value="${escapeHtml(item.unidade||'unidades')}" placeholder="unidade" style="flex:1;">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="removerMaterialExtra('${item.key}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
+      </div>
+    </div>
+  `).join('');
+}
+window.renderMateriaisExtrasForm = renderMateriaisExtrasForm;
+function adicionarMaterialExtra(){
+  window._materiaisExtrasForm = window._materiaisExtrasForm || [];
+  window._materiaisExtrasForm.push({ key: 'extra_'+uid(), label:'', metaDefault:0, unidade:'unidades' });
+  renderMateriaisExtrasForm();
+}
+window.adicionarMaterialExtra = adicionarMaterialExtra;
+function removerMaterialExtra(key){
+  window._materiaisExtrasForm = (window._materiaisExtrasForm||[]).filter(x=>x.key!==key);
+  renderMateriaisExtrasForm();
+}
+window.removerMaterialExtra = removerMaterialExtra;
 async function salvarCampanha(id){
   const nome = document.getElementById('cpNome').value.trim();
   const dataInicio = document.getElementById('cpDataInicio').value;
@@ -2001,12 +2056,28 @@ async function salvarCampanha(id){
     if(anoFim*12+mesFim < anoInicio*12+mesInicio){ erroEl.textContent='A data de encerramento não pode ser antes da data de início.'; erroEl.style.display='block'; return; }
   }
   const metasDefault = {};
-  CATEGORIAS.forEach(cat=>{ metasDefault[cat.key] = parseFloat(document.getElementById('cpMeta_'+cat.key).value) || cat.metaDefault; });
+  const nomesPersonalizados = {};
+  CATEGORIAS.forEach(cat=>{
+    metasDefault[cat.key] = parseFloat(document.getElementById('cpMeta_'+cat.key).value) || cat.metaDefault;
+    const nomeDigitado = document.getElementById('cpNomeCat_'+cat.key).value.trim();
+    if(nomeDigitado && nomeDigitado!==cat.label) nomesPersonalizados[cat.key] = nomeDigitado;
+  });
+  const materiaisExtras = [];
+  (window._materiaisExtrasForm||[]).forEach(item=>{
+    const nomeEl = document.getElementById('extraNome_'+item.key);
+    if(!nomeEl) return; // linha removida da tela
+    const label = nomeEl.value.trim();
+    if(!label) return; // ignora linhas deixadas em branco
+    const metaDefault = parseFloat(document.getElementById('extraMeta_'+item.key).value) || 0;
+    const unidade = document.getElementById('extraUnidade_'+item.key).value.trim() || 'unidades';
+    materiaisExtras.push({ key: item.key, label, metaDefault, unidade });
+    metasDefault[item.key] = metaDefault;
+  });
   if(id){
     const c = STATE.campanhas.find(x=>x.id===id);
-    Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault});
+    Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, nomesPersonalizados, materiaisExtras});
   } else {
-    STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{} });
+    STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{}, nomesPersonalizados, materiaisExtras });
   }
   await salvarCampanhas();
   if(!STATE.campanhaSelecionadaId) STATE.campanhaSelecionadaId = STATE.campanhas[STATE.campanhas.length-1].id;
