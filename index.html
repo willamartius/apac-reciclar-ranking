@@ -250,6 +250,19 @@ const CATEGORIA_MAP = Object.fromEntries(CATEGORIAS.map(c=>[c.key,c]));
    extras próprios, com sua própria meta. categoriasDaCampanha() devolve a lista completa
    (oficiais + extras) que o cálculo de pontuação, os formulários e os relatórios usam. */
 function categoriasDaCampanha(campanha){
+  const desativadas = (campanha && campanha.categoriasDesativadas) || [];
+  const oficiais = CATEGORIAS
+    .filter(cat => !desativadas.includes(cat.key))
+    .map(cat => ({
+      ...cat,
+      label: (campanha && campanha.nomesPersonalizados && campanha.nomesPersonalizados[cat.key]) || cat.label,
+    }));
+  const extras = (campanha && campanha.materiaisExtras) || [];
+  return [...oficiais, ...extras];
+}
+// Igual à anterior, mas sem excluir materiais desativados — usada só para exibir o nome de
+// um material em registros já existentes (tabelas, CSV), nunca para calcular pontuação.
+function todasCategoriasDaCampanha(campanha){
   const oficiais = CATEGORIAS.map(cat => ({
     ...cat,
     label: (campanha && campanha.nomesPersonalizados && campanha.nomesPersonalizados[cat.key]) || cat.label,
@@ -259,7 +272,7 @@ function categoriasDaCampanha(campanha){
 }
 function resolverCategoria(campanhaId, tipoKey){
   const campanha = campanhaPorId(campanhaId);
-  return categoriasDaCampanha(campanha).find(cat => cat.key === tipoKey) || null;
+  return todasCategoriasDaCampanha(campanha).find(cat => cat.key === tipoKey) || null;
 }
 
 /* ---------- ESTADO ---------- */
@@ -1989,21 +2002,29 @@ function abrirFormCampanha(id){
       </select>
     </div>
     <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Materiais e metas mensais desta campanha</div>
-    <p class="small-note" style="margin-top:-4px;">O nome de cada material pode ser personalizado para esta campanha. Alterar uma meta aqui vale para os próximos meses; meses já registrados mantêm a meta que estava em vigor na época.</p>
+    <p class="small-note" style="margin-top:-4px;">O nome de cada material pode ser personalizado para esta campanha. Desmarque um material do regulamento que não se aplica aqui — ele fica de fora do cálculo desta campanha, sem apagar a definição oficial. Alterar uma meta aqui vale para os próximos meses; meses já registrados mantêm a meta que estava em vigor na época.</p>
     <div class="grid grid-2" style="margin-top:8px;">
-      ${CATEGORIAS.map(cat=>`
-        <div class="field"><label>Nome do material</label>
-          <input type="text" id="cpNomeCat_${cat.key}" value="${escapeHtml(nomesPersonalizados[cat.key]||cat.label)}">
+      ${CATEGORIAS.map(cat=>{
+        const ativo = !((c && c.categoriasDesativadas) || []).includes(cat.key);
+        return `
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="cpUsar_${cat.key}" ${ativo?'checked':''} onchange="atualizarCampoMaterialOficial('${cat.key}')" style="width:auto;">
+            Usar este material nesta campanha
+          </label>
+          <input type="text" id="cpNomeCat_${cat.key}" value="${escapeHtml(nomesPersonalizados[cat.key]||cat.label)}" style="margin-top:6px;" ${ativo?'':'disabled'}>
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
-            <input type="number" min="0" id="cpMeta_${cat.key}" value="${metas[cat.key]}">
+            <input type="number" min="0" id="cpMeta_${cat.key}" value="${metas[cat.key]}" ${ativo?'':'disabled'}>
             <span class="small-note" style="white-space:nowrap;">${cat.unidade}</span>
           </div>
-        </div>`).join('')}
+        </div>`;
+      }).join('')}
     </div>
     <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Materiais extras desta campanha</div>
     <p class="small-note" style="margin-top:-4px;">Além dos seis materiais do regulamento, esta campanha pode aceitar outros materiais próprios, cada um com sua meta mensal.</p>
     <div id="extrasWrap" style="margin-top:8px;"></div>
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="adicionarMaterialExtra()">${icon('plus',14)}Adicionar material</button>
+    <p class="small-note" id="avisoSemMateriais" style="display:none;color:var(--vermelho);margin-top:8px;">Pelo menos um material precisa ficar ativo.</p>
     <div id="campanhaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin:8px 0;"></div>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
@@ -2028,6 +2049,12 @@ function renderMateriaisExtrasForm(){
     </div>
   `).join('');
 }
+function atualizarCampoMaterialOficial(key){
+  const ativo = document.getElementById('cpUsar_'+key).checked;
+  document.getElementById('cpNomeCat_'+key).disabled = !ativo;
+  document.getElementById('cpMeta_'+key).disabled = !ativo;
+}
+window.atualizarCampoMaterialOficial = atualizarCampoMaterialOficial;
 window.renderMateriaisExtrasForm = renderMateriaisExtrasForm;
 function adicionarMaterialExtra(){
   window._materiaisExtrasForm = window._materiaisExtrasForm || [];
@@ -2057,7 +2084,10 @@ async function salvarCampanha(id){
   }
   const metasDefault = {};
   const nomesPersonalizados = {};
+  const categoriasDesativadas = [];
   CATEGORIAS.forEach(cat=>{
+    const ativo = document.getElementById('cpUsar_'+cat.key).checked;
+    if(!ativo) categoriasDesativadas.push(cat.key);
     metasDefault[cat.key] = parseFloat(document.getElementById('cpMeta_'+cat.key).value) || cat.metaDefault;
     const nomeDigitado = document.getElementById('cpNomeCat_'+cat.key).value.trim();
     if(nomeDigitado && nomeDigitado!==cat.label) nomesPersonalizados[cat.key] = nomeDigitado;
@@ -2073,11 +2103,15 @@ async function salvarCampanha(id){
     materiaisExtras.push({ key: item.key, label, metaDefault, unidade });
     metasDefault[item.key] = metaDefault;
   });
+  const totalAtivos = (CATEGORIAS.length - categoriasDesativadas.length) + materiaisExtras.length;
+  const avisoEl = document.getElementById('avisoSemMateriais');
+  if(totalAtivos===0){ avisoEl.style.display='block'; erroEl.textContent='Pelo menos um material precisa ficar ativo nesta campanha.'; erroEl.style.display='block'; return; }
+  avisoEl.style.display='none';
   if(id){
     const c = STATE.campanhas.find(x=>x.id===id);
-    Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, nomesPersonalizados, materiaisExtras});
+    Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, nomesPersonalizados, materiaisExtras, categoriasDesativadas});
   } else {
-    STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{}, nomesPersonalizados, materiaisExtras });
+    STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{}, nomesPersonalizados, materiaisExtras, categoriasDesativadas });
   }
   await salvarCampanhas();
   if(!STATE.campanhaSelecionadaId) STATE.campanhaSelecionadaId = STATE.campanhas[STATE.campanhas.length-1].id;
