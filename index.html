@@ -156,6 +156,7 @@ td{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:middle
 tr:last-child td{border-bottom:none;}
 .table-wrap{overflow-x:auto;border-radius:12px;}
 .table-empty{padding:30px 10px;text-align:center;color:var(--text-muted);font-size:13.5px;}
+.dashboard-ranking-mobile{display:none;}
 
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:800;}
 .badge-green{background:var(--verde-100);color:var(--verde-700);}
@@ -259,6 +260,12 @@ select{text-overflow:ellipsis;}
   .bottomnav button{font-size:9.5px;}
   .bottomnav button svg{width:19px;height:19px;}
   .section-tabs button{font-size:12px;padding:10px 5px;}
+  .dashboard-ranking-table{display:none;}
+  .dashboard-ranking-mobile{display:grid;gap:8px;}
+  .dashboard-ranking-mobile-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:9px;padding:11px 12px;background:#fff;border:1px solid var(--border);border-radius:10px;}
+  .dashboard-ranking-mobile-position{font-weight:800;color:var(--verde-800);text-align:center;}
+  .dashboard-ranking-mobile-name{font-size:13px;font-weight:700;overflow-wrap:anywhere;}
+  .dashboard-ranking-mobile-score{font-size:13px;font-weight:800;color:var(--verde-800);white-space:nowrap;}
   .modal{padding:18px 14px calc(18px + env(safe-area-inset-bottom));}
   .modal-actions{flex-wrap:wrap;}
   .modal-actions > .btn{flex:1 1 120px;justify-content:center;}
@@ -1366,7 +1373,16 @@ function renderDashboard(){
       </div>
     </div>
     <div class="section-title">Ranking resumido — ${nomeMes(mes)} de ${ano}</div>
-    ${renderTabelaRanking(resultados.slice(0,5), false, mes, ano)}
+    <div class="dashboard-ranking-table table-wrap">${renderTabelaRanking(resultados.slice(0,5), false, mes, ano)}</div>
+    <div class="dashboard-ranking-mobile">
+      ${resultados.slice(0,5).map(r=>`
+        <div class="dashboard-ranking-mobile-item">
+          <span class="dashboard-ranking-mobile-position">${r.posicao?`${r.posicao}º`:'—'}</span>
+          <span class="dashboard-ranking-mobile-name">${escapeHtml(r.colaborador.nome)}</span>
+          <span class="dashboard-ranking-mobile-score">${r.pontuacao.toFixed(0)} pts</span>
+        </div>
+      `).join('')}
+    </div>
     ${resultados.length>5? `<div style="margin-top:10px;"><button class="btn btn-outline" onclick="irPara('ranking')">${icon('ranking')}Ver ranking completo</button></div>`:''}
   `;
 }
