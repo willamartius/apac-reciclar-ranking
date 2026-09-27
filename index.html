@@ -350,11 +350,33 @@ async function storageSet(key, value){
 function defaultConfig(){
   return {
     senhaAdmin: '1234',
-    temDadosTeste: true,
     painelPeriodo: { ano: null, tipo: '6' }, // ver calcularJanelaPainel() — a campanha é escolhida à parte, em STATE.campanhaSelecionadaId
   };
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function campanhaSelecionadaPersistida(){
+  const valor = sessionStorage.getItem('reciclar-apac:campanhaSelecionadaId') || localStorage.getItem('reciclar-apac:campanhaSelecionadaId');
+  if(!valor) return null;
+  const campanha = campanhaPorId(valor);
+  return campanha ? valor : null;
+}
+function salvarCampanhaSelecionadaPersistida(id){
+  if(!id){
+    sessionStorage.removeItem('reciclar-apac:campanhaSelecionadaId');
+    localStorage.removeItem('reciclar-apac:campanhaSelecionadaId');
+    return;
+  }
+  sessionStorage.setItem('reciclar-apac:campanhaSelecionadaId', id);
+  try { localStorage.setItem('reciclar-apac:campanhaSelecionadaId', id); } catch (e) { /* quota/privacidade do navegador */ }
+}
+function campanhaPadrao(){
+  const nomePadrao = 'Reciclar é Cuidar da Casa Comum';
+  const porNome = STATE.campanhas.find(c => c.nome === nomePadrao);
+  if(porNome) return porNome;
+  const ativas = campanhasOrdenadas().filter(c => c.status === 'ativa');
+  if(ativas.length) return ativas[ativas.length - 1];
+  return campanhasOrdenadas()[0] || null;
+}
 function hoje(){ return new Date(); }
 function mesAnoAtual(){ const d=hoje(); return {mes:d.getMonth()+1, ano:d.getFullYear()}; }
 function chaveMA(mes,ano){ return ano+'-'+String(mes).padStart(2,'0'); }
@@ -423,6 +445,16 @@ function campanhaAtiva(){
   const ativas = ordenadas.filter(c=>c.status==='ativa');
   if(ativas.length) return ativas[ativas.length-1];
   return ordenadas.length? ordenadas[ordenadas.length-1] : null;
+}
+function selecionarCampanhaPadraoSeNecessario(){
+  const persistida = campanhaSelecionadaPersistida();
+  if(persistida){
+    STATE.campanhaSelecionadaId = persistida;
+    return;
+  }
+  const padrao = campanhaPadrao();
+  STATE.campanhaSelecionadaId = padrao ? padrao.id : null;
+  salvarCampanhaSelecionadaPersistida(STATE.campanhaSelecionadaId);
 }
 function campanhaTemEntregas(campanhaId){
   return STATE.entregas.some(e=>e.campanhaId===campanhaId) || STATE.transferencias.some(t=>t.campanhaId===campanhaId);
@@ -502,7 +534,7 @@ async function carregarDados(){
       if(mudouTransf) await salvarTransferencias();
     }
   }
-  STATE.campanhaSelecionadaId = (campanhaAtiva()||{}).id || null;
+  selecionarCampanhaPadraoSeNecessario();
   const {mes,ano} = mesAnoAtual();
   STATE.dashMes=mes; STATE.dashAno=ano;
   STATE.rankMes=mes; STATE.rankAno=ano;
@@ -512,7 +544,11 @@ async function salvarColaboradores(){ await storageSet('colaboradores', STATE.co
 async function salvarEntregas(){ await storageSet('entregas', STATE.entregas); }
 async function salvarTransferencias(){ await storageSet('transferencias', STATE.transferencias); }
 async function salvarConfig(){ await storageSet('config', STATE.config); }
-function mudarCampanhaSelecionada(id){ STATE.campanhaSelecionadaId = id; renderApp(); }
+function mudarCampanhaSelecionada(id){
+  STATE.campanhaSelecionadaId = id;
+  salvarCampanhaSelecionadaPersistida(id);
+  renderApp();
+}
 window.mudarCampanhaSelecionada = mudarCampanhaSelecionada;
 /* A campanha nunca é escolhida pela data — mas, depois de escolhida, a data do
    registro precisa estar dentro do período daquela campanha específica. */
@@ -959,7 +995,6 @@ function renderDashboard(){
   const resumoCampanha = calcularResumoCampanha(saldosPainel, campanhaId, mesesPainel);
 
   return `
-    ${STATE.config.temDadosTeste? `<div class="banner amber"><span>${icon('leaf')}</span><div><b>Este ranking contém dados fictícios de demonstração.</b> Vá em Configurações para apagá-los quando começar a usar dados reais.</div></div>`:''}
     <div class="toolbar">
       <div class="toolbar-left"><span class="small-note">Mês de referência do painel</span></div>
       <div class="toolbar-right">${seletorMesAno('dash', mes, ano)}</div>
@@ -2131,18 +2166,18 @@ function renderConfig(){
       </div>
     </div>
 
-    ${STATE.config.temDadosTeste? `
-    <div class="section-title">Dados de demonstração</div>
-    <div class="card">
-      <p class="small-note">O aplicativo foi iniciado com colaboradores e entregas fictícias para mostrar como o ranking funciona. Apague-os quando começar a usar dados reais.</p>
-      <button class="btn btn-danger" onclick="apagarDadosTeste()">${icon('trash',16)}Apagar dados de teste</button>
-    </div>` : ''}
-
-    <div class="section-title">Conexão dos dados</div>
-    <div class="card">
-      ${STORAGE_MODE==='claude'? `<p class="small-note">Os dados estão salvos no armazenamento do Claude, compartilhado com qualquer pessoa que abra este mesmo link.</p>`
-        : STORAGE_MODE==='firestore'? `<p class="small-note">Os dados estão salvos no banco de dados Firebase deste app, compartilhado com qualquer pessoa que abra este site. O acesso administrativo é controlado pela senha abaixo, dentro do próprio app.</p>`
-        : `<div class="banner amber"><b>Atenção: modo local.</b><div>Os dados estão salvos só neste navegador e não são vistos por outras pessoas nem por outros aparelhos. Isso normalmente acontece antes de o banco de dados Firebase ser configurado no código do app.</div></div>`}
+    <div class="section-title">Backup e restauração</div>
+    <div class="card" style="display:grid;gap:12px;">
+      <div>
+        <p class="small-note">Crie um backup local dos dados do app para recuperação adicional. O backup local é uma camada extra e não substitui o armazenamento principal no Firebase.</p>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <button class="btn btn-outline" onclick="exportarBackupLocal()">${icon('download',16)}Exportar backup</button>
+        <label class="btn btn-outline" style="cursor:pointer;">
+          ${icon('upload',16)}Importar backup
+          <input type="file" id="arquivoBackupImport" accept="application/json,.json" style="display:none;" onchange="importarBackupLocal(this.files[0])">
+        </label>
+      </div>
     </div>
 
     <div class="section-title">Sobre a campanha</div>
@@ -2403,15 +2438,95 @@ async function alterarSenhaAdmin(){
   alert('Senha atualizada.');
   renderApp();
 }
-async function apagarDadosTeste(){
-  if(!exigirAdmin()) return;
-  if(!confirm('Isso vai apagar TODOS os colaboradores e entregas cadastrados atualmente (dados de teste). Deseja continuar?')) return;
-  STATE.colaboradores = []; STATE.entregas = [];
-  STATE.config.temDadosTeste = false;
-  await salvarColaboradores(); await salvarEntregas(); await salvarConfig();
-  renderApp();
+function gerarBackupJSON(){
+  const dados = {
+    formato: 'reciclar-apac-backup',
+    versao: 1,
+    criadoEm: new Date().toISOString(),
+    dados: {
+      colaboradores: STATE.colaboradores,
+      entregas: STATE.entregas,
+      transferencias: STATE.transferencias,
+      trocas: STATE.trocas,
+      campanhas: STATE.campanhas,
+      config: STATE.config,
+      metadata: {
+        storageMode: STORAGE_MODE,
+        campanhaSelecionadaId: STATE.campanhaSelecionadaId,
+      }
+    }
+  };
+  return dados;
 }
-window.alterarSenhaAdmin=alterarSenhaAdmin; window.apagarDadosTeste=apagarDadosTeste;
+function exportarBackupLocal(){
+  const backup = gerarBackupJSON();
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const nome = `backup-reciclar-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-').replace(/\..*/,'')}.json`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nome; a.click();
+  URL.revokeObjectURL(url);
+}
+window.exportarBackupLocal = exportarBackupLocal;
+function validarBackupJSON(obj){
+  if(!obj || typeof obj !== 'object') return { ok:false, motivo:'Arquivo de backup inválido.' };
+  if(obj.formato !== 'reciclar-apac-backup') return { ok:false, motivo:'Este arquivo não pertence ao formato de backup esperado.' };
+  if(!obj.versao || typeof obj.versao !== 'number') return { ok:false, motivo:'Versão do backup ausente ou inválida.' };
+  if(!obj.dados || typeof obj.dados !== 'object') return { ok:false, motivo:'Estrutura interna do backup ausente.' };
+  return { ok:true };
+}
+async function importarBackupLocal(file){
+  if(!file){ return; }
+  try {
+    const texto = await file.text();
+    const backup = JSON.parse(texto);
+    const validacao = validarBackupJSON(backup);
+    if(!validacao.ok){ throw new Error(validacao.motivo); }
+    const dados = backup.dados || {};
+    const resumo = [
+      `${(dados.colaboradores||[]).length} colaboradores`,
+      `${(dados.entregas||[]).length} entregas`,
+      `${(dados.transferencias||[]).length} transferências`,
+      `${(dados.trocas||[]).length} trocas`,
+      `${(dados.campanhas||[]).length} campanhas`,
+      `${Object.keys(dados.config||{}).length} configurações`
+    ].join(' · ');
+    const confirmar = confirm(`Importar backup de ${backup.criadoEm || 'data desconhecida'}?\n\nResumo: ${resumo}\n\nAntes da restauração, você pode criar um backup dos dados atuais. Deseja continuar?`);
+    if(!confirmar) return;
+    const criarBackupAntes = confirm('Deseja criar um backup dos dados atuais antes de restaurar?');
+    if(criarBackupAntes){
+      const atual = gerarBackupJSON();
+      const blob = new Blob([JSON.stringify(atual, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `backup-reciclar-antes-restauracao-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-').replace(/\..*/,'')}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+    STATE.colaboradores = Array.isArray(dados.colaboradores) ? dados.colaboradores : [];
+    STATE.entregas = Array.isArray(dados.entregas) ? dados.entregas : [];
+    STATE.transferencias = Array.isArray(dados.transferencias) ? dados.transferencias : [];
+    STATE.trocas = Array.isArray(dados.trocas) ? dados.trocas : [];
+    STATE.campanhas = Array.isArray(dados.campanhas) ? dados.campanhas : [];
+    STATE.config = dados.config || STATE.config || defaultConfig();
+    if(STATE.campanhas.length){
+      STATE.campanhaSelecionadaId = (dados.metadata && dados.metadata.campanhaSelecionadaId) || STATE.campanhas[0].id;
+    } else {
+      STATE.campanhaSelecionadaId = null;
+    }
+    await salvarColaboradores();
+    await salvarEntregas();
+    await salvarTransferencias();
+    await salvarTrocas();
+    await salvarCampanhas();
+    await salvarConfig();
+    alert('Backup restaurado com sucesso.');
+    renderApp();
+  } catch (erro) {
+    alert('Não foi possível importar o backup: ' + (erro && erro.message ? erro.message : 'arquivo inválido'));
+  }
+}
+window.importarBackupLocal = importarBackupLocal;
 
 /* =========================================================
    INICIALIZAÇÃO
