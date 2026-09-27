@@ -213,8 +213,51 @@ select{text-overflow:ellipsis;}
 @media(max-width:920px){
   .sidebar{display:none;}
   .content{padding:16px 14px 96px 14px;}
-  .topbar{padding:14px 16px;}
+  .topbar{padding:12px 14px;align-items:flex-start;}
+  .topbar > div:last-child{gap:6px !important;}
+  .topbar select{min-width:0 !important;max-width:min(52vw,260px);}
   .bottomnav{display:block;}
+  .bottomnav-row{max-width:520px;margin:0 auto;}
+  .bottomnav button{min-width:0;min-height:48px;padding:5px 2px;}
+  .content{padding-bottom:calc(86px + env(safe-area-inset-bottom));}
+  .table-wrap{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;}
+  .toolbar{align-items:stretch;}
+  .toolbar-left,.toolbar-right{width:100%;}
+  .toolbar-right > .btn{flex:1 1 auto;justify-content:center;}
+}
+@media(max-width:600px){
+  .topbar{gap:8px;}
+  .topbar h1{font-size:17px;}
+  .topbar .desc{font-size:11.5px;}
+  .topbar > div:last-child{max-width:58%;justify-content:flex-end;}
+  .topbar > div:last-child > div{min-width:0;max-width:calc(100% - 40px);}
+  .topbar > div:last-child .small-note{display:none;}
+  .topbar select{max-width:100%;font-size:12px;padding:8px 7px;}
+  .help-btn{width:32px;height:32px;}
+  .content{padding:14px 10px calc(82px + env(safe-area-inset-bottom));}
+  .card{padding:14px;border-radius:12px;}
+  .grid{gap:9px;}
+  .grid-4,.grid-3{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .stat-value{font-size:23px;}
+  .toolbar-left,.toolbar-right{gap:7px;}
+  .toolbar-right > .btn{flex-basis:100%;}
+  .btn{min-height:42px;padding:10px 12px;}
+  .filters > div,.filters > div.filtro-status{min-width:0;flex:1 1 130px;}
+  .podium-wrap{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+  .podium-card{padding:12px 5px;}
+  .podium-1{padding-top:15px;}
+  .podium-name{font-size:11px;overflow-wrap:anywhere;}
+  .podium-score{font-size:17px;}
+  .bottomnav button{font-size:9.5px;}
+  .bottomnav button svg{width:19px;height:19px;}
+  .modal{padding:18px 14px calc(18px + env(safe-area-inset-bottom));}
+  .modal-actions{flex-wrap:wrap;}
+  .modal-actions > .btn{flex:1 1 120px;justify-content:center;}
+}
+@media(max-width:360px){
+  .grid-4,.grid-3{grid-template-columns:1fr;}
+  .topbar > div:last-child{max-width:54%;}
+  .bottomnav button{font-size:9px;}
 }
 </style>
 </head>
@@ -355,18 +398,20 @@ function defaultConfig(){
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
 function campanhaSelecionadaPersistida(){
-  const valor = sessionStorage.getItem('reciclar-apac:campanhaSelecionadaId') || localStorage.getItem('reciclar-apac:campanhaSelecionadaId');
+  let valor = null;
+  try { valor = sessionStorage.getItem('reciclar-apac:campanhaSelecionadaId'); } catch (e) { /* armazenamento de sessão indisponível */ }
+  if(!valor) try { valor = localStorage.getItem('reciclar-apac:campanhaSelecionadaId'); } catch (e) { /* armazenamento local indisponível */ }
   if(!valor) return null;
   const campanha = campanhaPorId(valor);
   return campanha ? valor : null;
 }
 function salvarCampanhaSelecionadaPersistida(id){
   if(!id){
-    sessionStorage.removeItem('reciclar-apac:campanhaSelecionadaId');
-    localStorage.removeItem('reciclar-apac:campanhaSelecionadaId');
+    try { sessionStorage.removeItem('reciclar-apac:campanhaSelecionadaId'); } catch (e) { /* armazenamento de sessão indisponível */ }
+    try { localStorage.removeItem('reciclar-apac:campanhaSelecionadaId'); } catch (e) { /* armazenamento local indisponível */ }
     return;
   }
-  sessionStorage.setItem('reciclar-apac:campanhaSelecionadaId', id);
+  try { sessionStorage.setItem('reciclar-apac:campanhaSelecionadaId', id); } catch (e) { /* armazenamento de sessão indisponível */ }
   try { localStorage.setItem('reciclar-apac:campanhaSelecionadaId', id); } catch (e) { /* quota/privacidade do navegador */ }
 }
 function campanhaPadrao(){
@@ -381,36 +426,6 @@ function hoje(){ return new Date(); }
 function mesAnoAtual(){ const d=hoje(); return {mes:d.getMonth()+1, ano:d.getFullYear()}; }
 function chaveMA(mes,ano){ return ano+'-'+String(mes).padStart(2,'0'); }
 function nomeMes(mes){ return MESES_PT[mes-1]; }
-
-/* ---------- DADOS FICTÍCIOS DE DEMONSTRAÇÃO ---------- */
-function gerarDadosTeste(campanhaId){
-  const {mes,ano} = mesAnoAtual();
-  const setores = ['Administrativo','Marcenaria','Costura','Cozinha','Horta'];
-  const nomes = ['Antônio Souza','Maria Aparecida Lima','José Carlos Ferreira','Francisca Nascimento','Raimundo Pereira','Luzia Costa','Pedro Henrique Alves','Cícera Santos'];
-  const colaboradores = nomes.map((n,i)=>({
-    id: uid(), nome:n, setor:setores[i%setores.length], cargo:'Colaborador(a)',
-    status:'ativo', dataCadastro: new Date(ano,mes-2,10).toISOString().slice(0,10)
-  }));
-  const entregas = [];
-  colaboradores.forEach((c,i)=>{
-    const fator = [1.1,0.6,0.95,0.4,1.3,0.7,1.0,0.5][i%8];
-    CATEGORIAS.forEach(cat=>{
-      const base = cat.metaDefault*fator*(0.7+Math.random()*0.5);
-      entregas.push({
-        id: uid(), campanhaId, data:new Date(ano,mes-1,8+ (i%15)).toISOString().slice(0,10),
-        colaboradorId:c.id, tipo:cat.key,
-        quantidade: Math.max(1, Math.round(cat.key==='latinhas'&&cat.aceitaKg? base/cat.unidadesPorKg*10 : base)),
-        unidade: cat.key==='latinhas' ? 'kg-x10' : 'unidades',
-        observacoes:'', responsavelContagem:'Encarregada Financeira',
-        statusValidacao:'validado',
-        criadoEm:Date.now()
-      });
-    });
-  });
-  return {colaboradores, entregas};
-}
-// nota: para simplificar a quantidade fictícia de latinhas, usamos "kg-x10" (décimos de kg) só nos dados de teste;
-// no registro real de entregas, latinhas usa 'kg' ou 'unidades' normalmente (ver normalizarQuantidade).
 
 /* ---------- CAMPANHAS ----------
    Cada campanha é uma entidade independente e explícita: toda entrega e toda
@@ -501,7 +516,6 @@ async function carregarDados(){
   STATE.trocas = await storageGet('trocas', []);
   STATE.config = await storageGet('config', null);
   const configAntigoParaMigrar = STATE.config; // pode conter metasDefault/metasHistorico do formato anterior
-  const primeiraExecucao = !STATE.config;
   if(!STATE.config){
     STATE.config = defaultConfig();
     await storageSet('config', STATE.config);
@@ -509,14 +523,7 @@ async function carregarDados(){
   if(!STATE.config.painelPeriodo) STATE.config.painelPeriodo = { ano: null, tipo: '6' };
   STATE.campanhas = await storageGet('campanhas', null);
   if(!STATE.campanhas){
-    const campanhaLegado = await migrarParaCampanhas(configAntigoParaMigrar);
-    if(primeiraExecucao && STATE.colaboradores.length===0 && STATE.entregas.length===0){
-      const demo = gerarDadosTeste(campanhaLegado.id);
-      STATE.colaboradores = demo.colaboradores;
-      STATE.entregas = demo.entregas;
-      await storageSet('colaboradores', STATE.colaboradores);
-      await storageSet('entregas', STATE.entregas);
-    }
+    await migrarParaCampanhas(configAntigoParaMigrar);
   } else {
     // Correção de auto-cura: entregas ou transferências criadas por uma versão intermediária
     // do app (sem o campo campanhaId ainda implementado) ficariam invisíveis para sempre, já
@@ -2158,6 +2165,7 @@ function renderConfig(){
 
     <div class="section-title">Segurança</div>
     <div class="card">
+      <p class="small-note">A senha controla apenas a interface deste navegador; como o app é estático, ela não substitui autenticação e regras de acesso no Firebase.</p>
       <div class="field"><label>Alterar senha do administrador</label>
         <div style="display:flex;gap:8px;">
           <input type="password" id="novaSenhaAdmin" placeholder="Nova senha">
@@ -2459,71 +2467,164 @@ function gerarBackupJSON(){
   return dados;
 }
 function exportarBackupLocal(){
-  const backup = gerarBackupJSON();
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-  const nome = `backup-reciclar-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-').replace(/\..*/,'')}.json`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = nome; a.click();
-  URL.revokeObjectURL(url);
+  try {
+    baixarBackupJSON(gerarBackupJSON(), `backup-reciclar-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.json`);
+  } catch (erro) {
+    console.error('Erro ao exportar backup', erro);
+    alert('Não foi possível exportar o backup: ' + (erro && erro.message ? erro.message : 'erro inesperado'));
+  }
 }
 window.exportarBackupLocal = exportarBackupLocal;
+function baixarBackupJSON(backup, nome){
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nome;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function objetoValido(valor){
+  return valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+}
+function dataISOValida(valor){
+  if(typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return false;
+  const data = new Date(`${valor}T00:00:00Z`);
+  return Number.isFinite(data.getTime()) && data.toISOString().slice(0,10) === valor;
+}
 function validarBackupJSON(obj){
-  if(!obj || typeof obj !== 'object') return { ok:false, motivo:'Arquivo de backup inválido.' };
+  if(!objetoValido(obj)) return { ok:false, motivo:'Arquivo de backup inválido.' };
   if(obj.formato !== 'reciclar-apac-backup') return { ok:false, motivo:'Este arquivo não pertence ao formato de backup esperado.' };
-  if(!obj.versao || typeof obj.versao !== 'number') return { ok:false, motivo:'Versão do backup ausente ou inválida.' };
-  if(!obj.dados || typeof obj.dados !== 'object') return { ok:false, motivo:'Estrutura interna do backup ausente.' };
+  if(obj.versao !== 1) return { ok:false, motivo:'Versão de backup inválida ou não suportada.' };
+  if(typeof obj.criadoEm !== 'string' || !Number.isFinite(Date.parse(obj.criadoEm))) return { ok:false, motivo:'Data de criação do backup ausente ou inválida.' };
+  if(!objetoValido(obj.dados)) return { ok:false, motivo:'Estrutura interna do backup ausente.' };
+  const dados = obj.dados;
+  const colecoes = ['colaboradores','entregas','transferencias','trocas','campanhas'];
+  for(const nome of colecoes){
+    if(!Array.isArray(dados[nome])) return { ok:false, motivo:`A coleção "${nome}" está ausente ou inválida.` };
+    const ids = new Set();
+    for(const [indice, registro] of dados[nome].entries()){
+      if(!objetoValido(registro) || typeof registro.id !== 'string' || !registro.id.trim()){
+        return { ok:false, motivo:`Registro ${indice+1} inválido na coleção "${nome}".` };
+      }
+      if(ids.has(registro.id)) return { ok:false, motivo:`ID duplicado na coleção "${nome}".` };
+      ids.add(registro.id);
+    }
+  }
+  if(!objetoValido(dados.config) || typeof dados.config.senhaAdmin !== 'string'
+    || !objetoValido(dados.config.painelPeriodo)
+    || typeof dados.config.painelPeriodo.tipo !== 'string'
+    || (dados.config.painelPeriodo.ano !== null && !Number.isInteger(dados.config.painelPeriodo.ano))){
+    return { ok:false, motivo:'As configurações do backup estão ausentes ou inválidas.' };
+  }
+  if(dados.metadata !== undefined && !objetoValido(dados.metadata)) return { ok:false, motivo:'Os metadados do backup estão inválidos.' };
+  const campanhas = new Map(dados.campanhas.map(c=>[c.id,c]));
+  for(const [indice, campanha] of dados.campanhas.entries()){
+    if(typeof campanha.nome !== 'string' || !campanha.nome.trim()
+      || !Number.isInteger(campanha.mesInicio) || campanha.mesInicio<1 || campanha.mesInicio>12
+      || !Number.isInteger(campanha.anoInicio) || !objetoValido(campanha.metasDefault)
+      || !objetoValido(campanha.metasHistorico)
+      || !['ativa','planejada','encerrada'].includes(campanha.status)
+      || (campanha.anoFim !== null && campanha.anoFim !== undefined
+        && (!Number.isInteger(campanha.mesFim) || campanha.mesFim<1 || campanha.mesFim>12
+        || !Number.isInteger(campanha.anoFim) || campanha.anoFim*12+campanha.mesFim<campanha.anoInicio*12+campanha.mesInicio))){
+      return { ok:false, motivo:`Campanha ${indice+1} inválida.` };
+    }
+  }
+  for(const [indice, colaborador] of dados.colaboradores.entries()){
+    if(typeof colaborador.nome !== 'string' || !colaborador.nome.trim()){
+      return { ok:false, motivo:`Colaborador ${indice+1} sem nome válido.` };
+    }
+  }
+  const camposPorColecao = {
+    entregas: ['campanhaId','colaboradorId','tipo'],
+    transferencias: ['campanhaId','colaboradorOrigemId','categoriaOrigem','colaboradorDestinoId','categoriaDestino'],
+    trocas: ['campanhaId','colaboradorId'],
+  };
+  for(const [nome, campos] of Object.entries(camposPorColecao)){
+    for(const [indice, registro] of dados[nome].entries()){
+      if(!campos.every(campo=>typeof registro[campo] === 'string' && registro[campo].trim())
+        || !campanhas.has(registro.campanhaId)
+        || !dataISOValida(registro.data)
+        || !Number.isFinite(registro.quantidadeKits ?? registro.quantidade)
+        || (registro.quantidadeKits ?? registro.quantidade) < 0){
+        return { ok:false, motivo:`Registro ${indice+1} inválido na coleção "${nome}".` };
+      }
+    }
+  }
+  if(dados.metadata && dados.metadata.campanhaSelecionadaId
+    && !campanhas.has(dados.metadata.campanhaSelecionadaId)){
+    return { ok:false, motivo:'A campanha selecionada nos metadados não existe neste backup.' };
+  }
   return { ok:true };
 }
 async function importarBackupLocal(file){
-  if(!file){ return; }
+  if(!file) return;
   try {
     const texto = await file.text();
     const backup = JSON.parse(texto);
     const validacao = validarBackupJSON(backup);
     if(!validacao.ok){ throw new Error(validacao.motivo); }
-    const dados = backup.dados || {};
+    const dados = backup.dados;
     const resumo = [
-      `${(dados.colaboradores||[]).length} colaboradores`,
-      `${(dados.entregas||[]).length} entregas`,
-      `${(dados.transferencias||[]).length} transferências`,
-      `${(dados.trocas||[]).length} trocas`,
-      `${(dados.campanhas||[]).length} campanhas`,
-      `${Object.keys(dados.config||{}).length} configurações`
+      `${dados.colaboradores.length} colaboradores`,
+      `${dados.entregas.length} entregas`,
+      `${dados.transferencias.length} transferências`,
+      `${dados.trocas.length} trocas`,
+      `${dados.campanhas.length} campanhas`,
+      `${Object.keys(dados.config).length} configurações`
     ].join(' · ');
     const confirmar = confirm(`Importar backup de ${backup.criadoEm || 'data desconhecida'}?\n\nResumo: ${resumo}\n\nAntes da restauração, você pode criar um backup dos dados atuais. Deseja continuar?`);
     if(!confirmar) return;
     const criarBackupAntes = confirm('Deseja criar um backup dos dados atuais antes de restaurar?');
     if(criarBackupAntes){
-      const atual = gerarBackupJSON();
-      const blob = new Blob([JSON.stringify(atual, null, 2)], { type: 'application/json' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `backup-reciclar-antes-restauracao-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-').replace(/\..*/,'')}.json`;
-      link.click();
-      URL.revokeObjectURL(link.href);
+      baixarBackupJSON(gerarBackupJSON(), `backup-reciclar-antes-restauracao-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.json`);
     }
-    STATE.colaboradores = Array.isArray(dados.colaboradores) ? dados.colaboradores : [];
-    STATE.entregas = Array.isArray(dados.entregas) ? dados.entregas : [];
-    STATE.transferencias = Array.isArray(dados.transferencias) ? dados.transferencias : [];
-    STATE.trocas = Array.isArray(dados.trocas) ? dados.trocas : [];
-    STATE.campanhas = Array.isArray(dados.campanhas) ? dados.campanhas : [];
-    STATE.config = dados.config || STATE.config || defaultConfig();
-    if(STATE.campanhas.length){
-      STATE.campanhaSelecionadaId = (dados.metadata && dados.metadata.campanhaSelecionadaId) || STATE.campanhas[0].id;
-    } else {
-      STATE.campanhaSelecionadaId = null;
+    const anterior = gerarBackupJSON().dados;
+    const gravações = [
+      ['colaboradores', dados.colaboradores, anterior.colaboradores],
+      ['entregas', dados.entregas, anterior.entregas],
+      ['transferencias', dados.transferencias, anterior.transferencias],
+      ['trocas', dados.trocas, anterior.trocas],
+      ['campanhas', dados.campanhas, anterior.campanhas],
+      ['config', dados.config, anterior.config],
+    ];
+    let tentativas = 0;
+    try {
+      for(const [chave, valor] of gravações){
+        tentativas++;
+        if(!await storageSet(chave, valor)) throw new Error(`Não foi possível salvar "${chave}".`);
+      }
+    } catch (erro) {
+      const falhasRollback = [];
+      for(let i=tentativas-1;i>=0;i--){
+        const [chave, , valorAnterior] = gravações[i];
+        if(!await storageSet(chave, valorAnterior)) falhasRollback.push(chave);
+      }
+      const avisoRollback = falhasRollback.length
+        ? ` A restauração parcial não pôde ser revertida para: ${falhasRollback.join(', ')}. Faça uma nova conferência dos dados e use um backup caso necessário.`
+        : ' Os dados anteriores foram mantidos.';
+      throw new Error(`${erro.message}${avisoRollback}`);
     }
-    await salvarColaboradores();
-    await salvarEntregas();
-    await salvarTransferencias();
-    await salvarTrocas();
-    await salvarCampanhas();
-    await salvarConfig();
+    STATE.colaboradores = dados.colaboradores;
+    STATE.entregas = dados.entregas;
+    STATE.transferencias = dados.transferencias;
+    STATE.trocas = dados.trocas;
+    STATE.campanhas = dados.campanhas;
+    STATE.config = dados.config;
+    const campanhaDoBackup = dados.metadata && dados.metadata.campanhaSelecionadaId;
+    STATE.campanhaSelecionadaId = campanhaDoBackup || (campanhaPadrao()||{}).id || null;
+    salvarCampanhaSelecionadaPersistida(STATE.campanhaSelecionadaId);
     alert('Backup restaurado com sucesso.');
     renderApp();
   } catch (erro) {
+    console.error('Erro ao importar backup', erro);
     alert('Não foi possível importar o backup: ' + (erro && erro.message ? erro.message : 'arquivo inválido'));
+  } finally {
+    const input = document.getElementById('arquivoBackupImport');
+    if(input) input.value = '';
   }
 }
 window.importarBackupLocal = importarBackupLocal;
