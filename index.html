@@ -280,6 +280,7 @@ let STATE = {
   colaboradores: [],
   entregas: [],
   transferencias: [],
+  trocas: [],
   campanhas: [],
   campanhaSelecionadaId: null,
   config: null,
@@ -397,6 +398,21 @@ function gerarDadosTeste(campanhaId){
    Cada campanha tem suas próprias metas (com histórico mês a mês) e seu
    próprio acúmulo de excedente, isolado das demais. */
 const CAMPANHA_LEGADO_INICIO = { mes: 5, ano: 2026 }; // usado só na migração da 1ª vez
+async function salvarTrocas(){ await storageSet('trocas', STATE.trocas); }
+function trocasDoMes(campanhaId, mes, ano){
+  const chave = chaveMA(mes,ano);
+  return STATE.trocas.filter(t=>t.campanhaId===campanhaId && t.data && t.data.slice(0,7)===chave);
+}
+/* Quantos kits um colaborador já pode trocar agora, dado o saldo atual dele em cada
+   material do kit. É o menor resultado entre (saldo do material ÷ quantidade exigida),
+   arredondado para baixo — precisa fechar a quantidade em TODOS os materiais do kit. */
+function kitsDisponiveis(campanha, totaisPorCategoria){
+  const cfg = campanha && campanha.trocaCartela;
+  if(!cfg || !cfg.ativo || !cfg.kit) return 0;
+  const chaves = Object.keys(cfg.kit).filter(k=>cfg.kit[k]>0);
+  if(chaves.length===0) return 0;
+  return Math.floor(Math.min(...chaves.map(k => (totaisPorCategoria[k]||0) / cfg.kit[k])));
+}
 const CAMPANHA_LEGADO_ID = 'campanha-legado-reciclar-2026'; // id estável — nunca gerado de novo a cada migração
 function campanhasOrdenadas(){
   return [...STATE.campanhas].sort((a,b)=> (a.anoInicio*12+a.mesInicio) - (b.anoInicio*12+b.mesInicio));
@@ -450,6 +466,7 @@ async function carregarDados(){
   STATE.colaboradores = await storageGet('colaboradores', []);
   STATE.entregas = await storageGet('entregas', []);
   STATE.transferencias = await storageGet('transferencias', []);
+  STATE.trocas = await storageGet('trocas', []);
   STATE.config = await storageGet('config', null);
   const configAntigoParaMigrar = STATE.config; // pode conter metasDefault/metasHistorico do formato anterior
   const primeiraExecucao = !STATE.config;
@@ -642,6 +659,7 @@ function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
     const metas = getMetasDoMes(campanhaId, mes,ano);
     const entregas = entregasValidadasDoMes(campanhaId, mes,ano);
     const transferencias = transferenciasDoMes(campanhaId, mes,ano);
+    const trocas = trocasDoMes(campanhaId, mes,ano);
     const anterior = mesAnteriorDe(campanhaId, mes,ano);
     const chaveAnterior = anterior? chaveMA(anterior.mes,anterior.ano) : null;
     STATE.colaboradores.forEach(c=>{
@@ -650,6 +668,7 @@ function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
         entregas.filter(e=>e.colaboradorId===c.id && e.tipo===cat.key).forEach(e=> creditos += normalizarQuantidadeUnidades(e));
         transferencias.filter(t=>t.colaboradorDestinoId===c.id && t.categoriaDestino===cat.key).forEach(t=> creditos += t.quantidade);
         transferencias.filter(t=>t.colaboradorOrigemId===c.id && t.categoriaOrigem===cat.key).forEach(t=> creditos -= t.quantidade);
+        trocas.filter(t=>t.colaboradorId===c.id && t.kitConsumido && t.kitConsumido[cat.key]).forEach(t=> creditos -= t.kitConsumido[cat.key]);
         const carryIn = chaveAnterior && saldos[c.id][cat.key][chaveAnterior] ? saldos[c.id][cat.key][chaveAnterior].leftover : 0;
         const meta = metas[cat.key] || cat.metaDefault;
         const totalDisponivel = creditos + carryIn;
@@ -672,7 +691,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
   colaboradores = colaboradores.filter(c=> !c.dataCadastro || c.dataCadastro.slice(0,7) <= chave);
   const entregasDoMes = entregasValidadasDoMes(campanhaId, mes,ano);
   const resultados = colaboradores.map(c=>{
-    const totais = {}, percentuais = {}, frescos = {};
+    const totais = {}, percentuais = {}, frescos = {}, totaisAcumulados = {};
     categorias.forEach(cat=>{
       const s = saldos[c.id]?.[cat.key]?.[chave];
       const totalDisponivel = s? s.totalDisponivel : 0;
@@ -680,6 +699,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
       totais[cat.key] = totalDisponivel;
       frescos[cat.key] = Math.max(0, s? s.creditos : 0);
       percentuais[cat.key] = meta>0 ? (totalDisponivel/meta*100) : 0;
+      totaisAcumulados[cat.key] = Object.values(saldos[c.id]?.[cat.key] || {}).reduce((a,x)=>a+x.creditos, 0);
     });
     const percentuaisCapped = categorias.map(cat=>Math.min(100,percentuais[cat.key]));
     const pontuacao = percentuaisCapped.reduce((a,b)=>a+b,0)/categorias.length;
@@ -689,7 +709,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
     const totalMateriais = Math.round(categorias.reduce((a,cat)=>a+frescos[cat.key],0));
     const datasDoColaborador = entregasDoMes.filter(e=>e.colaboradorId===c.id).map(e=>e.data).sort();
     const primeiraEntrega = datasDoColaborador.length? datasDoColaborador[0] : null;
-    return { colaborador:c, totais, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais, primeiraEntrega };
+    return { colaborador:c, totais, totaisAcumulados, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais, primeiraEntrega };
   });
   resultados.sort((a,b)=>
     b.pontuacao-a.pontuacao
@@ -1250,6 +1270,8 @@ function renderEntregas(){
   if(!campanhaId){
     return `<div class="card"><div class="empty-state">Nenhuma campanha cadastrada ainda. ${STATE.isAdmin? 'Crie uma em Configurações → Campanhas.' : ''}</div></div>`;
   }
+  const campanha = campanhaPorId(campanhaId);
+  const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
   return `
     <div class="toolbar">
       <div class="toolbar-left filters">
@@ -1272,6 +1294,15 @@ function renderEntregas(){
     <div class="card" style="padding:0;">
       <div class="table-wrap" id="tabelaTransferenciasWrap"></div>
     </div>
+    ${cfgTroca? `
+    <div class="toolbar">
+      <div class="toolbar-left"><span class="section-title" style="margin:0;">Troca de material por ${escapeHtml(cfgTroca.nomeItem)}</span></div>
+      ${STATE.isAdmin? `<div class="toolbar-right"><button class="btn btn-primary" onclick="abrirFormTrocaCartela()">${icon('plus')}Trocar por ${escapeHtml(cfgTroca.nomeItem)}</button></div>` : ''}
+    </div>
+    <p class="small-note" style="margin-top:-6px;">Cada kit fechado dá direito a ${cfgTroca.cartelasPorKit} ${escapeHtml(cfgTroca.nomeItem)}(s). O material é descontado do saldo do colaborador assim que a troca é emitida.</p>
+    <div class="card" style="padding:0;">
+      <div class="table-wrap" id="tabelaTrocasWrap"></div>
+    </div>` : ''}
   `;
 }
 function renderTabelaEntregas(){
@@ -1310,6 +1341,7 @@ function renderTabelaEntregas(){
   `;
   }
   renderTabelaTransferencias(mes,ano);
+  renderTabelaTrocas();
 }
 function renderTabelaTransferencias(mes,ano){
   const wrap = document.getElementById('tabelaTransferenciasWrap');
@@ -1579,6 +1611,128 @@ async function excluirTransferencia(id){
 window.abrirFormTransferencia=abrirFormTransferencia; window.salvarTransferencia=salvarTransferencia;
 window.confirmarExcluirTransferencia=confirmarExcluirTransferencia; window.excluirTransferencia=excluirTransferencia;
 
+/* ---------- TROCA DE MATERIAL POR ITEM (ex.: cartelas de bingo) ---------- */
+function totaisAcumuladosColaborador(campanhaId, colaboradorId){
+  const {mes,ano} = mesAnoAtual();
+  const saldos = calcularSaldosAcumulados(campanhaId, mes, ano);
+  const categorias = categoriasDaCampanha(campanhaPorId(campanhaId));
+  const totais = {};
+  categorias.forEach(cat=>{
+    totais[cat.key] = Object.values(saldos[colaboradorId]?.[cat.key]||{}).reduce((a,x)=>a+x.creditos,0);
+  });
+  return totais;
+}
+function renderTabelaTrocas(){
+  const wrap = document.getElementById('tabelaTrocasWrap');
+  if(!wrap) return;
+  const campanhaId = STATE.campanhaSelecionadaId;
+  const campanha = campanhaPorId(campanhaId);
+  const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
+  if(!cfgTroca) return;
+  const lista = STATE.trocas.filter(t=>t.campanhaId===campanhaId).sort((a,b)=>b.data.localeCompare(a.data));
+  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma troca emitida ainda.</div>`; return; }
+  wrap.innerHTML = `
+    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Kits</th><th>${escapeHtml(cfgTroca.nomeItem)}s emitidas</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <tbody>
+      ${lista.map(t=>{
+        const c = STATE.colaboradores.find(x=>x.id===t.colaboradorId);
+        return `<tr>
+          <td>${formatarData(t.data)}</td>
+          <td style="font-weight:700;">${escapeHtml(c?c.nome:'(removido)')}</td>
+          <td>${t.quantidadeKits}</td>
+          <td><span class="badge badge-green">${t.cartelasEmitidas}</span></td>
+          ${STATE.isAdmin?`<td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="confirmarExcluirTroca('${t.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button></td>`:''}
+        </tr>`;
+      }).join('')}
+    </tbody></table>
+  `;
+}
+window.renderTabelaTrocas = renderTabelaTrocas;
+function abrirFormTrocaCartela(){
+  if(!exigirAdmin()) return;
+  const campanhaId = STATE.campanhaSelecionadaId;
+  const campanha = campanhaPorId(campanhaId);
+  const cfgTroca = campanha && campanha.trocaCartela;
+  if(!cfgTroca || !cfgTroca.ativo){ alert('Esta campanha não tem troca de material por item ativada.'); return; }
+  if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de emitir uma troca.'); return; }
+  const opcoesColab = STATE.colaboradores.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
+  abrirModal(`
+    <div class="modal-head"><h3>Trocar por ${escapeHtml(cfgTroca.nomeItem)}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <div class="field"><label>Colaborador</label><select id="tcColab" onchange="atualizarKitsDisponiveisForm()">${opcoesColab}</select></div>
+    <div class="field"><label>Data</label><input type="date" id="tcData" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div class="banner" id="tcInfoKits" style="margin-bottom:14px;"><span>${icon('ranking')}</span><div>—</div></div>
+    <div class="field"><label>Quantidade de kits a trocar</label><input type="number" min="1" id="tcQuantidadeKits" value="1" oninput="atualizarPreviaTroca()"></div>
+    <p class="small-note" id="tcPrevia"></p>
+    <div id="trocaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin-bottom:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary btn-block" onclick="salvarTroca()">${icon('check',16)}Confirmar troca</button>
+    </div>
+  `);
+  setTimeout(atualizarKitsDisponiveisForm, 30);
+}
+function atualizarKitsDisponiveisForm(){
+  const campanhaId = STATE.campanhaSelecionadaId;
+  const campanha = campanhaPorId(campanhaId);
+  const cfgTroca = campanha.trocaCartela;
+  const colaboradorId = document.getElementById('tcColab').value;
+  const totais = totaisAcumuladosColaborador(campanhaId, colaboradorId);
+  const kits = kitsDisponiveis(campanha, totais);
+  document.getElementById('tcInfoKits').innerHTML = `<span>${icon('ranking')}</span><div>Este colaborador tem direito a <b>${kits} kit(s)</b>, equivalente a <b>${kits*cfgTroca.cartelasPorKit} ${escapeHtml(cfgTroca.nomeItem)}(s)</b> no momento.</div>`;
+  document.getElementById('tcQuantidadeKits').max = kits || 1;
+  atualizarPreviaTroca();
+}
+window.atualizarKitsDisponiveisForm = atualizarKitsDisponiveisForm;
+function atualizarPreviaTroca(){
+  const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
+  const qtd = parseInt(document.getElementById('tcQuantidadeKits').value,10) || 0;
+  document.getElementById('tcPrevia').textContent = qtd>0 ? `Isso vai emitir ${qtd*campanha.trocaCartela.cartelasPorKit} ${campanha.trocaCartela.nomeItem}(s) e descontar o material correspondente do saldo do colaborador.` : '';
+}
+window.atualizarPreviaTroca = atualizarPreviaTroca;
+async function salvarTroca(){
+  const campanhaId = STATE.campanhaSelecionadaId;
+  const campanha = campanhaPorId(campanhaId);
+  const cfgTroca = campanha.trocaCartela;
+  const colaboradorId = document.getElementById('tcColab').value;
+  const data = document.getElementById('tcData').value;
+  const quantidadeKits = parseInt(document.getElementById('tcQuantidadeKits').value,10);
+  const erroEl = document.getElementById('trocaErro');
+  erroEl.style.display='none';
+  if(!data || !quantidadeKits || quantidadeKits<=0){ erroEl.textContent='Informe uma data e uma quantidade de kits maior que zero.'; erroEl.style.display='block'; return; }
+  const validacaoData = dataDentroDaCampanha(campanhaId, data);
+  if(!validacaoData.ok){ erroEl.textContent = validacaoData.motivo; erroEl.style.display='block'; return; }
+  const totais = totaisAcumuladosColaborador(campanhaId, colaboradorId);
+  const kitsMax = kitsDisponiveis(campanha, totais);
+  if(quantidadeKits > kitsMax){ erroEl.textContent = `Este colaborador só tem direito a ${kitsMax} kit(s) no momento.`; erroEl.style.display='block'; return; }
+  const kitConsumido = {};
+  Object.keys(cfgTroca.kit).forEach(catKey=>{ kitConsumido[catKey] = cfgTroca.kit[catKey] * quantidadeKits; });
+  STATE.trocas.push({
+    id:uid(), campanhaId, colaboradorId, data, quantidadeKits,
+    cartelasEmitidas: quantidadeKits * cfgTroca.cartelasPorKit,
+    nomeItem: cfgTroca.nomeItem, kitConsumido, criadoEm: Date.now()
+  });
+  await salvarTrocas();
+  fecharModal(); renderApp();
+}
+window.abrirFormTrocaCartela=abrirFormTrocaCartela; window.salvarTroca=salvarTroca;
+function confirmarExcluirTroca(id){
+  if(!exigirAdmin()) return;
+  abrirModal(`
+    <div class="modal-head"><h3>Excluir troca</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p>Tem certeza que deseja excluir este registro de troca? O material consumido volta a contar no saldo do colaborador.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-danger btn-block" onclick="excluirTroca('${id}')">${icon('trash',16)}Excluir</button>
+    </div>
+  `);
+}
+async function excluirTroca(id){
+  STATE.trocas = STATE.trocas.filter(x=>x.id!==id);
+  await salvarTrocas();
+  fecharModal(); renderApp();
+}
+window.confirmarExcluirTroca=confirmarExcluirTroca; window.excluirTroca=excluirTroca;
+
 /* =========================================================
    RANKING
    ========================================================= */
@@ -1634,12 +1788,16 @@ function renderPodium(r,pos,medal){
 }
 function renderTabelaRanking(resultados, completa, mes, ano){
   if(resultados.length===0) return `<div class="table-empty">Nenhum resultado neste período.</div>`;
+  const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
+  const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
   return `
     <table><thead><tr>
-      <th>Pos.</th><th>Colaborador</th><th>Setor</th><th>Pontuação</th><th>% cumprimento</th>${completa?'<th>Materiais</th>':''}<th>Meta</th><th></th>
+      <th>Pos.</th><th>Colaborador</th><th>Setor</th><th>Pontuação</th><th>% cumprimento</th>${completa?'<th>Materiais</th>':''}<th>Meta</th>${cfgTroca?`<th>${escapeHtml(cfgTroca.nomeItem)}</th>`:''}<th></th>
     </tr></thead>
     <tbody>
-      ${resultados.map(r=>`
+      ${resultados.map(r=>{
+        const kits = cfgTroca ? kitsDisponiveis(campanha, r.totaisAcumulados) : 0;
+        return `
         <tr>
           <td>${r.posicao? `<b>${r.posicao}º</b>${r.posicao<=3?' '+({1:'🥇',2:'🥈',3:'🥉'}[r.posicao]||''):''}` : '<span class="small-note">—</span>'}</td>
           <td style="font-weight:700;">${escapeHtml(r.colaborador.nome)}</td>
@@ -1648,8 +1806,10 @@ function renderTabelaRanking(resultados, completa, mes, ano){
           <td>${r.mediaReal.toFixed(0)}%</td>
           ${completa?`<td>${r.totalMateriais.toLocaleString('pt-BR')}</td>`:''}
           <td>${r.metaAtingida? '<span class="badge badge-green">Atingida</span>' : '<span class="badge badge-grey">Em andamento</span>'}</td>
+          ${cfgTroca?`<td>${kits>0?`<span class="badge badge-green">${kits} disponíve${kits===1?'l':'is'}</span>`:'<span class="small-note">0</span>'}</td>`:''}
           <td>${mes&&ano? `<button class="btn btn-ghost btn-sm" onclick="abrirDetalhesColaborador('${r.colaborador.id}',${mes},${ano})">Detalhes</button>` : ''}</td>
-        </tr>`).join('')}
+        </tr>`;
+      }).join('')}
     </tbody></table>
   `;
 }
@@ -1869,6 +2029,8 @@ window.exportarCsvEntregas = exportarCsvEntregas;
    ========================================================= */
 function renderRelatorios(){
   const mes=STATE.rankMes, ano=STATE.rankAno;
+  const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
+  const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
   return `
     <div class="grid grid-3">
       <div class="card">
@@ -1891,6 +2053,12 @@ function renderRelatorios(){
         <p class="small-note">Exporta as transferências de material entre colaboradores e categorias no mês selecionado.</p>
         <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvTransferencias(${mes},${ano})">${icon('download')}Exportar transferências</button>
       </div>
+      ${cfgTroca? `
+      <div class="card">
+        <div class="stat-label">Trocas por ${escapeHtml(cfgTroca.nomeItem)} (CSV)</div>
+        <p class="small-note">Exporta todas as trocas emitidas nesta campanha, com data, colaborador e quantidade.</p>
+        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvTrocas()">${icon('download')}Exportar trocas</button>
+      </div>` : ''}
     </div>
     <div class="section-title">Mês de referência para os relatórios</div>
     <div class="card">${seletorMesAno('rank', mes, ano)} <span class="small-note">Este seletor é compartilhado com a tela de Ranking.</span></div>
@@ -1922,7 +2090,18 @@ function exportarCsvTransferencias(mes,ano){
   });
   baixarArquivo(csv, `transferencias-${nomeMes(mes)}-${ano}.csv`, 'text/csv;charset=utf-8;');
 }
-window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=exportarCsvColaboradores; window.exportarCsvTransferencias=exportarCsvTransferencias;
+function exportarCsvTrocas(){
+  const campanhaId = STATE.campanhaSelecionadaId;
+  const lista = STATE.trocas.filter(t=>t.campanhaId===campanhaId);
+  let csv = 'Data,Colaborador,QuantidadeKits,ItemEmitido,QuantidadeEmitida\n';
+  lista.forEach(t=>{
+    const c = STATE.colaboradores.find(x=>x.id===t.colaboradorId);
+    csv += [t.data, c?c.nome:'', t.quantidadeKits, t.nomeItem||'', t.cartelasEmitidas]
+      .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')+'\n';
+  });
+  baixarArquivo(csv, `trocas.csv`, 'text/csv;charset=utf-8;');
+}
+window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=exportarCsvColaboradores; window.exportarCsvTransferencias=exportarCsvTransferencias; window.exportarCsvTrocas=exportarCsvTrocas;
 
 /* =========================================================
    CONFIGURAÇÕES
@@ -1984,6 +2163,7 @@ function abrirFormCampanha(id){
   const metas = c? c.metasDefault : Object.fromEntries(CATEGORIAS.map(cat=>[cat.key,cat.metaDefault]));
   const nomesPersonalizados = (c && c.nomesPersonalizados) || {};
   window._materiaisExtrasForm = c ? JSON.parse(JSON.stringify(c.materiaisExtras||[])) : [];
+  const trocaCartela = (c && c.trocaCartela) || { ativo:false, nomeItem:'cartela', cartelasPorKit:2, kit:{} };
   const dataInicioValor = c? `${c.anoInicio}-${String(c.mesInicio).padStart(2,'0')}-01` : `${hoje.ano}-${String(hoje.mes).padStart(2,'0')}-01`;
   const dataFimValor = c && c.anoFim? `${c.anoFim}-${String(c.mesFim).padStart(2,'0')}-01` : '';
   abrirModal(`
@@ -2025,6 +2205,30 @@ function abrirFormCampanha(id){
     <div id="extrasWrap" style="margin-top:8px;"></div>
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="adicionarMaterialExtra()">${icon('plus',14)}Adicionar material</button>
     <p class="small-note" id="avisoSemMateriais" style="display:none;color:var(--vermelho);margin-top:8px;">Pelo menos um material precisa ficar ativo.</p>
+
+    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Troca de material por item</div>
+    <p class="small-note" style="margin-top:-4px;">Permite trocar um "kit" de materiais por um item, como uma cartela de bingo. O saldo do colaborador é descontado assim que a troca é emitida. Deixe desativado se esta campanha não usa esse recurso.</p>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:8px;">
+      <input type="checkbox" id="tcAtivo" ${trocaCartela.ativo?'checked':''} onchange="atualizarSecaoTrocaCartela()" style="width:auto;">
+      Ativar troca de material por item nesta campanha
+    </label>
+    <div id="trocaCartelaWrap" style="display:${trocaCartela.ativo?'block':'none'};margin-top:10px;">
+      <div class="grid grid-2">
+        <div class="field"><label>Nome do item entregue</label><input type="text" id="tcNomeItem" value="${escapeHtml(trocaCartela.nomeItem||'cartela')}" placeholder="Ex: cartela de bingo"></div>
+        <div class="field"><label>Itens por kit fechado</label><input type="number" min="1" id="tcCartelasPorKit" value="${trocaCartela.cartelasPorKit||2}"></div>
+      </div>
+      <p class="small-note">Quantidade exigida de cada material para fechar 1 kit. Deixe em branco ou 0 para um material que não entra no kit.</p>
+      <div class="grid grid-2" id="tcKitWrap">
+        ${todasCategoriasMateriaisFormulario(c).map(cat=>`
+          <div class="field"><label>${escapeHtml(cat.label)}</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input type="number" min="0" id="tcKit_${cat.key}" value="${(trocaCartela.kit&&trocaCartela.kit[cat.key])||''}" placeholder="0">
+              <span class="small-note" style="white-space:nowrap;">${cat.unidade}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+
     <div id="campanhaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin:8px 0;"></div>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
@@ -2049,6 +2253,13 @@ function renderMateriaisExtrasForm(){
     </div>
   `).join('');
 }
+function todasCategoriasMateriaisFormulario(c){
+  return [...CATEGORIAS, ...((window._materiaisExtrasForm)||(c&&c.materiaisExtras)||[])];
+}
+function atualizarSecaoTrocaCartela(){
+  document.getElementById('trocaCartelaWrap').style.display = document.getElementById('tcAtivo').checked ? 'block' : 'none';
+}
+window.atualizarSecaoTrocaCartela = atualizarSecaoTrocaCartela;
 function atualizarCampoMaterialOficial(key){
   const ativo = document.getElementById('cpUsar_'+key).checked;
   document.getElementById('cpNomeCat_'+key).disabled = !ativo;
@@ -2107,11 +2318,25 @@ async function salvarCampanha(id){
   const avisoEl = document.getElementById('avisoSemMateriais');
   if(totalAtivos===0){ avisoEl.style.display='block'; erroEl.textContent='Pelo menos um material precisa ficar ativo nesta campanha.'; erroEl.style.display='block'; return; }
   avisoEl.style.display='none';
+  const trocaAtiva = document.getElementById('tcAtivo').checked;
+  let trocaCartela = { ativo:false };
+  if(trocaAtiva){
+    const nomeItem = document.getElementById('tcNomeItem').value.trim() || 'cartela';
+    const cartelasPorKit = parseInt(document.getElementById('tcCartelasPorKit').value,10) || 1;
+    const kit = {};
+    todasCategoriasMateriaisFormulario().forEach(cat=>{
+      const el = document.getElementById('tcKit_'+cat.key);
+      const valor = el ? parseFloat(el.value) : 0;
+      if(valor>0) kit[cat.key] = valor;
+    });
+    if(Object.keys(kit).length===0){ erroEl.textContent='Informe a quantidade exigida de pelo menos um material para o kit de troca.'; erroEl.style.display='block'; return; }
+    trocaCartela = { ativo:true, nomeItem, cartelasPorKit, kit };
+  }
   if(id){
     const c = STATE.campanhas.find(x=>x.id===id);
-    Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, nomesPersonalizados, materiaisExtras, categoriasDesativadas});
+    Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, nomesPersonalizados, materiaisExtras, categoriasDesativadas, trocaCartela});
   } else {
-    STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{}, nomesPersonalizados, materiaisExtras, categoriasDesativadas });
+    STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{}, nomesPersonalizados, materiaisExtras, categoriasDesativadas, trocaCartela });
   }
   await salvarCampanhas();
   if(!STATE.campanhaSelecionadaId) STATE.campanhaSelecionadaId = STATE.campanhas[STATE.campanhas.length-1].id;
