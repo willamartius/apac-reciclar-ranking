@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <style>
 :root{
   --verde-900:#12301F;
@@ -100,6 +101,9 @@ a{color:var(--verde-700);}
 .bottomnav button svg{width:20px;height:20px;}
 .bottomnav button.active{color:#fff;}
 .bottomnav button.active svg{filter:drop-shadow(0 0 6px rgba(143,203,158,.6));}
+.section-tabs{display:flex;gap:6px;padding:5px;background:#EAF0EA;border-radius:12px;margin-bottom:14px;}
+.section-tabs button{flex:1;min-width:0;border:0;border-radius:9px;background:transparent;color:var(--text-muted);font-family:inherit;font-size:13px;font-weight:700;padding:10px 8px;}
+.section-tabs button.active{background:#fff;color:var(--verde-800);box-shadow:var(--sombra);}
 
 /* ---------- CARDS / GENERIC ---------- */
 .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;box-shadow:var(--sombra);}
@@ -202,6 +206,10 @@ select{text-overflow:ellipsis;}
 .sig-chip.on .dot{background:var(--verde-500);border-color:var(--verde-500);}
 
 .loading-screen{position:fixed;inset:0;background:var(--verde-900);display:flex;align-items:center;justify-content:center;flex-direction:column;color:#fff;gap:10px;z-index:999;}
+.auth-screen{min-height:100vh;width:100%;display:grid;place-items:center;padding:20px;background:var(--bg);}
+.auth-card{width:min(100%,420px);}
+.auth-card h1{margin:0 0 8px;color:var(--verde-900);font-size:24px;}
+.auth-error{color:var(--vermelho);font-size:13px;margin:10px 0;}
 
 .checklist{font-size:13.5px;line-height:1.9;padding-left:20px;color:var(--text);}
 .checklist li{margin-bottom:4px;}
@@ -250,6 +258,7 @@ select{text-overflow:ellipsis;}
   .podium-score{font-size:17px;}
   .bottomnav button{font-size:9.5px;}
   .bottomnav button svg{width:19px;height:19px;}
+  .section-tabs button{font-size:12px;padding:10px 5px;}
   .modal{padding:18px 14px calc(18px + env(safe-area-inset-bottom));}
   .modal-actions{flex-wrap:wrap;}
   .modal-actions > .btn{flex:1 1 120px;justify-content:center;}
@@ -328,20 +337,19 @@ let STATE = {
   campanhaSelecionadaId: null,
   config: null,
   isAdmin: false,
+  isOperator: false,
+  authUser: null,
+  authError: '',
+  metasSnapshots: [],
+  entregasSecao: 'entregas',
   view: 'dashboard',
   dashMes: null, dashAno: null,
   rankMes: null, rankAno: null, rankSetor: '',
   histMes: null, histAno: null,
 };
 /* ---------- HELPERS DE ARMAZENAMENTO ---------- */
-/* Este app funciona em dois ambientes:
-   1) Dentro do Claude (como artefato) -> usa window.storage automaticamente.
-   2) Hospedado fora (ex: GitHub Pages) -> usa o banco Firebase configurado abaixo em
-      FIREBASE_CONFIG. Essa configuração é pública por natureza (é assim que todo app
-      Firebase funciona) e não controla quem pode editar dados — quem controla isso é a
-      senha de administrador do próprio app, mais abaixo.
-   Se nenhum dos dois estiver disponível, o app usa o armazenamento local do navegador
-   como último recurso, só para não travar, mas nesse caso os dados não são compartilhados. */
+/* A configuração Firebase é pública; o controle de acesso efetivo fica nas regras
+   do Firestore e nos papéis de usuário registrados no banco. */
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDMpYOJrypaiE05HUoHNERSZTBhwj2Vouo",
   authDomain: "apac-reciclar.firebaseapp.com",
@@ -352,12 +360,23 @@ const FIREBASE_CONFIG = {
 };
 
 let FIREBASE_DB = null;
+let FIREBASE_AUTH = null;
 let STORAGE_MODE = 'none';
+const FIRESTORE_RECORD_COLLECTIONS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
+const FIRESTORE_BASELINES = new Map();
+function serializarEstavel(valor){
+  if(Array.isArray(valor)) return `[${valor.map(serializarEstavel).join(',')}]`;
+  if(valor && typeof valor==='object'){
+    return `{${Object.keys(valor).sort().map(chave=>`${JSON.stringify(chave)}:${serializarEstavel(valor[chave])}`).join(',')}}`;
+  }
+  return JSON.stringify(valor);
+}
 
 function inicializarFirebase(config){
   try{
     if(!firebase.apps.length) firebase.initializeApp(config);
     FIREBASE_DB = firebase.firestore();
+    FIREBASE_AUTH = firebase.auth();
     return true;
   }catch(e){ console.error('Erro ao iniciar Firebase', e); return false; }
 }
@@ -373,26 +392,178 @@ async function storageGet(key, fallback){
       return r && r.value !== undefined ? JSON.parse(r.value) : fallback;
     }
     if(STORAGE_MODE==='firestore'){
+      if(FIRESTORE_RECORD_COLLECTIONS.has(key)){
+        const records = await FIREBASE_DB.collection('reciclar-apac').doc(key).collection('records').get();
+        if(!records.empty){
+          const baseline = new Map();
+          const valores = records.docs.map(doc=>{
+            const valor = doc.data();
+            baseline.set(doc.id, serializarEstavel(valor));
+            return valor;
+          });
+          FIRESTORE_BASELINES.set(key, baseline);
+          return valores;
+        }
+        FIRESTORE_BASELINES.set(key, new Map());
+        const marcador=await FIREBASE_DB.collection('reciclar-apac-migrations').doc(key).get();
+        if(marcador.exists && marcador.data().schemaVersion===1) return [];
+      }
       const doc = await FIREBASE_DB.collection('reciclar-apac').doc(key).get();
       return doc.exists && doc.data().value !== undefined ? JSON.parse(doc.data().value) : fallback;
     }
     const raw = localStorage.getItem('reciclar-apac:'+key);
     return raw!==null ? JSON.parse(raw) : fallback;
-  }catch(e){ console.error('Erro ao carregar', key, e); return fallback; }
+  }catch(e){
+    console.error('Erro ao carregar', key, e);
+    if(STORAGE_MODE==='firestore') throw new Error(`Não foi possível carregar "${key}" no Firestore. Verifique as regras e tente novamente.`);
+    return fallback;
+  }
 }
 async function storageSet(key, value){
   try{
     if(STORAGE_MODE==='claude'){ await window.storage.set(key, JSON.stringify(value), true); return true; }
-    if(STORAGE_MODE==='firestore'){ await FIREBASE_DB.collection('reciclar-apac').doc(key).set({value: JSON.stringify(value)}); return true; }
+    if(STORAGE_MODE==='firestore'){
+      if(!FIRESTORE_RECORD_COLLECTIONS.has(key)){
+        await FIREBASE_DB.collection('reciclar-apac').doc(key).set({value: JSON.stringify(value)});
+        return true;
+      }
+      if(!Array.isArray(value)) throw new Error(`A coleção "${key}" precisa ser uma lista.`);
+      const base = FIRESTORE_BASELINES.get(key) || new Map();
+      const referencia = FIREBASE_DB.collection('reciclar-apac').doc(key).collection('records');
+      const atuais = await referencia.get();
+      const remotos = new Map(atuais.docs.map(doc=>[doc.id, serializarEstavel(doc.data())]));
+      const alterados = [];
+      const ids = new Set();
+      for(const registro of value){
+        if(!registro || typeof registro.id!=='string' || !registro.id.trim() || ids.has(registro.id)){
+          throw new Error(`Registro inválido ou ID duplicado na coleção "${key}".`);
+        }
+        ids.add(registro.id);
+        const serializado = serializarEstavel(registro);
+        const original = base.get(registro.id);
+        const remoto = remotos.get(registro.id);
+        if(original===serializado || remoto===serializado) continue;
+        if((original===undefined && remoto!==undefined) || (original!==undefined && remoto!==original)){
+          throw new Error(`O registro "${registro.id}" foi alterado por outra pessoa. Atualize a página antes de salvar.`);
+        }
+        alterados.push({id:registro.id, registro, serializado});
+      }
+      for(let inicio=0;inicio<alterados.length;inicio+=450){
+        const parte = alterados.slice(inicio,inicio+450);
+        const lote = FIREBASE_DB.batch();
+        parte.forEach(item=>lote.set(referencia.doc(item.id), item.registro));
+        await lote.commit();
+        parte.forEach(item=>{
+          base.set(item.id,item.serializado);
+          remotos.set(item.id,item.serializado);
+        });
+      }
+      FIRESTORE_BASELINES.set(key,base);
+      return true;
+    }
     localStorage.setItem('reciclar-apac:'+key, JSON.stringify(value)); return true;
   }catch(e){
     console.error('Erro ao salvar', key, e);
     return false;
   }
 }
+async function storageDeleteRecord(key,id){
+  if(STORAGE_MODE!=='firestore') return true;
+  try{
+    if(!FIRESTORE_RECORD_COLLECTIONS.has(key)) throw new Error(`A coleção "${key}" não permite excluir registros individuais.`);
+    const baseline=FIRESTORE_BASELINES.get(key)||new Map();
+    const original=baseline.get(id);
+    if(original===undefined) throw new Error(`O registro "${id}" não está na versão carregada. Atualize a página antes de excluir.`);
+    const referencia=FIREBASE_DB.collection('reciclar-apac').doc(key).collection('records').doc(id);
+    const atual=await referencia.get();
+    if(!atual.exists || serializarEstavel(atual.data())!==original){
+      throw new Error(`O registro "${id}" foi alterado por outra pessoa. Atualize a página antes de excluir.`);
+    }
+    await referencia.delete();
+    baseline.delete(id);
+    FIRESTORE_BASELINES.set(key,baseline);
+    return true;
+  }catch(e){
+    console.error('Erro ao excluir registro',key,id,e);
+    return false;
+  }
+}
+async function storageReplaceCollection(key,records){
+  if(STORAGE_MODE!=='firestore') return storageSet(key,records);
+  if(!FIRESTORE_RECORD_COLLECTIONS.has(key) || !Array.isArray(records)) return false;
+  const atuais=await storageGet(key,[]);
+  const manter=new Set(records.map(registro=>registro.id));
+  for(const registro of atuais){
+    if(!manter.has(registro.id) && !await storageDeleteRecord(key,registro.id)) return false;
+  }
+  return storageSet(key,records);
+}
+function firestoreCollectionMatches(records, snapshot){
+  if(snapshot.size!==records.length) return false;
+  const documents=new Map(snapshot.docs.map(doc=>[doc.id,doc]));
+  return records.every(record=>{
+    if(!record || typeof record.id!=='string') return false;
+    const doc=documents.get(record.id);
+    return !!doc && serializarEstavel(doc.data())===serializarEstavel(record);
+  });
+}
+async function migrarColecoesFirestoreLegadas(){
+  const base=FIREBASE_DB.collection('reciclar-apac');
+  for(const key of FIRESTORE_RECORD_COLLECTIONS){
+    const marcadorRef=FIREBASE_DB.collection('reciclar-apac-migrations').doc(key);
+    const marcador=await marcadorRef.get();
+    if(marcador.exists && marcador.data().schemaVersion===1) continue;
+    const legado=await base.doc(key).get();
+    if(legado.exists && legado.data().value!==undefined){
+      let registros;
+      try { registros=JSON.parse(legado.data().value); }
+      catch(e){ throw new Error(`Os dados antigos de "${key}" não são um JSON válido.`); }
+      if(!Array.isArray(registros)) throw new Error(`Os dados antigos de "${key}" não têm o formato esperado.`);
+      if(!await storageSet(key,registros)) throw new Error(`Não foi possível migrar a coleção "${key}".`);
+      const atuais=await base.doc(key).collection('records').get();
+      if(!firestoreCollectionMatches(registros,atuais)){
+        throw new Error(`A conferência da migração de "${key}" encontrou diferenças. Os dados antigos foram preservados; peça ao administrador para revisar a coleção no Firestore.`);
+      }
+    }
+    await marcadorRef.set({schemaVersion:1});
+  }
+  const docConfig=await base.doc('config').get();
+  if(docConfig.exists && docConfig.data().value!==undefined){
+    let config;
+    try { config=JSON.parse(docConfig.data().value); }
+    catch(e){ throw new Error('As configurações antigas não são um JSON válido.'); }
+    if(config && Object.prototype.hasOwnProperty.call(config,'senhaAdmin')){
+      delete config.senhaAdmin;
+      if(!await storageSet('config',config)) throw new Error('Não foi possível remover a senha antiga das configurações do Firebase.');
+    }
+  }
+}
+async function verificarMigracaoFirestoreLegada(){
+  const base=FIREBASE_DB.collection('reciclar-apac');
+  const pendentes=[];
+  for(const key of FIRESTORE_RECORD_COLLECTIONS){
+    const marcador=await FIREBASE_DB.collection('reciclar-apac-migrations').doc(key).get();
+    if(marcador.exists && marcador.data().schemaVersion===1) continue;
+    const legado=await base.doc(key).get();
+    if(!legado.exists || legado.data().value===undefined) continue;
+    let registros;
+    try { registros=JSON.parse(legado.data().value); }
+    catch(e){ throw new Error(`Os dados antigos de "${key}" não são um JSON válido.`); }
+    if(!Array.isArray(registros)) throw new Error(`Os dados antigos de "${key}" não têm o formato esperado.`);
+    const atuais=await base.doc(key).collection('records').get();
+    if(!firestoreCollectionMatches(registros,atuais)) pendentes.push(key);
+  }
+  return pendentes;
+}
+async function verificarInstalacaoFirestore(){
+  const config=await FIREBASE_DB.collection('reciclar-apac').doc('config').get();
+  const marcadores=await FIREBASE_DB.collection('reciclar-apac-migrations').get();
+  if(!config.exists || [...FIRESTORE_RECORD_COLLECTIONS].some(key=>!marcadores.docs.some(doc=>doc.id===key && doc.data().schemaVersion===1))){
+    throw new Error('O administrador precisa entrar primeiro para inicializar o app e migrar os dados antigos.');
+  }
+}
 function defaultConfig(){
   return {
-    senhaAdmin: '1234',
     painelPeriodo: { ano: null, tipo: '6' }, // ver calcularJanelaPainel() — a campanha é escolhida à parte, em STATE.campanhaSelecionadaId
   };
 }
@@ -514,15 +685,17 @@ async function carregarDados(){
   STATE.entregas = await storageGet('entregas', []);
   STATE.transferencias = await storageGet('transferencias', []);
   STATE.trocas = await storageGet('trocas', []);
+  STATE.metasSnapshots = await storageGet('metas', []);
   STATE.config = await storageGet('config', null);
   const configAntigoParaMigrar = STATE.config; // pode conter metasDefault/metasHistorico do formato anterior
+  if(STATE.config) delete STATE.config.senhaAdmin;
   if(!STATE.config){
     STATE.config = defaultConfig();
     await storageSet('config', STATE.config);
   }
   if(!STATE.config.painelPeriodo) STATE.config.painelPeriodo = { ano: null, tipo: '6' };
   STATE.campanhas = await storageGet('campanhas', null);
-  if(!STATE.campanhas){
+  if(!STATE.campanhas || STATE.campanhas.length===0){
     await migrarParaCampanhas(configAntigoParaMigrar);
   } else {
     // Correção de auto-cura: entregas ou transferências criadas por uma versão intermediária
@@ -547,10 +720,10 @@ async function carregarDados(){
   STATE.rankMes=mes; STATE.rankAno=ano;
   STATE.histMes=mes; STATE.histAno=ano;
 }
-async function salvarColaboradores(){ await storageSet('colaboradores', STATE.colaboradores); }
-async function salvarEntregas(){ await storageSet('entregas', STATE.entregas); }
-async function salvarTransferencias(){ await storageSet('transferencias', STATE.transferencias); }
-async function salvarConfig(){ await storageSet('config', STATE.config); }
+async function salvarColaboradores(){ return storageSet('colaboradores', STATE.colaboradores); }
+async function salvarEntregas(){ return storageSet('entregas', STATE.entregas); }
+async function salvarTransferencias(){ return storageSet('transferencias', STATE.transferencias); }
+async function salvarConfig(){ return storageSet('config', STATE.config); }
 function mudarCampanhaSelecionada(id){
   STATE.campanhaSelecionadaId = id;
   salvarCampanhaSelecionadaPersistida(id);
@@ -589,6 +762,8 @@ function getMetasDoMes(campanhaId, mes, ano){
   const campanha = campanhaPorId(campanhaId);
   if(!campanha) return Object.fromEntries(CATEGORIAS.map(c=>[c.key,c.metaDefault]));
   const chave = chaveMA(mes,ano);
+  const snapshot = STATE.metasSnapshots.find(m=>m.campanhaId===campanhaId && m.chave===chave);
+  if(snapshot) return snapshot.metas;
   if(campanha.metasHistorico[chave]) return campanha.metasHistorico[chave];
   return campanha.metasDefault;
 }
@@ -596,9 +771,12 @@ async function garantirSnapshotMetas(campanhaId, mes, ano){
   const campanha = campanhaPorId(campanhaId);
   if(!campanha) return;
   const chave = chaveMA(mes,ano);
-  if(!campanha.metasHistorico[chave]){
-    campanha.metasHistorico[chave] = {...campanha.metasDefault};
-    await salvarCampanhas();
+  if(campanha.metasHistorico[chave] || STATE.metasSnapshots.some(m=>m.campanhaId===campanhaId && m.chave===chave)) return;
+  const snapshot={id:`${campanhaId}-${chave}`,campanhaId,chave,metas:{...campanha.metasDefault}};
+  STATE.metasSnapshots.push(snapshot);
+  if(!await storageSet('metas',STATE.metasSnapshots)){
+    STATE.metasSnapshots=STATE.metasSnapshots.filter(m=>m.id!==snapshot.id);
+    throw new Error(`Não foi possível registrar a meta deste mês (${chave}).`);
   }
 }
 function entregasValidadasDoMes(campanhaId, mes, ano){
@@ -822,13 +1000,37 @@ const NAV_ITEMS_BASE = [
 ];
 const NAV_ITEM_CONFIG = {key:'config', label:'Configurações', icon:'config'};
 function navItemsVisiveis(){
-  return STATE.isAdmin ? [...NAV_ITEMS_BASE, NAV_ITEM_CONFIG] : NAV_ITEMS_BASE;
+  const itens = STATE.isAdmin
+    ? [...NAV_ITEMS_BASE, NAV_ITEM_CONFIG]
+    : NAV_ITEMS_BASE.filter(n=>n.key!=='relatorios');
+  return itens;
 }
 function irPara(view){
-  if(view==='config' && !STATE.isAdmin){ abrirLoginAdmin(); return; }
+  if((view==='config' || view==='relatorios') && !STATE.isAdmin){ exigirAdmin(); return; }
   STATE.view=view; renderApp(); window.scrollTo(0,0);
 }
 window.irPara = irPara;
+function renderTelaAutenticacao(){
+  if(STATE.authUser){
+    return `<main class="auth-screen"><section class="card auth-card">
+      <h1>Acesso não autorizado</h1>
+      <p>Esta conta (${escapeHtml(STATE.authUser.email||'sem e-mail')}) ainda não tem um perfil de acesso.</p>
+      <p class="small-note">Peça ao administrador para atribuir o perfil no Firebase e entre novamente.</p>
+      ${STATE.authError? `<p class="auth-error">${escapeHtml(STATE.authError)}</p>`:''}
+      <button class="btn btn-outline btn-block" onclick="sairAdmin()">Sair</button>
+    </section></main>`;
+  }
+  return `<main class="auth-screen"><section class="card auth-card">
+    <h1>Entrar no ranking</h1>
+    <p class="small-note">Entre com sua conta autorizada para consultar os dados e usar as funções do seu perfil.</p>
+    <form onsubmit="event.preventDefault();confirmarLoginAdmin()">
+      <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="authPassword">Senha</label><input id="authPassword" type="password" autocomplete="current-password" required></div>
+      ${STATE.authError? `<p class="auth-error" role="alert">${escapeHtml(STATE.authError)}</p>`:''}
+      <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+    </form>
+  </section></main>`;
+}
 
 function renderSeletorCampanhaTopo(){
   const campanhas = campanhasOrdenadas();
@@ -847,9 +1049,13 @@ window.renderSeletorCampanhaTopo = renderSeletorCampanhaTopo;
 
 function renderApp(){
   const app = document.getElementById('app');
+  if(STORAGE_MODE==='firestore' && (!STATE.authUser || (!STATE.isAdmin && !STATE.isOperator))){
+    app.innerHTML=renderTelaAutenticacao();
+    return;
+  }
   const navItems = navItemsVisiveis();
+  if(!navItems.some(n=>n.key===STATE.view)) STATE.view='dashboard';
   const current = navItems.find(n=>n.key===STATE.view) || navItems[0];
-  if(STATE.view==='config' && !STATE.isAdmin) STATE.view='dashboard';
   app.innerHTML = `
     <div class="sidebar">
       <div class="brand">
@@ -864,8 +1070,8 @@ function renderApp(){
       </div>
       <div class="sidebar-foot">
         <div class="admin-pill">
-          <span>${STATE.isAdmin? '🔓 Modo administrador':'🔒 Modo visualização'}</span>
-          <button onclick="${STATE.isAdmin? 'sairAdmin()':'abrirLoginAdmin()'}">${STATE.isAdmin?'Sair':'Entrar'}</button>
+          <span>${STATE.isAdmin? '🔓 Administrador':STATE.isOperator?'📝 Operador':'🔒 Somente leitura'}</span>
+          <button onclick="${STATE.authUser? 'sairAdmin()':'abrirLoginAdmin()'}">${STATE.authUser?'Sair':'Entrar'}</button>
         </div>
       </div>
     </div>
@@ -898,7 +1104,7 @@ function renderApp(){
 }
 
 function abrirMaisSheet(){
-  const extras = STATE.isAdmin? ['historico','relatorios','config'] : ['historico','relatorios'];
+  const extras = STATE.isAdmin? ['historico','relatorios','config'] : ['historico'];
   abrirModal(`
     <div class="modal-head"><h3>Mais opções</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <div style="display:flex;flex-direction:column;gap:8px;">
@@ -907,6 +1113,7 @@ function abrirMaisSheet(){
         if(!n) return '';
         return `<button class="btn btn-outline btn-block" style="justify-content:flex-start" onclick="fecharModal();irPara('${k}')">${icon(n.icon)}${n.label}</button>`;
       }).join('')}
+      <button class="btn btn-outline btn-block" style="justify-content:flex-start" onclick="fecharModal();${STATE.authUser?'sairAdmin()':'abrirLoginAdmin()'}">${STATE.authUser?'🔒 Sair da conta':'🔑 Entrar'}</button>
     </div>
   `);
 }
@@ -924,36 +1131,54 @@ function abrirModal(innerHtml, wide){
 function fecharModal(){ const m=document.getElementById('modalOverlay'); if(m) m.remove(); }
 window.fecharModal = fecharModal;
 
-/* ---------- ADMIN ----------
-   Acesso administrativo por senha simples, guardada no documento de configuração.
-   Vale para todos os modos de armazenamento (Claude, Firestore ou local). */
+/* ---------- AUTENTICAÇÃO E PAPÉIS ---------- */
 function abrirLoginAdmin(){
-  abrirModal(`
-    <div class="modal-head"><h3>Área administrativa</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note" style="margin-top:-6px;">Informe a senha para cadastrar colaboradores, registrar e validar entregas, alterar metas e excluir dados.</p>
-    <div class="field"><label>Senha</label><input type="password" id="senhaAdminInput" placeholder="••••"></div>
-    <div id="loginErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin-bottom:8px;">Senha incorreta. Tente novamente.</div>
-    <div class="modal-actions">
-      <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
-      <button class="btn btn-primary btn-block" onclick="confirmarLoginAdmin()">Entrar</button>
-    </div>
-  `);
-  setTimeout(()=>document.getElementById('senhaAdminInput')?.focus(),50);
-}
-function confirmarLoginAdmin(){
-  const v = document.getElementById('senhaAdminInput').value;
-  if(v === STATE.config.senhaAdmin){ STATE.isAdmin=true; sessionStorage.setItem('reciclar-apac:isAdmin','1'); fecharModal(); renderApp(); }
-  else { document.getElementById('loginErro').style.display='block'; }
-}
-function sairAdmin(){
-  STATE.isAdmin=false;
-  sessionStorage.removeItem('reciclar-apac:isAdmin');
+  if(STORAGE_MODE!=='firestore' || !FIREBASE_AUTH){
+    alert('O login seguro só está disponível quando o Firebase Authentication está inicializado.');
+    return;
+  }
+  STATE.authError='';
   renderApp();
+  setTimeout(()=>document.getElementById('authEmail')?.focus(),50);
+}
+async function confirmarLoginAdmin(){
+  if(!FIREBASE_AUTH){ STATE.authError='O Firebase Authentication não está disponível.'; renderApp(); return; }
+  const email=document.getElementById('authEmail')?.value.trim();
+  const senha=document.getElementById('authPassword')?.value;
+  if(!email || !senha){ STATE.authError='Informe o e-mail e a senha.'; renderApp(); return; }
+  STATE.authError='';
+  try{
+    await FIREBASE_AUTH.signInWithEmailAndPassword(email,senha);
+  }catch(e){
+    console.error('Erro ao autenticar usuário',e);
+    const mensagens={
+      'auth/too-many-requests':'Muitas tentativas. Aguarde antes de tentar novamente.',
+      'auth/operation-not-allowed':'O acesso por e-mail e senha ainda não está habilitado no Firebase Authentication.',
+      'auth/unauthorized-domain':'Este domínio ainda não foi autorizado no Firebase Authentication.',
+      'auth/network-request-failed':'Não foi possível conectar ao Firebase. Verifique sua conexão e tente novamente.',
+    };
+    STATE.authError=mensagens[e.code] || 'Não foi possível entrar. Confira suas credenciais e tente novamente.';
+    renderApp();
+  }
+}
+async function sairAdmin(){
+  if(!FIREBASE_AUTH) return;
+  try { await FIREBASE_AUTH.signOut(); }
+  catch(e){ console.error('Erro ao sair da conta',e); alert('Não foi possível encerrar a sessão. Tente novamente.'); }
 }
 window.abrirLoginAdmin=abrirLoginAdmin; window.confirmarLoginAdmin=confirmarLoginAdmin; window.sairAdmin=sairAdmin;
-function exigirAdmin(acaoLabel){
-  if(!STATE.isAdmin){ abrirLoginAdmin(); return false; }
-  return true;
+function podeEditarDados(){ return STATE.isAdmin || STATE.isOperator; }
+function exigirAdmin(){
+  if(STATE.isAdmin) return true;
+  if(!STATE.authUser){ abrirLoginAdmin(); return false; }
+  alert('Esta ação exige perfil de administrador.');
+  return false;
+}
+function exigirOperador(){
+  if(podeEditarDados()) return true;
+  if(!STATE.authUser){ abrirLoginAdmin(); return false; }
+  alert('Esta ação exige um perfil autorizado para cadastrar dados.');
+  return false;
 }
 
 function abrirAjuda(){
@@ -1175,7 +1400,7 @@ function renderColaboradores(){
       <div class="toolbar-left">
         <input type="text" id="buscaColab" placeholder="Buscar por nome ou setor…" style="min-width:220px;" oninput="renderTabelaColaboradores()">
       </div>
-      ${STATE.isAdmin? `
+      ${podeEditarDados()? `
       <div class="toolbar-right">
         <button class="btn btn-outline" onclick="abrirImportarCsv()">${icon('upload')}Importar planilha</button>
         <button class="btn btn-primary" onclick="abrirFormColaborador()">${icon('plus')}Novo colaborador</button>
@@ -1194,7 +1419,7 @@ function renderTabelaColaboradores(){
     .sort((a,b)=>a.nome.localeCompare(b.nome));
   if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhum colaborador cadastrado ainda.</div>`; return; }
   wrap.innerHTML = `
-    <table><thead><tr><th>Nome</th><th>Setor</th><th>Cargo</th><th>Status</th><th>Cadastro</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Nome</th><th>Setor</th><th>Cargo</th><th>Status</th><th>Cadastro</th>${podeEditarDados()?'<th></th>':''}</tr></thead>
     <tbody>
       ${lista.map(c=>`
         <tr>
@@ -1203,9 +1428,9 @@ function renderTabelaColaboradores(){
           <td>${escapeHtml(c.cargo||'—')}</td>
           <td>${c.status==='ativo'? '<span class="badge badge-green">Ativo</span>' : '<span class="badge badge-grey">Desligado</span>'}</td>
           <td>${formatarData(c.dataCadastro)}</td>
-          ${STATE.isAdmin? `<td style="text-align:right;white-space:nowrap;">
+          ${podeEditarDados()? `<td style="text-align:right;white-space:nowrap;">
             <button class="btn btn-ghost btn-sm" onclick="abrirFormColaborador('${c.id}')">${icon('edit',16)}</button>
-            <button class="btn btn-ghost btn-sm" onclick="confirmarExcluirColaborador('${c.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
+            ${STATE.isAdmin? `<button class="btn btn-ghost btn-sm" onclick="confirmarExcluirColaborador('${c.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>` : ''}
           </td>` : ''}
         </tr>`).join('')}
     </tbody></table>
@@ -1213,7 +1438,7 @@ function renderTabelaColaboradores(){
 }
 function formatarData(iso){ if(!iso) return '—'; const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`; }
 function abrirFormColaborador(id){
-  if(!exigirAdmin()) return;
+  if(!exigirOperador()) return;
   const c = id ? STATE.colaboradores.find(x=>x.id===id) : null;
   abrirModal(`
     <div class="modal-head"><h3>${c?'Editar colaborador':'Novo colaborador'}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
@@ -1232,6 +1457,8 @@ function abrirFormColaborador(id){
   `);
 }
 async function salvarColaborador(id){
+  if(!exigirOperador()) return;
+  const anterior=STATE.colaboradores.map(c=>({...c}));
   const nome = document.getElementById('fNome').value.trim();
   if(!nome){ alert('Informe o nome do colaborador.'); return; }
   const setor = document.getElementById('fSetor').value.trim();
@@ -1243,7 +1470,11 @@ async function salvarColaborador(id){
   } else {
     STATE.colaboradores.push({id:uid(),nome,setor,cargo,status,dataCadastro:new Date().toISOString().slice(0,10)});
   }
-  await salvarColaboradores();
+  if(!await salvarColaboradores()){
+    STATE.colaboradores=anterior;
+    alert('Não foi possível salvar o colaborador. Atualize a página e tente novamente.');
+    return;
+  }
   fecharModal(); renderApp();
 }
 function confirmarExcluirColaborador(id){
@@ -1259,12 +1490,14 @@ function confirmarExcluirColaborador(id){
   `);
 }
 async function excluirColaborador(id){
+  if(!exigirAdmin()) return;
+  if(!await storageDeleteRecord('colaboradores',id)){ alert('Não foi possível excluir o colaborador. Atualize a página e tente novamente.'); return; }
   STATE.colaboradores = STATE.colaboradores.filter(x=>x.id!==id);
-  await salvarColaboradores();
+  if(!await salvarColaboradores()){ alert('O colaborador foi excluído, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
   fecharModal(); renderApp();
 }
 function abrirImportarCsv(){
-  if(!exigirAdmin()) return;
+  if(!exigirOperador()) return;
   abrirModal(`
     <div class="modal-head"><h3>Importar colaboradores</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <p class="small-note">Envie um arquivo CSV ou Excel (.csv) com as colunas: <b>nome, setor, cargo</b>. A primeira linha deve ser o cabeçalho.</p>
@@ -1293,10 +1526,16 @@ function processarCsv(input){
   }});
 }
 async function confirmarImportacaoCsv(){
+  if(!exigirOperador()) return;
+  const anterior=STATE.colaboradores.map(c=>({...c}));
   const linhas = window._csvImportPreview || [];
   const hojeIso = new Date().toISOString().slice(0,10);
   linhas.forEach(l=> STATE.colaboradores.push({id:uid(),nome:l.nome,setor:l.setor,cargo:l.cargo,status:'ativo',dataCadastro:hojeIso}));
-  await salvarColaboradores();
+  if(!await salvarColaboradores()){
+    STATE.colaboradores=anterior;
+    alert('Não foi possível importar os colaboradores. Atualize a página e tente novamente.');
+    return;
+  }
   fecharModal(); renderApp();
 }
 window.abrirFormColaborador=abrirFormColaborador; window.salvarColaborador=salvarColaborador;
@@ -1314,6 +1553,7 @@ function renderEntregas(){
   }
   const campanha = campanhaPorId(campanhaId);
   const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
+  if(STATE.entregasSecao==='trocas' && !cfgTroca) STATE.entregasSecao='entregas';
   return `
     <div class="toolbar">
       <div class="toolbar-left filters">
@@ -1321,66 +1561,78 @@ function renderEntregas(){
         <div><select id="filtroEntregaAno" onchange="renderTabelaEntregas()">${[mesAnoAtual().ano-1,mesAnoAtual().ano,mesAnoAtual().ano+1].map(a=>`<option ${a===mesAnoAtual().ano?'selected':''}>${a}</option>`).join('')}</select></div>
         <div class="filtro-status"><select id="filtroEntregaStatus" onchange="renderTabelaEntregas()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="validado">Validado</option></select></div>
       </div>
-      ${STATE.isAdmin? `
+      ${podeEditarDados()? `
       <div class="toolbar-right">
         <button class="btn btn-outline" onclick="abrirFormTransferencia()">${icon('ranking')}Transferir material</button>
         <button class="btn btn-primary" onclick="abrirFormEntrega()">${icon('plus')}Nova entrega</button>
       </div>` : ''}
     </div>
-    <div class="card" id="saldoTransportadoWrap" style="display:none;"></div>
-    <div class="card" style="padding:0;">
-      <div class="table-wrap" id="tabelaEntregasWrap"></div>
+    <div class="section-tabs" role="tablist" aria-label="Seção de registros">
+      <button type="button" role="tab" aria-selected="${STATE.entregasSecao==='entregas'}" class="${STATE.entregasSecao==='entregas'?'active':''}" onclick="mudarSecaoEntregas('entregas')">Entregas</button>
+      <button type="button" role="tab" aria-selected="${STATE.entregasSecao==='transferencias'}" class="${STATE.entregasSecao==='transferencias'?'active':''}" onclick="mudarSecaoEntregas('transferencias')">Transferências</button>
+      ${cfgTroca? `<button type="button" role="tab" aria-selected="${STATE.entregasSecao==='trocas'}" class="${STATE.entregasSecao==='trocas'?'active':''}" onclick="mudarSecaoEntregas('trocas')">Trocas</button>` : ''}
     </div>
-    <div class="section-title">Transferências entre colaboradores / materiais no mês</div>
-    <p class="small-note" style="margin-top:-6px;">Usado para reatribuir material entre colaboradores ou trocar um tipo de material por outro, com autorização do administrador, conforme o regulamento.</p>
-    <div class="card" style="padding:0;">
-      <div class="table-wrap" id="tabelaTransferenciasWrap"></div>
-    </div>
-    ${cfgTroca? `
-    <div class="toolbar">
-      <div class="toolbar-left"><span class="section-title" style="margin:0;">Troca de material por ${escapeHtml(cfgTroca.nomeItem)}</span></div>
-      ${STATE.isAdmin? `<div class="toolbar-right"><button class="btn btn-primary" onclick="abrirFormTrocaCartela()">${icon('plus')}Trocar por ${escapeHtml(cfgTroca.nomeItem)}</button></div>` : ''}
-    </div>
-    <p class="small-note" style="margin-top:-6px;">Cada kit fechado dá direito a ${cfgTroca.cartelasPorKit} ${escapeHtml(cfgTroca.nomeItem)}(s). O material é descontado do saldo do colaborador assim que a troca é emitida.</p>
-    <div class="card" style="padding:0;">
-      <div class="table-wrap" id="tabelaTrocasWrap"></div>
-    </div>` : ''}
+    ${STATE.entregasSecao==='entregas'? `
+      <div class="card" id="saldoTransportadoWrap" style="display:none;"></div>
+      <div class="card" style="padding:0;"><div class="table-wrap" id="tabelaEntregasWrap"></div></div>
+    ` : ''}
+    ${STATE.entregasSecao==='transferencias'? `
+      <div class="toolbar">
+        <div><div class="section-title" style="margin:0;">Transferências entre colaboradores e materiais</div><p class="small-note" style="margin:5px 0 0;">Reatribuições de material registradas neste mês.</p></div>
+        ${podeEditarDados()? `<button class="btn btn-primary" onclick="abrirFormTransferencia()">${icon('ranking')}Nova transferência</button>` : ''}
+      </div>
+      <div class="card" style="padding:0;"><div class="table-wrap" id="tabelaTransferenciasWrap"></div></div>
+    ` : ''}
+    ${cfgTroca && STATE.entregasSecao==='trocas'? `
+      <div class="toolbar">
+        <div><div class="section-title" style="margin:0;">Troca de material por ${escapeHtml(cfgTroca.nomeItem)}</div><p class="small-note" style="margin:5px 0 0;">Cada kit fechado dá direito a ${cfgTroca.cartelasPorKit} ${escapeHtml(cfgTroca.nomeItem)}(s).</p></div>
+        ${STATE.isAdmin? `<button class="btn btn-primary" onclick="abrirFormTrocaCartela()">${icon('plus')}Trocar por ${escapeHtml(cfgTroca.nomeItem)}</button>` : ''}
+      </div>
+      <div class="card" style="padding:0;"><div class="table-wrap" id="tabelaTrocasWrap"></div></div>
+    ` : ''}
   `;
 }
+function mudarSecaoEntregas(secao){
+  if(!['entregas','transferencias','trocas'].includes(secao)) return;
+  STATE.entregasSecao=secao;
+  renderApp();
+}
+window.mudarSecaoEntregas=mudarSecaoEntregas;
 function renderTabelaEntregas(){
   const wrap = document.getElementById('tabelaEntregasWrap');
-  if(!wrap) return;
   const campanhaId = STATE.campanhaSelecionadaId;
   const mes = +document.getElementById('filtroEntregaMes').value;
   const ano = +document.getElementById('filtroEntregaAno').value;
   const status = document.getElementById('filtroEntregaStatus').value;
-  renderSaldoTransportado(mes,ano);
-  const chave = chaveMA(mes,ano);
-  let lista = STATE.entregas.filter(e=> e.campanhaId===campanhaId && e.data && e.data.slice(0,7)===chave && (!status || e.statusValidacao===status));
-  lista.sort((a,b)=> b.data.localeCompare(a.data));
-  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma entrega registrada nesta campanha e período.</div>`; }
-  else {
-  wrap.innerHTML = `
-    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Material</th><th>Qtd.</th><th>Status</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
-    <tbody>
-      ${lista.map(e=>{
-        const c = STATE.colaboradores.find(x=>x.id===e.colaboradorId);
-        const cat = resolverCategoria(campanhaId, e.tipo);
-        const unidLabel = e.tipo==='latinhas'? (e.unidade==='kg'?'kg':'unid.') : (cat?cat.unidade.replace('unidades','unid.').replace('cartelas','cartelas'):'');
-        return `<tr>
-          <td>${formatarData(e.data)}</td>
-          <td style="font-weight:700;">${escapeHtml(c?c.nome:'(removido)')}</td>
-          <td>${cat? escapeHtml(cat.label.split(' (')[0]) : 'Outros materiais'}</td>
-          <td>${e.quantidade} ${unidLabel}</td>
-          <td>${e.statusValidacao==='validado'? '<span class="badge badge-green">Validado</span>' : '<span class="badge badge-amber">Pendente</span>'}</td>
-          ${STATE.isAdmin? `<td style="text-align:right;white-space:nowrap;">
-            <button class="btn btn-ghost btn-sm" onclick="abrirFormEntrega('${e.id}')">${icon('edit',16)}</button>
-            <button class="btn btn-ghost btn-sm" onclick="confirmarExcluirEntrega('${e.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
-          </td>` : ''}
-        </tr>`;
-      }).join('')}
-    </tbody></table>
-  `;
+  if(wrap){
+    renderSaldoTransportado(mes,ano);
+    const chave = chaveMA(mes,ano);
+    let lista = STATE.entregas.filter(e=> e.campanhaId===campanhaId && e.data && e.data.slice(0,7)===chave && (!status || e.statusValidacao===status));
+    lista.sort((a,b)=> b.data.localeCompare(a.data));
+    if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma entrega registrada nesta campanha e período.</div>`; }
+    else {
+      wrap.innerHTML = `
+        <table><thead><tr><th>Data</th><th>Colaborador</th><th>Material</th><th>Qtd.</th><th>Status</th>${podeEditarDados()?'<th></th>':''}</tr></thead>
+        <tbody>
+          ${lista.map(e=>{
+            const c = STATE.colaboradores.find(x=>x.id===e.colaboradorId);
+            const cat = resolverCategoria(campanhaId, e.tipo);
+            const unidLabel = e.tipo==='latinhas'? (e.unidade==='kg'?'kg':'unid.') : (cat?cat.unidade.replace('unidades','unid.').replace('cartelas','cartelas'):'');
+            return `<tr>
+              <td>${formatarData(e.data)}</td>
+              <td style="font-weight:700;">${escapeHtml(c?c.nome:'(removido)')}</td>
+              <td>${cat? escapeHtml(cat.label.split(' (')[0]) : 'Outros materiais'}</td>
+              <td>${e.quantidade} ${unidLabel}</td>
+              <td>${e.statusValidacao==='validado'? '<span class="badge badge-green">Validado</span>' : '<span class="badge badge-amber">Pendente</span>'}</td>
+              ${podeEditarDados()? `<td style="text-align:right;white-space:nowrap;">
+                <button class="btn btn-ghost btn-sm" onclick="abrirFormEntrega('${e.id}')">${icon('edit',16)}</button>
+                ${STATE.isAdmin? `<button class="btn btn-ghost btn-sm" onclick="confirmarExcluirEntrega('${e.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button>` : ''}
+              </td>` : ''}
+            </tr>`;
+          }).join('')}
+        </tbody></table>
+      `;
+    }
   }
   renderTabelaTransferencias(mes,ano);
   renderTabelaTrocas();
@@ -1412,7 +1664,7 @@ function renderTabelaTransferencias(mes,ano){
   `;
 }
 function abrirFormEntrega(id){
-  if(!exigirAdmin()) return;
+  if(!exigirOperador()) return;
   const e = id? STATE.entregas.find(x=>x.id===id) : null;
   if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de registrar entregas.'); return; }
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
@@ -1459,6 +1711,8 @@ function atualizarCampoUnidadeEntrega(e){
 }
 window.atualizarCampoUnidadeEntrega = atualizarCampoUnidadeEntrega;
 async function salvarEntrega(id){
+  if(!exigirOperador()) return;
+  const anteriores=STATE.entregas.map(e=>({...e}));
   const data = document.getElementById('fData').value;
   const colaboradorId = document.getElementById('fColab').value;
   const tipo = document.getElementById('fTipo').value;
@@ -1479,8 +1733,15 @@ async function salvarEntrega(id){
   } else {
     STATE.entregas.push({id:uid(), criadoEm:Date.now(), ...payload});
   }
-  await garantirSnapshotMetas(campanhaId, +data.slice(5,7), +data.slice(0,4));
-  await salvarEntregas();
+  try{
+    await garantirSnapshotMetas(campanhaId, +data.slice(5,7), +data.slice(0,4));
+    if(!await salvarEntregas()) throw new Error('O Firebase recusou a gravação.');
+  }catch(e){
+    STATE.entregas=anteriores;
+    console.error('Erro ao salvar entrega',e);
+    alert(e.message || 'Não foi possível salvar a entrega. Atualize a página e tente novamente.');
+    return;
+  }
   fecharModal(); renderApp();
 }
 function confirmarExcluirEntrega(id){
@@ -1495,8 +1756,10 @@ function confirmarExcluirEntrega(id){
   `);
 }
 async function excluirEntrega(id){
+  if(!exigirAdmin()) return;
+  if(!await storageDeleteRecord('entregas',id)){ alert('Não foi possível excluir a entrega. Atualize a página e tente novamente.'); return; }
   STATE.entregas = STATE.entregas.filter(x=>x.id!==id);
-  await salvarEntregas();
+  if(!await salvarEntregas()){ alert('A entrega foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
   fecharModal(); renderApp();
 }
 function renderSaldoTransportado(mes,ano){
@@ -1558,7 +1821,7 @@ window.renderTabelaEntregas=renderTabelaEntregas; window.renderTabelaTransferenc
 
 /* ---------- TRANSFERÊNCIAS ENTRE COLABORADORES / CATEGORIAS ---------- */
 function abrirFormTransferencia(){
-  if(!exigirAdmin()) return;
+  if(!exigirOperador()) return;
   if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de transferir material.'); return; }
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const opcoesColab = STATE.colaboradores.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
@@ -1603,6 +1866,8 @@ function atualizarSaldoTransferencia(){
 }
 window.atualizarSaldoTransferencia = atualizarSaldoTransferencia;
 async function salvarTransferencia(){
+  if(!exigirOperador()) return;
+  const anteriores=STATE.transferencias.map(t=>({...t}));
   const data = document.getElementById('tData').value;
   const colaboradorOrigemId = document.getElementById('tColabOrigem').value;
   const categoriaOrigem = document.getElementById('tCategoriaOrigem').value;
@@ -1630,8 +1895,15 @@ async function salvarTransferencia(){
     id:uid(), campanhaId, data, colaboradorOrigemId, categoriaOrigem, colaboradorDestinoId, categoriaDestino,
     quantidade, motivo, criadoEm:Date.now()
   });
-  await garantirSnapshotMetas(campanhaId, mes,ano);
-  await salvarTransferencias();
+  try{
+    await garantirSnapshotMetas(campanhaId, mes,ano);
+    if(!await salvarTransferencias()) throw new Error('O Firebase recusou a gravação.');
+  }catch(e){
+    STATE.transferencias=anteriores;
+    console.error('Erro ao salvar transferência',e);
+    alert(e.message || 'Não foi possível salvar a transferência. Atualize a página e tente novamente.');
+    return;
+  }
   fecharModal(); renderApp();
 }
 function confirmarExcluirTransferencia(id){
@@ -1646,8 +1918,10 @@ function confirmarExcluirTransferencia(id){
   `);
 }
 async function excluirTransferencia(id){
+  if(!exigirAdmin()) return;
+  if(!await storageDeleteRecord('transferencias',id)){ alert('Não foi possível excluir a transferência. Atualize a página e tente novamente.'); return; }
   STATE.transferencias = STATE.transferencias.filter(x=>x.id!==id);
-  await salvarTransferencias();
+  if(!await salvarTransferencias()){ alert('A transferência foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
   fecharModal(); renderApp();
 }
 window.abrirFormTransferencia=abrirFormTransferencia; window.salvarTransferencia=salvarTransferencia;
@@ -1732,6 +2006,7 @@ function atualizarPreviaTroca(){
 }
 window.atualizarPreviaTroca = atualizarPreviaTroca;
 async function salvarTroca(){
+  if(!exigirAdmin()) return;
   const campanhaId = STATE.campanhaSelecionadaId;
   const campanha = campanhaPorId(campanhaId);
   const cfgTroca = campanha.trocaCartela;
@@ -1769,8 +2044,10 @@ function confirmarExcluirTroca(id){
   `);
 }
 async function excluirTroca(id){
+  if(!exigirAdmin()) return;
+  if(!await storageDeleteRecord('trocas',id)){ alert('Não foi possível excluir a troca. Atualize a página e tente novamente.'); return; }
   STATE.trocas = STATE.trocas.filter(x=>x.id!==id);
-  await salvarTrocas();
+  if(!await salvarTrocas()){ alert('A troca foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
   fecharModal(); renderApp();
 }
 window.confirmarExcluirTroca=confirmarExcluirTroca; window.excluirTroca=excluirTroca;
@@ -1797,11 +2074,11 @@ function renderRanking(){
           ${setores.map(s=>`<option value="${escapeHtml(s)}" ${STATE.rankSetor===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
         </select>
       </div>
-      <div class="toolbar-right">
+      ${STATE.isAdmin? `<div class="toolbar-right">
         <button class="btn btn-outline" onclick="compartilharTop3(${mes},${ano})">${icon('whatsapp')}Compartilhar resultado</button>
         <button class="btn btn-outline" onclick="compartilharRankingCompleto(${mes},${ano})">${icon('whatsapp')}Compartilhar ranking completo</button>
         <button class="btn btn-primary" onclick="gerarCardRanking(${mes},${ano})">${icon('image')}Gerar card do ranking</button>
-      </div>
+      </div>` : ''}
     </div>
     ${resultados.length===0? `<div class="card"><div class="empty-state"><div class="icon">${icon('ranking',44)}</div>Nenhum colaborador com entregas validadas neste período.</div></div>` : `
       <div class="podium-wrap">
@@ -1937,13 +2214,14 @@ async function enviarParaWhatsapp(){
   }
   window.open('https://wa.me/?text='+encodeURIComponent(t), '_blank');
 }
-function compartilharTop3(mes,ano){ abrirPreviaCompartilhamento(montarMensagemTop3(mes,ano), 'Compartilhar resultado do mês'); }
-function compartilharRankingCompleto(mes,ano){ abrirPreviaCompartilhamento(montarMensagemCompleta(mes,ano), 'Compartilhar ranking completo'); }
+function compartilharTop3(mes,ano){ if(!exigirAdmin()) return; abrirPreviaCompartilhamento(montarMensagemTop3(mes,ano), 'Compartilhar resultado do mês'); }
+function compartilharRankingCompleto(mes,ano){ if(!exigirAdmin()) return; abrirPreviaCompartilhamento(montarMensagemCompleta(mes,ano), 'Compartilhar ranking completo'); }
 window.compartilharTop3=compartilharTop3; window.compartilharRankingCompleto=compartilharRankingCompleto;
 window.copiarTextoCompartilhar=copiarTextoCompartilhar; window.enviarParaWhatsapp=enviarParaWhatsapp;
 
 /* ---------- CARD PNG PARA WHATSAPP ---------- */
 function gerarCardRanking(mes,ano){
+  if(!exigirAdmin()) return;
   const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
   const top3 = resultados.filter(r=> r.pontuacao>0 || r.totalMateriais>0).slice(0,3);
   const W=1080,H=1350;
@@ -2024,7 +2302,7 @@ function renderHistorico(){
   return `
     <div class="toolbar">
       <div class="toolbar-left filters">${seletorMesAno('hist', mes, ano)}</div>
-      <div class="toolbar-right"><button class="btn btn-outline" onclick="exportarCsvEntregas(${mes},${ano})">${icon('download')}Exportar entregas (CSV)</button></div>
+      ${STATE.isAdmin? `<div class="toolbar-right"><button class="btn btn-outline" onclick="exportarCsvEntregas(${mes},${ano})">${icon('download')}Exportar entregas (CSV)</button></div>` : ''}
     </div>
     ${meses.length===0? `<div class="card"><div class="empty-state">Nenhum histórico registrado ainda nesta campanha.</div></div>` : `
     <div class="section-title">Ranking de ${nomeMes(mes)} de ${ano}</div>
@@ -2052,6 +2330,7 @@ function baixarArquivo(conteudo, nome, tipo){
   const a = document.createElement('a'); a.href=url; a.download=nome; document.body.appendChild(a); a.click(); a.remove();
 }
 function exportarCsvEntregas(mes,ano){
+  if(!exigirAdmin()) return;
   const campanhaId = STATE.campanhaSelecionadaId;
   const chave = chaveMA(mes,ano);
   const lista = STATE.entregas.filter(e=>e.campanhaId===campanhaId && e.data && e.data.slice(0,7)===chave);
@@ -2070,6 +2349,7 @@ window.exportarCsvEntregas = exportarCsvEntregas;
    RELATÓRIOS
    ========================================================= */
 function renderRelatorios(){
+  if(!STATE.isAdmin) return `<div class="card"><div class="empty-state">Entre como administrador para acessar as exportações.</div></div>`;
   const mes=STATE.rankMes, ano=STATE.rankAno;
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
@@ -2107,6 +2387,7 @@ function renderRelatorios(){
   `;
 }
 function exportarCsvRanking(mes,ano){
+  if(!exigirAdmin()) return;
   const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
   let csv = 'Posicao,Colaborador,Setor,Pontuacao,PercentualMedio,MetaAtingida,TotalMateriais\n';
   resultados.forEach(r=>{
@@ -2116,11 +2397,13 @@ function exportarCsvRanking(mes,ano){
   baixarArquivo(csv, `ranking-${nomeMes(mes)}-${ano}.csv`,'text/csv;charset=utf-8;');
 }
 function exportarCsvColaboradores(){
+  if(!exigirAdmin()) return;
   let csv = 'Nome,Setor,Cargo,Status,DataCadastro\n';
   STATE.colaboradores.forEach(c=>{ csv += [c.nome,c.setor||'',c.cargo||'',c.status,c.dataCadastro].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')+'\n'; });
   baixarArquivo(csv,'colaboradores.csv','text/csv;charset=utf-8;');
 }
 function exportarCsvTransferencias(mes,ano){
+  if(!exigirAdmin()) return;
   const lista = transferenciasDoMes(STATE.campanhaSelecionadaId, mes,ano);
   let csv = 'Data,ColaboradorOrigem,CategoriaOrigem,ColaboradorDestino,CategoriaDestino,Quantidade,Motivo\n';
   lista.forEach(t=>{
@@ -2133,6 +2416,7 @@ function exportarCsvTransferencias(mes,ano){
   baixarArquivo(csv, `transferencias-${nomeMes(mes)}-${ano}.csv`, 'text/csv;charset=utf-8;');
 }
 function exportarCsvTrocas(){
+  if(!exigirAdmin()) return;
   const campanhaId = STATE.campanhaSelecionadaId;
   const lista = STATE.trocas.filter(t=>t.campanhaId===campanhaId);
   let csv = 'Data,Colaborador,QuantidadeKits,ItemEmitido,QuantidadeEmitida\n';
@@ -2165,13 +2449,8 @@ function renderConfig(){
 
     <div class="section-title">Segurança</div>
     <div class="card">
-      <p class="small-note">A senha controla apenas a interface deste navegador; como o app é estático, ela não substitui autenticação e regras de acesso no Firebase.</p>
-      <div class="field"><label>Alterar senha do administrador</label>
-        <div style="display:flex;gap:8px;">
-          <input type="password" id="novaSenhaAdmin" placeholder="Nova senha">
-          <button class="btn btn-outline" onclick="alterarSenhaAdmin()">Salvar</button>
-        </div>
-      </div>
+      <p class="small-note">O acesso é validado pelo Firebase Authentication e pelos papéis definidos no Firestore. Para trocar sua senha, solicite um e-mail de redefinição.</p>
+      <button class="btn btn-outline" onclick="enviarRedefinicaoSenha()">Enviar e-mail de redefinição de senha</button>
     </div>
 
     <div class="section-title">Backup e restauração</div>
@@ -2322,6 +2601,7 @@ function removerMaterialExtra(key){
 }
 window.removerMaterialExtra = removerMaterialExtra;
 async function salvarCampanha(id){
+  if(!exigirAdmin()) return;
   const nome = document.getElementById('cpNome').value.trim();
   const dataInicio = document.getElementById('cpDataInicio').value;
   const dataFim = document.getElementById('cpDataFim').value;
@@ -2381,7 +2661,7 @@ async function salvarCampanha(id){
   } else {
     STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{}, nomesPersonalizados, materiaisExtras, categoriasDesativadas, trocaCartela });
   }
-  await salvarCampanhas();
+  if(!await salvarCampanhas()){ erroEl.textContent='Não foi possível salvar a campanha no Firebase. Atualize a página e tente novamente.'; erroEl.style.display='block'; return; }
   if(!STATE.campanhaSelecionadaId) STATE.campanhaSelecionadaId = STATE.campanhas[STATE.campanhas.length-1].id;
   fecharModal(); renderApp();
 }
@@ -2406,9 +2686,11 @@ function confirmarExcluirCampanha(id){
   `);
 }
 async function excluirCampanha(id){
+  if(!exigirAdmin()) return;
+  if(!await storageDeleteRecord('campanhas',id)){ alert('Não foi possível excluir a campanha. Atualize a página e tente novamente.'); return; }
   STATE.campanhas = STATE.campanhas.filter(x=>x.id!==id);
   if(STATE.campanhaSelecionadaId===id) STATE.campanhaSelecionadaId = (campanhaAtiva()||{}).id || null;
-  await salvarCampanhas();
+  if(!await salvarCampanhas()){ alert('A campanha foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
   fecharModal(); renderApp();
 }
 window.abrirFormCampanha=abrirFormCampanha; window.salvarCampanha=salvarCampanha;
@@ -2437,14 +2719,16 @@ function renderTabelaCampanhas(){
   `;
 }
 window.renderTabelaCampanhas = renderTabelaCampanhas;
-async function alterarSenhaAdmin(){
+async function enviarRedefinicaoSenha(){
   if(!exigirAdmin()) return;
-  const v = document.getElementById('novaSenhaAdmin').value.trim();
-  if(!v){ alert('Informe uma nova senha.'); return; }
-  STATE.config.senhaAdmin = v;
-  await salvarConfig();
-  alert('Senha atualizada.');
-  renderApp();
+  if(!STATE.authUser || !STATE.authUser.email){ alert('A conta atual não tem um e-mail cadastrado.'); return; }
+  try{
+    await FIREBASE_AUTH.sendPasswordResetEmail(STATE.authUser.email);
+    alert('Enviamos um link de redefinição para o e-mail da conta.');
+  }catch(e){
+    console.error('Erro ao solicitar redefinição de senha',e);
+    alert('Não foi possível enviar o e-mail de redefinição. Tente novamente ou verifique o Firebase Authentication.');
+  }
 }
 function gerarBackupJSON(){
   const dados = {
@@ -2457,7 +2741,8 @@ function gerarBackupJSON(){
       transferencias: STATE.transferencias,
       trocas: STATE.trocas,
       campanhas: STATE.campanhas,
-      config: STATE.config,
+      metas: STATE.metasSnapshots,
+      config: (()=>{ const {senhaAdmin, ...configBackup} = STATE.config || {}; return configBackup; })(),
       metadata: {
         storageMode: STORAGE_MODE,
         campanhaSelecionadaId: STATE.campanhaSelecionadaId,
@@ -2467,6 +2752,7 @@ function gerarBackupJSON(){
   return dados;
 }
 function exportarBackupLocal(){
+  if(!exigirAdmin()) return;
   try {
     baixarBackupJSON(gerarBackupJSON(), `backup-reciclar-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.json`);
   } catch (erro) {
@@ -2513,8 +2799,8 @@ function validarBackupJSON(obj){
       ids.add(registro.id);
     }
   }
-  if(!objetoValido(dados.config) || typeof dados.config.senhaAdmin !== 'string'
-    || !objetoValido(dados.config.painelPeriodo)
+  if(dados.metas !== undefined && !Array.isArray(dados.metas)) return { ok:false, motivo:'As metas mensais do backup estão inválidas.' };
+  if(!objetoValido(dados.config) || !objetoValido(dados.config.painelPeriodo)
     || typeof dados.config.painelPeriodo.tipo !== 'string'
     || (dados.config.painelPeriodo.ano !== null && !Number.isInteger(dados.config.painelPeriodo.ano))){
     return { ok:false, motivo:'As configurações do backup estão ausentes ou inválidas.' };
@@ -2531,6 +2817,13 @@ function validarBackupJSON(obj){
         && (!Number.isInteger(campanha.mesFim) || campanha.mesFim<1 || campanha.mesFim>12
         || !Number.isInteger(campanha.anoFim) || campanha.anoFim*12+campanha.mesFim<campanha.anoInicio*12+campanha.mesInicio))){
       return { ok:false, motivo:`Campanha ${indice+1} inválida.` };
+    }
+  }
+  for(const [indice, meta] of (dados.metas||[]).entries()){
+    if(!objetoValido(meta) || typeof meta.id!=='string' || !meta.id
+      || !campanhas.has(meta.campanhaId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(meta.chave)
+      || !objetoValido(meta.metas)){
+      return { ok:false, motivo:`Snapshot de metas ${indice+1} inválido.` };
     }
   }
   for(const [indice, colaborador] of dados.colaboradores.entries()){
@@ -2561,13 +2854,14 @@ function validarBackupJSON(obj){
   return { ok:true };
 }
 async function importarBackupLocal(file){
+  if(!exigirAdmin()) return;
   if(!file) return;
   try {
     const texto = await file.text();
     const backup = JSON.parse(texto);
     const validacao = validarBackupJSON(backup);
     if(!validacao.ok){ throw new Error(validacao.motivo); }
-    const dados = backup.dados;
+    const dados = {...backup.dados, metas:Array.isArray(backup.dados.metas)?backup.dados.metas:[]};
     const resumo = [
       `${dados.colaboradores.length} colaboradores`,
       `${dados.entregas.length} entregas`,
@@ -2589,19 +2883,26 @@ async function importarBackupLocal(file){
       ['transferencias', dados.transferencias, anterior.transferencias],
       ['trocas', dados.trocas, anterior.trocas],
       ['campanhas', dados.campanhas, anterior.campanhas],
+      ['metas', dados.metas || [], anterior.metas],
       ['config', dados.config, anterior.config],
     ];
     let tentativas = 0;
     try {
       for(const [chave, valor] of gravações){
         tentativas++;
-        if(!await storageSet(chave, valor)) throw new Error(`Não foi possível salvar "${chave}".`);
+        const salvo=FIRESTORE_RECORD_COLLECTIONS.has(chave)
+          ? await storageReplaceCollection(chave,valor)
+          : await storageSet(chave,valor);
+        if(!salvo) throw new Error(`Não foi possível salvar "${chave}".`);
       }
     } catch (erro) {
       const falhasRollback = [];
       for(let i=tentativas-1;i>=0;i--){
         const [chave, , valorAnterior] = gravações[i];
-        if(!await storageSet(chave, valorAnterior)) falhasRollback.push(chave);
+        const restaurado=FIRESTORE_RECORD_COLLECTIONS.has(chave)
+          ? await storageReplaceCollection(chave,valorAnterior)
+          : await storageSet(chave,valorAnterior);
+        if(!restaurado) falhasRollback.push(chave);
       }
       const avisoRollback = falhasRollback.length
         ? ` A restauração parcial não pôde ser revertida para: ${falhasRollback.join(', ')}. Faça uma nova conferência dos dados e use um backup caso necessário.`
@@ -2613,6 +2914,7 @@ async function importarBackupLocal(file){
     STATE.transferencias = dados.transferencias;
     STATE.trocas = dados.trocas;
     STATE.campanhas = dados.campanhas;
+    STATE.metasSnapshots = dados.metas || [];
     STATE.config = dados.config;
     const campanhaDoBackup = dados.metadata && dados.metadata.campanhaSelecionadaId;
     STATE.campanhaSelecionadaId = campanhaDoBackup || (campanhaPadrao()||{}).id || null;
@@ -2634,10 +2936,21 @@ window.importarBackupLocal = importarBackupLocal;
    ========================================================= */
 async function iniciar(){
   await detectarModoArmazenamento();
-  await carregarDados();
-  if(sessionStorage.getItem('reciclar-apac:isAdmin')==='1'){
-    STATE.isAdmin = true;
+  if(STORAGE_MODE==='firestore' && FIREBASE_AUTH){
+    FIREBASE_AUTH.onAuthStateChanged(user=>{
+      processarSessaoFirebase(user).catch(erro=>{
+        console.error('Erro ao carregar o acesso do usuário',erro);
+        STATE.isAdmin=false; STATE.isOperator=false;
+        STATE.authError=erro && erro.message ? erro.message : 'Não foi possível validar o acesso.';
+        finalizarCarregamento();
+      });
+    });
+    return;
   }
+  await carregarDados();
+  finalizarCarregamento();
+}
+function finalizarCarregamento(){
   document.getElementById('loading').style.display='none';
   document.getElementById('app').style.display='flex';
   renderApp();
@@ -2645,6 +2958,36 @@ async function iniciar(){
   if(STATE.view==='colaboradores') renderTabelaColaboradores();
   if(STATE.view==='entregas') renderTabelaEntregas();
   if(STATE.view==='config') renderTabelaCampanhas();
+}
+async function processarSessaoFirebase(user){
+  STATE.authUser=user;
+  STATE.authError='';
+  STATE.isAdmin=false;
+  STATE.isOperator=false;
+  if(!user){
+    STATE.colaboradores=[]; STATE.entregas=[]; STATE.transferencias=[]; STATE.trocas=[];
+    STATE.campanhas=[]; STATE.metasSnapshots=[]; STATE.config=null;
+    finalizarCarregamento();
+    return;
+  }
+  const perfil=await FIREBASE_DB.collection('reciclar-apac-roles').doc(user.uid).get();
+  const role=perfil.exists ? perfil.data().role : null;
+  if(role!=='admin' && role!=='operator'){
+    STATE.authError='Esta conta ainda não recebeu um perfil de administrador ou operador.';
+    finalizarCarregamento();
+    return;
+  }
+  STATE.isAdmin=role==='admin';
+  STATE.isOperator=role==='operator';
+  if(STATE.isAdmin){
+    await migrarColecoesFirestoreLegadas();
+  } else {
+    const pendentes=await verificarMigracaoFirestoreLegada();
+    if(pendentes.length) throw new Error(`O administrador precisa migrar estes dados antes do acesso do operador: ${pendentes.join(', ')}.`);
+    await verificarInstalacaoFirestore();
+  }
+  await carregarDados();
+  finalizarCarregamento();
 }
 const _origRenderApp = renderApp;
 renderApp = function(){
