@@ -13,6 +13,12 @@ Papéis aceitos em `reciclar-apac-roles/{uid}`:
 
 Os dados são legíveis somente por contas com um desses papéis. O operador não pode excluir dados nem alterar campanhas pelas regras do Firestore.
 
+### Ranking público
+
+Visitantes sem login veem somente os rankings que um administrador publicar. Cada publicação contém posição, nome exibido e pontuação dos colaboradores com posição naquele mês; dados de cadastro, entregas, setores e detalhes por material continuam protegidos. O administrador escolhe a campanha e o mês na tela **Ranking mensal** e usa **Publicar para o público**. Cada publicação é uma fotografia: publique novamente após alterações para atualizar o que os visitantes veem. Os períodos publicados ficam disponíveis para seleção na página pública.
+
+As regras dão leitura anônima apenas à coleção `reciclar-apac-public-ranking`; as coleções operacionais continuam exigindo papel autorizado. Ao publicar nomes e pontuações, confirme que os colaboradores foram informados sobre essa divulgação.
+
 ### Preparar o Firebase existente
 
 1. Faça um backup local dos dados atuais antes da implantação.
