@@ -340,6 +340,10 @@ let STATE = {
   isOperator: false,
   authUser: null,
   authError: '',
+  mostrarLogin: false,
+  rankingsPublicos: [],
+  rankingPublicoSelecionadoId: '',
+  erroRankingPublico: '',
   metasSnapshots: [],
   entregasSecao: 'entregas',
   view: 'dashboard',
@@ -1018,6 +1022,7 @@ function renderTelaAutenticacao(){
       <p class="small-note">Peça ao administrador para atribuir o perfil no Firebase e entre novamente.</p>
       ${STATE.authError? `<p class="auth-error">${escapeHtml(STATE.authError)}</p>`:''}
       <button class="btn btn-outline btn-block" onclick="sairAdmin()">Sair</button>
+      <button class="btn btn-ghost btn-block" onclick="voltarAoRankingPublico()">Ver ranking público</button>
     </section></main>`;
   }
   return `<main class="auth-screen"><section class="card auth-card">
@@ -1029,8 +1034,60 @@ function renderTelaAutenticacao(){
       ${STATE.authError? `<p class="auth-error" role="alert">${escapeHtml(STATE.authError)}</p>`:''}
       <button class="btn btn-primary btn-block" type="submit">Entrar</button>
     </form>
+    <button class="btn btn-ghost btn-block" onclick="voltarAoRankingPublico()">Voltar ao ranking público</button>
   </section></main>`;
 }
+
+function formatarMesRankingPublico(mes, ano){
+  return `${nomeMes(mes)} de ${ano}`;
+}
+function rankingPublicoPorId(id){
+  return STATE.rankingsPublicos.find(ranking=>ranking.id===id) || null;
+}
+function renderRankingPublico(){
+  if(STATE.mostrarLogin) return renderTelaAutenticacao();
+  const ranking = rankingPublicoPorId(STATE.rankingPublicoSelecionadoId)
+    || [...STATE.rankingsPublicos].sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))[0]
+    || null;
+  if(ranking) STATE.rankingPublicoSelecionadoId=ranking.id;
+  const opcoes = [...STATE.rankingsPublicos]
+    .sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))
+    .map(item=>`<option value="${escapeHtml(item.id)}" ${ranking&&item.id===ranking.id?'selected':''}>${escapeHtml(item.campanhaNome)} · ${escapeHtml(formatarMesRankingPublico(item.mes,item.ano))}</option>`)
+    .join('');
+  return `<main class="auth-screen" style="align-items:start;padding-top:clamp(24px,8vh,72px);">
+    <section class="card" style="width:min(100%,760px);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
+        <div><h1 style="margin:0 0 6px;color:var(--verde-900);">Ranking da campanha</h1><p class="small-note" style="margin:0;">Acompanhe a posição e a pontuação publicadas para os colaboradores.</p></div>
+        <button class="btn btn-outline" onclick="abrirLoginAdmin()">Entrar</button>
+      </div>
+      ${STATE.erroRankingPublico? `<p class="auth-error" role="alert">${escapeHtml(STATE.erroRankingPublico)}</p>`:''}
+      ${STATE.rankingsPublicos.length? `
+        <div class="field"><label for="seletorRankingPublico">Campanha e período</label><select id="seletorRankingPublico" onchange="selecionarRankingPublico(this.value)">${opcoes}</select></div>
+        <h2 style="font-size:18px;color:var(--verde-900);">${escapeHtml(ranking.campanhaNome)} · ${escapeHtml(formatarMesRankingPublico(ranking.mes,ranking.ano))}</h2>
+        <div class="table-wrap"><table><thead><tr><th>Posição</th><th>Colaborador</th><th>Pontuação</th></tr></thead>
+          <tbody>${ranking.ranking.map(item=>`<tr><td><b>${item.posicao}º</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td></tr>`).join('')}</tbody>
+        </table></div>
+        <p class="small-note" style="margin:12px 0 0;">Atualizado em ${escapeHtml(new Date(ranking.atualizadoEm).toLocaleString('pt-BR'))}.</p>
+      ` : `<div class="empty-state">${STATE.erroRankingPublico?'Não foi possível carregar o ranking público.':'Ainda não há ranking publicado. Entre em contato com a administração da campanha.'}</div>`}
+      <p class="small-note" style="margin:16px 0 0;">Esta página publica somente posição, nome e pontuação. Os demais dados continuam protegidos por login.</p>
+    </section>
+  </main>`;
+}
+function selecionarRankingPublico(id){
+  STATE.rankingPublicoSelecionadoId=id;
+  renderApp();
+}
+async function voltarAoRankingPublico(){
+  if(STATE.authUser && FIREBASE_AUTH){
+    try { await FIREBASE_AUTH.signOut(); }
+    catch(e){ console.error('Erro ao sair para o ranking público',e); alert('Não foi possível sair da conta. Tente novamente.'); return; }
+  }
+  STATE.mostrarLogin=false;
+  STATE.authError='';
+  renderApp();
+}
+window.selecionarRankingPublico=selecionarRankingPublico;
+window.voltarAoRankingPublico=voltarAoRankingPublico;
 
 function renderSeletorCampanhaTopo(){
   const campanhas = campanhasOrdenadas();
@@ -1050,7 +1107,7 @@ window.renderSeletorCampanhaTopo = renderSeletorCampanhaTopo;
 function renderApp(){
   const app = document.getElementById('app');
   if(STORAGE_MODE==='firestore' && (!STATE.authUser || (!STATE.isAdmin && !STATE.isOperator))){
-    app.innerHTML=renderTelaAutenticacao();
+    app.innerHTML=STATE.authUser && !STATE.mostrarLogin ? renderTelaAutenticacao() : renderRankingPublico();
     return;
   }
   const navItems = navItemsVisiveis();
@@ -1137,6 +1194,7 @@ function abrirLoginAdmin(){
     alert('O login seguro só está disponível quando o Firebase Authentication está inicializado.');
     return;
   }
+  STATE.mostrarLogin=true;
   STATE.authError='';
   renderApp();
   setTimeout(()=>document.getElementById('authEmail')?.focus(),50);
@@ -1180,6 +1238,37 @@ function exigirOperador(){
   alert('Esta ação exige um perfil autorizado para cadastrar dados.');
   return false;
 }
+
+async function publicarRankingPublico(mes, ano){
+  if(!exigirAdmin()) return;
+  const campanha=campanhaPorId(STATE.campanhaSelecionadaId);
+  if(!campanha){ alert('Selecione uma campanha antes de publicar o ranking.'); return; }
+  const ranking=calcularResultadosMes(campanha.id,mes,ano)
+    .filter(resultado=>resultado.posicao)
+    .map(resultado=>({
+      posicao:resultado.posicao,
+      nome:resultado.colaborador.nome,
+      pontuacao:Math.round(resultado.pontuacao),
+    }));
+  const chave=chaveMA(mes,ano);
+  const id=`${encodeURIComponent(campanha.id)}_${chave}`;
+  const documento={
+    campanhaId:campanha.id,
+    campanhaNome:campanha.nome,
+    mes,
+    ano,
+    atualizadoEm:new Date().toISOString(),
+    ranking,
+  };
+  try{
+    await FIREBASE_DB.collection('reciclar-apac-public-ranking').doc(id).set(documento);
+    alert('Ranking publicado. O público poderá ver posição, nome e pontuação deste período.');
+  }catch(e){
+    console.error('Erro ao publicar ranking público',e);
+    alert('Não foi possível publicar o ranking. Verifique as regras do Firestore e tente novamente.');
+  }
+}
+window.publicarRankingPublico=publicarRankingPublico;
 
 function abrirAjuda(){
   abrirModal(`
@@ -2075,6 +2164,7 @@ function renderRanking(){
         </select>
       </div>
       ${STATE.isAdmin? `<div class="toolbar-right">
+        <button class="btn btn-outline" onclick="publicarRankingPublico(${mes},${ano})">Publicar para o público</button>
         <button class="btn btn-outline" onclick="compartilharTop3(${mes},${ano})">${icon('whatsapp')}Compartilhar resultado</button>
         <button class="btn btn-outline" onclick="compartilharRankingCompleto(${mes},${ano})">${icon('whatsapp')}Compartilhar ranking completo</button>
         <button class="btn btn-primary" onclick="gerarCardRanking(${mes},${ano})">${icon('image')}Gerar card do ranking</button>
@@ -2088,6 +2178,7 @@ function renderRanking(){
       </div>
       <div class="card" style="padding:0;"><div class="table-wrap">${renderTabelaRanking(resultados, true, mes, ano)}</div></div>
     `}
+    ${STATE.isAdmin? `<p class="small-note">A publicação é uma fotografia deste mês. Publique novamente após alterações para atualizar a página pública.</p>`:''}
   `;
 }
 function renderPodium(r,pos,medal){
@@ -2962,11 +3053,14 @@ function finalizarCarregamento(){
 async function processarSessaoFirebase(user){
   STATE.authUser=user;
   STATE.authError='';
+  STATE.erroRankingPublico='';
   STATE.isAdmin=false;
   STATE.isOperator=false;
   if(!user){
+    STATE.mostrarLogin=false;
     STATE.colaboradores=[]; STATE.entregas=[]; STATE.transferencias=[]; STATE.trocas=[];
     STATE.campanhas=[]; STATE.metasSnapshots=[]; STATE.config=null;
+    await carregarRankingsPublicos();
     finalizarCarregamento();
     return;
   }
@@ -2974,9 +3068,11 @@ async function processarSessaoFirebase(user){
   const role=perfil.exists ? perfil.data().role : null;
   if(role!=='admin' && role!=='operator'){
     STATE.authError='Esta conta ainda não recebeu um perfil de administrador ou operador.';
+    await carregarRankingsPublicos();
     finalizarCarregamento();
     return;
   }
+  STATE.mostrarLogin=false;
   STATE.isAdmin=role==='admin';
   STATE.isOperator=role==='operator';
   if(STATE.isAdmin){
@@ -2988,6 +3084,46 @@ async function processarSessaoFirebase(user){
   }
   await carregarDados();
   finalizarCarregamento();
+}
+async function carregarRankingsPublicos(){
+  try{
+    const snapshot=await FIREBASE_DB.collection('reciclar-apac-public-ranking').get();
+    const rankings=snapshot.docs.map(doc=>{
+      const data=doc.data();
+      if(typeof data.campanhaId!=='string' || typeof data.campanhaNome!=='string' || !data.campanhaNome.trim()
+        || !Number.isInteger(data.mes) || data.mes<1 || data.mes>12
+        || !Number.isInteger(data.ano) || data.ano<2000 || data.ano>9999
+        || typeof data.atualizadoEm!=='string' || !Number.isFinite(Date.parse(data.atualizadoEm))
+        || !Array.isArray(data.ranking)){
+        throw new Error('Um dos rankings públicos salvos tem formato inválido.');
+      }
+      const entradas=data.ranking.map(item=>{
+        if(!item || !Number.isInteger(item.posicao) || item.posicao<1
+          || typeof item.nome!=='string' || !item.nome.trim()
+          || typeof item.pontuacao!=='number' || !Number.isFinite(item.pontuacao) || item.pontuacao<0){
+          throw new Error('Uma entrada do ranking público tem formato inválido.');
+        }
+        return {posicao:item.posicao,nome:item.nome,pontuacao:item.pontuacao};
+      }).sort((a,b)=>a.posicao-b.posicao);
+      return {
+        id:doc.id,
+        campanhaId:data.campanhaId,
+        campanhaNome:data.campanhaNome,
+        mes:data.mes,
+        ano:data.ano,
+        atualizadoEm:data.atualizadoEm,
+        ranking:entradas,
+      };
+    });
+    STATE.rankingsPublicos=rankings;
+    if(!rankings.some(item=>item.id===STATE.rankingPublicoSelecionadoId)){
+      STATE.rankingPublicoSelecionadoId='';
+    }
+  }catch(e){
+    console.error('Erro ao carregar rankings públicos',e);
+    STATE.rankingsPublicos=[];
+    STATE.erroRankingPublico='Não foi possível carregar o ranking público. Tente atualizar a página.';
+  }
 }
 const _origRenderApp = renderApp;
 renderApp = function(){

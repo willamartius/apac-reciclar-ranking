@@ -47,6 +47,28 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /reciclar-apac-public-ranking/{rankingId} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'campanhaId', 'campanhaNome', 'mes', 'ano', 'atualizadoEm', 'ranking'
+        ])
+        && request.resource.data.keys().hasAll([
+          'campanhaId', 'campanhaNome', 'mes', 'ano', 'atualizadoEm', 'ranking'
+        ])
+        && request.resource.data.campanhaId is string
+        && request.resource.data.campanhaNome is string
+        && request.resource.data.mes is int
+        && request.resource.data.mes >= 1
+        && request.resource.data.mes <= 12
+        && request.resource.data.ano is int
+        && request.resource.data.ano >= 2000
+        && request.resource.data.ano <= 9999
+        && request.resource.data.atualizadoEm is string
+        && request.resource.data.ranking is list;
+      allow delete: if isAdmin();
+    }
+
     match /reciclar-apac/{key} {
       allow read: if canUseApp();
       allow write: if isAdmin();
