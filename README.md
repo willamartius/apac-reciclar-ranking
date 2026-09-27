@@ -25,6 +25,17 @@ Os dados são legíveis somente por contas com um desses papéis. O operador nã
 
 Não deixe as regras antigas (`allow read, write: if true`) publicadas. Antes de finalizar a implantação, teste o login, a leitura com uma conta autorizada e a recusa de leitura anônima.
 
+### Criar o primeiro acesso administrativo
+
+O site não tem cadastro público. Se as regras restritivas já estiverem publicadas e ainda não houver administrador, crie a primeira conta pelo Firebase Console:
+
+1. Em **Authentication > Users > Add user**, informe o e-mail e defina uma senha inicial.
+2. Copie o UID da conta criada.
+3. Em **Firestore Database > Data**, crie a coleção `reciclar-apac-roles`, um documento com o UID como ID e o campo string `role` com valor `admin`.
+4. Entre no site com o e-mail e a senha que acabou de definir. A conta administrativa inicializa o app e migra os dados.
+
+As regras do Firestore protegem as requisições do app; operações feitas pelo Console dependem das permissões IAM da sua conta Google no projeto. Se o Console não permitir criar o documento, peça a alguém com acesso administrativo ao projeto para fazê-lo. Depois de entrar, o administrador pode criar usuários adicionais pelo Console e atribuir a eles `admin` ou `operator` da mesma forma.
+
 As credenciais e os papéis não fazem parte dos novos backups JSON. Arquivos de backup exportados por versões antigas podem conter a senha administrativa antiga; proteja-os ou apague-os após confirmar a migração. Senhas são redefinidas por e-mail pelo Firebase Authentication.
 
 O backup atual é manual, em arquivo JSON local, e só pode ser exportado pelo administrador. Integração automática com Google Drive ainda não está implementada; ela exige configurar OAuth e definir como os arquivos serão compartilhados e protegidos.
