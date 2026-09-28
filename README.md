@@ -15,6 +15,8 @@ Os dados são legíveis somente por contas com um desses papéis. O operador nã
 
 Cada usuário pode salvar o próprio nome de exibição no Firebase Authentication. O papel exibido no app vem do campo `role` do documento `reciclar-apac-roles/{uid}` e não pode ser alterado pelo próprio usuário.
 
+Registros excluídos por um administrador ficam em **Itens apagados** por até 30 dias e podem ser restaurados nesse período. A lixeira é compartilhada entre administradores, sua leitura é restrita ao papel `admin`, e itens vencidos são removidos na próxima inicialização administrativa do app. Publique as regras atualizadas do Firestore junto com esta versão.
+
 ### Ranking público
 
 Visitantes sem login veem o ranking por campanha e período, atualizado automaticamente quando um administrador ou operador salva alterações no app. Os seletores de campanha e mês mostram somente períodos com atividade e o mês atual. A página mostra nome, posição, pontuação e um resumo mensal por material com disponibilidade (excedentes destacados em verde), meta e percentual. Somente colaboradores com entregas validadas no período aparecem no ranking. Entregas individuais, transferências, setor e demais dados cadastrais continuam protegidos por login.

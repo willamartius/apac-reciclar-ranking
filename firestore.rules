@@ -75,7 +75,7 @@ service cloud.firestore {
       allow write: if isAdmin();
 
       match /records/{recordId} {
-        allow read: if canUseApp();
+        allow read: if key == 'lixeira' ? isAdmin() : canUseApp();
         allow create, update: if isAdmin()
           || (isOperator()
             && key in ['colaboradores', 'entregas', 'transferencias']
