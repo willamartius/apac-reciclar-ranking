@@ -52,4 +52,17 @@ As regras do Firestore protegem as requisições do app; operações feitas pelo
 
 As credenciais e os papéis não fazem parte dos novos backups JSON. Arquivos de backup exportados por versões antigas podem conter a senha administrativa antiga; proteja-os ou apague-os após confirmar a migração. Senhas são redefinidas por e-mail pelo Firebase Authentication.
 
-O backup atual é manual, em arquivo JSON local, e só pode ser exportado pelo administrador. Integração automática com Google Drive ainda não está implementada; ela exige configurar OAuth e definir como os arquivos serão compartilhados e protegidos.
+Os administradores também podem vincular individualmente uma conta Google para criar e restaurar backups no Drive. Cada conta mantém uma pasta privada `Reciclar APAC Backups` no próprio Google Drive; após cada envio, o app remove arquivos excedentes e conserva os 10 mais recentes. O backup continua manual, e a exportação/importação local permanece disponível. O app não guarda tokens de acesso do Google; cada operação solicita uma autorização temporária e confere que a conta Google corresponde ao vínculo salvo para o UID do administrador.
+
+#### Configurar a integração com Google Drive
+
+Antes de disponibilizar os botões do Drive:
+
+1. No Google Cloud Console, selecione ou crie um projeto e habilite a **Google Drive API**.
+2. Configure a tela de consentimento OAuth. Adicione os administradores como usuários de teste enquanto o app estiver em modo de teste; para contas Google Workspace da mesma organização, a opção de público interno também pode ser usada.
+3. Crie um **OAuth client ID** do tipo **Web application**. Cadastre a origem exata do site em **Authorized JavaScript origins** (esquema e domínio, sem caminho). Cadastre também origens locais somente se for testar localmente. O fluxo usa o popup do Google Identity Services e não exige redirect URI.
+4. Copie o client ID para `GOOGLE_DRIVE_CLIENT_ID` no início do script em `index.html`. O client ID não é uma senha; não coloque client secrets ou tokens no HTML.
+5. Publique o conteúdo atualizado de `firestore.rules`. A regra `reciclar-apac-drive-links/{UID}` limita leitura e escrita do vínculo ao administrador autenticado correspondente; a coleção não permite listagem.
+6. Publique o app e, em **Configurações > Backup no Google Drive**, cada administrador vincula a própria conta Google. Trocar ou desvincular uma conta não apaga os arquivos já armazenados no Drive.
+
+A integração utiliza o escopo `drive.file`, limitado aos arquivos e à pasta criados pelo app, além dos escopos básicos de identidade para associar a conta Google ao administrador do Firebase. O uso normal da Google Drive API não tem cobrança, mas está sujeito às cotas e políticas do Google; a configuração OAuth ou uma eventual verificação do app pode depender das regras vigentes para o tipo de publicação.

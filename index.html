@@ -12,6 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
   --verde-900:#12301F;
@@ -398,6 +399,12 @@ let STATE = {
   manutencaoPublica: false,
   salvandoManutencaoPublica: false,
   erroManutencaoPublica: '',
+  googleDriveLink: null,
+  googleDriveLinkError: '',
+  googleDriveBusy: false,
+  googleDriveStatus: '',
+  googleDriveBackups: [],
+  googleDriveBackupSelecionadoId: '',
   rankingPublicoSelecionadoId: '',
   rankingPublicoCampanhaId: '',
   erroRankingPublico: '',
@@ -419,6 +426,12 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "309128467158",
   appId: "1:309128467158:web:a3a1c14fed86b00020ef77"
 };
+const GOOGLE_DRIVE_CLIENT_ID = '309128467158-kgldnn0k6n88crj1ca17phlguranao7c.apps.googleusercontent.com';
+const GOOGLE_DRIVE_LINK_COLLECTION = 'reciclar-apac-drive-links';
+const GOOGLE_DRIVE_BACKUP_FOLDER_NAME = 'Reciclar APAC Backups';
+const GOOGLE_DRIVE_BACKUP_LIMIT = 10;
+const GOOGLE_DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
+const GOOGLE_DRIVE_SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
 
 let FIREBASE_DB = null;
 let FIREBASE_AUTH = null;
@@ -3208,6 +3221,27 @@ function renderConfig(){
       </div>
     </div>
 
+    <div class="section-title">Backup no Google Drive</div>
+    <div class="card" style="display:grid;gap:12px;">
+      <p class="small-note" style="margin:0;">Cada administrador vincula a própria conta Google. Os backups ficam privados em uma pasta do Drive e o app conserva os 10 mais recentes. Para ativar, configure o ID de cliente OAuth conforme as instruções do README.</p>
+      ${STATE.googleDriveLink?`<p class="small-note" style="margin:0;">Conta vinculada: <b>${escapeHtml(STATE.googleDriveLink.email)}</b></p>`:'<p class="small-note" style="margin:0;">Nenhuma conta Google vinculada a este usuário administrador.</p>'}
+      ${STATE.googleDriveStatus?`<p class="small-note" role="status" style="margin:0;">${escapeHtml(STATE.googleDriveStatus)}</p>`:''}
+      ${STATE.googleDriveLinkError?`<p class="auth-error" role="alert" style="margin:0;">${escapeHtml(STATE.googleDriveLinkError)}</p>`:''}
+      <div class="backup-actions">
+        <button class="btn btn-outline btn-block" type="button" onclick="conectarGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>${STATE.googleDriveLink?'Trocar conta Google':'Vincular Google Drive'}</button>
+        ${STATE.googleDriveLink?`<button class="btn btn-outline btn-block" type="button" onclick="desvincularGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>Desvincular Google Drive</button>`:''}
+        <button class="btn btn-outline btn-block" type="button" onclick="criarBackupGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('download',16)}Criar backup no Drive</button>
+        <button class="btn btn-outline btn-block" type="button" onclick="listarBackupsGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('upload',16)}Listar backups</button>
+      </div>
+      ${STATE.googleDriveBackups.length?`<div class="field" style="margin:0;">
+        <label for="googleDriveBackupSelecionado">Backup para restaurar</label>
+        <select id="googleDriveBackupSelecionado" onchange="selecionarBackupGoogleDrive(this.value)" ${STATE.googleDriveBusy?'disabled':''}>
+          ${STATE.googleDriveBackups.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===STATE.googleDriveBackupSelecionadoId?'selected':''}>${escapeHtml(item.name)} · ${escapeHtml(item.createdTime?new Date(item.createdTime).toLocaleString('pt-BR'):'data desconhecida')}</option>`).join('')}
+        </select>
+        <button class="btn btn-outline" style="margin-top:8px;" type="button" onclick="restaurarBackupGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>${icon('upload',16)}Restaurar backup do Drive</button>
+      </div>`:''}
+    </div>
+
     <div class="section-title">Sobre a campanha</div>
     <div class="card">
       <p style="font-size:13.5px;line-height:1.7;">
@@ -3517,6 +3551,347 @@ function exportarBackupLocal(){
   }
 }
 window.exportarBackupLocal = exportarBackupLocal;
+async function carregarVinculoGoogleDrive(){
+  if(!STATE.isAdmin || !STATE.authUser || !FIREBASE_DB) return;
+  const uid=STATE.authUser.uid;
+  try{
+    const documento=await FIREBASE_DB.collection(GOOGLE_DRIVE_LINK_COLLECTION).doc(uid).get();
+    if(!STATE.authUser || STATE.authUser.uid!==uid || !STATE.isAdmin) return;
+    if(!documento.exists){
+      STATE.googleDriveLink=null;
+      STATE.googleDriveLinkError='';
+      return;
+    }
+    const vinculo=documento.data();
+    if(typeof vinculo.googleSub!=='string' || !vinculo.googleSub
+      || typeof vinculo.email!=='string' || !vinculo.email
+      || typeof vinculo.linkedAt!=='string' || !Number.isFinite(Date.parse(vinculo.linkedAt))){
+      throw new Error('O vínculo Google Drive salvo tem formato inválido.');
+    }
+    STATE.googleDriveLink={googleSub:vinculo.googleSub,email:vinculo.email,linkedAt:vinculo.linkedAt};
+    STATE.googleDriveLinkError='';
+  }catch(erro){
+    if(!STATE.authUser || STATE.authUser.uid!==uid || !STATE.isAdmin) return;
+    STATE.googleDriveLink=null;
+    STATE.googleDriveLinkError=erro.message||'Não foi possível carregar o vínculo do Google Drive.';
+    console.error('Erro ao carregar vínculo do Google Drive',erro);
+  }
+}
+function verificarConfiguracaoGoogleDrive(){
+  if(!exigirAdmin()) throw new Error('Entre com uma conta administradora para usar o Google Drive.');
+  if(STORAGE_MODE!=='firestore' || !FIREBASE_DB || !STATE.authUser || !STATE.authUser.uid){
+    throw new Error('O Google Drive exige uma sessão administrativa autenticada no Firebase.');
+  }
+  if(!GOOGLE_DRIVE_CLIENT_ID || !GOOGLE_DRIVE_CLIENT_ID.endsWith('.apps.googleusercontent.com')){
+    throw new Error('O ID de cliente OAuth do Google ainda não foi configurado. Consulte a seção Google Drive no README.');
+  }
+  if(!window.google || !window.google.accounts || !window.google.accounts.oauth2){
+    throw new Error('O serviço de autenticação Google ainda está carregando. Tente novamente em alguns instantes.');
+  }
+}
+function solicitarTokenGoogleDrive(prompt=''){
+  verificarConfiguracaoGoogleDrive();
+  return new Promise((resolve,reject)=>{
+    const cliente=window.google.accounts.oauth2.initTokenClient({
+      client_id:GOOGLE_DRIVE_CLIENT_ID,
+      scope:GOOGLE_DRIVE_SCOPE,
+      callback:resposta=>{
+        if(resposta.error || !resposta.access_token){
+          reject(new Error(resposta.error_description||resposta.error||'Não foi possível autorizar o acesso ao Google Drive.'));
+          return;
+        }
+        resolve(resposta.access_token);
+      },
+      error_callback:erro=>reject(new Error(erro.message||'A janela de autorização Google não pôde ser aberta.')),
+    });
+    cliente.requestAccessToken(prompt?{prompt}:{});
+  });
+}
+async function buscarIdentidadeGoogleDrive(token){
+  const resposta=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{
+    headers:{Authorization:`Bearer ${token}`},
+  });
+  const identidade=await resposta.json().catch(()=>({}));
+  if(!resposta.ok) throw new Error(identidade.error_description||identidade.error||'Não foi possível confirmar a conta Google autorizada.');
+  if(typeof identidade.sub!=='string' || !identidade.sub || typeof identidade.email!=='string' || !identidade.email){
+    throw new Error('O Google não retornou uma identidade de conta válida.');
+  }
+  return {googleSub:identidade.sub,email:identidade.email};
+}
+async function obterTokenVinculadoGoogleDrive(){
+  if(!STATE.googleDriveLink) throw new Error('Vincule uma conta Google Drive antes de continuar.');
+  const uid=STATE.authUser&&STATE.authUser.uid;
+  const vinculo=STATE.googleDriveLink;
+  const token=await solicitarTokenGoogleDrive();
+  const identidade=await buscarIdentidadeGoogleDrive(token);
+  if(!STATE.isAdmin || !STATE.authUser || STATE.authUser.uid!==uid
+    || !STATE.googleDriveLink || STATE.googleDriveLink.googleSub!==vinculo.googleSub){
+    throw new Error('A sessão administrativa ou o vínculo Google mudou durante a autorização. Tente novamente.');
+  }
+  if(identidade.googleSub!==vinculo.googleSub){
+    throw new Error(`A conta autorizada (${identidade.email}) não é a vinculada (${vinculo.email}). Use "Trocar conta Google" para alterar o vínculo.`);
+  }
+  return token;
+}
+async function requisicaoGoogleDrive(token,url,opcoes={}){
+  const resposta=await fetch(url,{
+    ...opcoes,
+    headers:{Authorization:`Bearer ${token}`,...(opcoes.headers||{})},
+  });
+  if(resposta.status===204) return null;
+  const resultado=await resposta.json().catch(()=>({}));
+  if(!resposta.ok){
+    const mensagem=resultado.error && resultado.error.message;
+    throw new Error(mensagem||`A solicitação ao Google Drive falhou (HTTP ${resposta.status}).`);
+  }
+  return resultado;
+}
+async function localizarPastaBackupGoogleDrive(token){
+  const query=`name='${GOOGLE_DRIVE_BACKUP_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const parametros=new URLSearchParams({
+    q:query,
+    spaces:'drive',
+    pageSize:'100',
+    orderBy:'createdTime asc',
+    fields:'files(id,name,mimeType,createdTime)',
+  });
+  const resultado=await requisicaoGoogleDrive(token,`${GOOGLE_DRIVE_API_BASE}/files?${parametros}`);
+  if(resultado.files && resultado.files.length) return resultado.files[0];
+  return requisicaoGoogleDrive(token,`${GOOGLE_DRIVE_API_BASE}/files?fields=id,name,mimeType,createdTime`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      name:GOOGLE_DRIVE_BACKUP_FOLDER_NAME,
+      mimeType:'application/vnd.google-apps.folder',
+    }),
+  });
+}
+async function listarArquivosBackupGoogleDrive(token,pastaId){
+  const arquivos=[];
+  let pageToken='';
+  do{
+    const parametros=new URLSearchParams({
+      q:`'${pastaId}' in parents and trashed=false and appProperties has { key='reciclapacBackup' and value='1' }`,
+      spaces:'drive',
+      pageSize:'100',
+      orderBy:'createdTime desc',
+      fields:'nextPageToken,files(id,name,mimeType,createdTime,size)',
+    });
+    if(pageToken) parametros.set('pageToken',pageToken);
+    const resultado=await requisicaoGoogleDrive(token,`${GOOGLE_DRIVE_API_BASE}/files?${parametros}`);
+    arquivos.push(...(resultado.files||[]));
+    pageToken=resultado.nextPageToken||'';
+  }while(pageToken);
+  return arquivos;
+}
+function definirEstadoGoogleDrive({ocupado=STATE.googleDriveBusy,status=STATE.googleDriveStatus,erro=''}={}){
+  STATE.googleDriveBusy=ocupado;
+  STATE.googleDriveStatus=status;
+  STATE.googleDriveLinkError=erro;
+}
+function sessaoAdminGoogleDriveAtiva(uid){
+  return STATE.isAdmin && STATE.authUser && STATE.authUser.uid===uid;
+}
+async function conectarGoogleDrive(){
+  const firebaseUid=STATE.authUser&&STATE.authUser.uid;
+  let tokenPromise;
+  try{
+    tokenPromise=solicitarTokenGoogleDrive('select_account consent');
+  }catch(erro){
+    definirEstadoGoogleDrive({status:'',erro:erro.message});
+    renderApp();
+    return;
+  }
+  definirEstadoGoogleDrive({ocupado:true,status:'Aguardando autorização da conta Google...',erro:''});
+  renderApp();
+  try{
+    const token=await tokenPromise;
+    const identidade=await buscarIdentidadeGoogleDrive(token);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)){
+      throw new Error('A sessão administrativa mudou durante a autorização. Entre novamente e tente vincular a conta.');
+    }
+    const vinculo={...identidade,linkedAt:new Date().toISOString()};
+    await FIREBASE_DB.collection(GOOGLE_DRIVE_LINK_COLLECTION).doc(firebaseUid).set(vinculo);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    STATE.googleDriveLink=vinculo;
+    STATE.googleDriveBackups=[];
+    STATE.googleDriveBackupSelecionadoId='';
+    definirEstadoGoogleDrive({ocupado:false,status:`Conta ${identidade.email} vinculada.`,erro:''});
+  }catch(erro){
+    console.error('Erro ao vincular conta Google Drive',erro);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    definirEstadoGoogleDrive({ocupado:false,status:'',erro:erro.message||'Não foi possível vincular a conta Google Drive.'});
+  }
+  renderApp();
+}
+window.conectarGoogleDrive=conectarGoogleDrive;
+async function desvincularGoogleDrive(){
+  if(!exigirAdmin() || !STATE.authUser || !STATE.googleDriveLink) return;
+  const firebaseUid=STATE.authUser.uid;
+  if(!confirm(`Desvincular ${STATE.googleDriveLink.email} deste usuário administrador? Os arquivos no Google Drive não serão apagados.`)) return;
+  definirEstadoGoogleDrive({ocupado:true,status:'Removendo vínculo...',erro:''});
+  renderApp();
+  try{
+    await FIREBASE_DB.collection(GOOGLE_DRIVE_LINK_COLLECTION).doc(firebaseUid).delete();
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    STATE.googleDriveLink=null;
+    STATE.googleDriveBackups=[];
+    STATE.googleDriveBackupSelecionadoId='';
+    definirEstadoGoogleDrive({ocupado:false,status:'Conta Google desvinculada. Os arquivos no Drive foram mantidos.',erro:''});
+  }catch(erro){
+    console.error('Erro ao desvincular conta Google Drive',erro);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    definirEstadoGoogleDrive({ocupado:false,status:'',erro:erro.message||'Não foi possível remover o vínculo Google Drive.'});
+  }
+  renderApp();
+}
+window.desvincularGoogleDrive=desvincularGoogleDrive;
+async function listarBackupsGoogleDrive(){
+  if(!exigirAdmin()) return;
+  const firebaseUid=STATE.authUser&&STATE.authUser.uid;
+  let tokenPromise;
+  try{
+    verificarConfiguracaoGoogleDrive();
+    tokenPromise=obterTokenVinculadoGoogleDrive();
+  }catch(erro){
+    definirEstadoGoogleDrive({status:'',erro:erro.message});
+    renderApp();
+    return;
+  }
+  definirEstadoGoogleDrive({ocupado:true,status:'Buscando backups no Google Drive...',erro:''});
+  renderApp();
+  try{
+    const token=await tokenPromise;
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const pasta=await localizarPastaBackupGoogleDrive(token);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const arquivos=await listarArquivosBackupGoogleDrive(token,pasta.id);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    STATE.googleDriveBackups=arquivos;
+    STATE.googleDriveBackupSelecionadoId=arquivos[0]?arquivos[0].id:'';
+    definirEstadoGoogleDrive({ocupado:false,status:arquivos.length?`${arquivos.length} backup${arquivos.length===1?'':'s'} encontrado${arquivos.length===1?'':'s'}.`:'Nenhum backup encontrado no Google Drive.',erro:''});
+  }catch(erro){
+    console.error('Erro ao listar backups do Google Drive',erro);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    definirEstadoGoogleDrive({ocupado:false,status:'',erro:erro.message||'Não foi possível listar os backups do Google Drive.'});
+  }
+  renderApp();
+}
+window.listarBackupsGoogleDrive=listarBackupsGoogleDrive;
+async function criarBackupGoogleDrive(){
+  if(!exigirAdmin()) return;
+  const firebaseUid=STATE.authUser&&STATE.authUser.uid;
+  let tokenPromise;
+  try{
+    verificarConfiguracaoGoogleDrive();
+    tokenPromise=obterTokenVinculadoGoogleDrive();
+  }catch(erro){
+    definirEstadoGoogleDrive({status:'',erro:erro.message});
+    renderApp();
+    return;
+  }
+  definirEstadoGoogleDrive({ocupado:true,status:'Criando backup no Google Drive...',erro:''});
+  renderApp();
+  let backupCriado=false;
+  try{
+    const token=await tokenPromise;
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const pasta=await localizarPastaBackupGoogleDrive(token);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const criadoEm=new Date().toISOString();
+    const nome=`backup-reciclar-${criadoEm.slice(0,16).replace(/[:T]/g,'-')}.json`;
+    const limite=`reciclapac-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const metadados={
+      name:nome,
+      mimeType:'application/json',
+      parents:[pasta.id],
+      appProperties:{reciclapacBackup:'1'},
+    };
+    const conteudo=JSON.stringify({...gerarBackupJSON(),criadoEm},null,2);
+    const corpo=[
+      `--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadados)}`,
+      `--${limite}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${conteudo}`,
+      `--${limite}--`,
+    ].join('\r\n');
+    await requisicaoGoogleDrive(token,`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,createdTime`,{
+      method:'POST',
+      headers:{'Content-Type':`multipart/related; boundary=${limite}`},
+      body:corpo,
+    });
+    backupCriado=true;
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const arquivos=await listarArquivosBackupGoogleDrive(token,pasta.id);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    for(const antigo of arquivos.slice(GOOGLE_DRIVE_BACKUP_LIMIT)){
+      await requisicaoGoogleDrive(token,`${GOOGLE_DRIVE_API_BASE}/files/${encodeURIComponent(antigo.id)}`,{method:'DELETE'});
+    }
+    STATE.googleDriveBackups=arquivos.slice(0,GOOGLE_DRIVE_BACKUP_LIMIT);
+    STATE.googleDriveBackupSelecionadoId=STATE.googleDriveBackups[0]?STATE.googleDriveBackups[0].id:'';
+    definirEstadoGoogleDrive({ocupado:false,status:`Backup enviado. Mantidos os ${Math.min(arquivos.length,GOOGLE_DRIVE_BACKUP_LIMIT)} mais recentes.`,erro:''});
+  }catch(erro){
+    console.error('Erro ao criar backup no Google Drive',erro);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const prefixo=backupCriado?'O backup foi enviado, mas houve uma falha ao limitar os arquivos antigos. ':'';
+    definirEstadoGoogleDrive({ocupado:false,status:'',erro:prefixo+(erro.message||'Não foi possível criar o backup no Google Drive.')});
+  }
+  renderApp();
+}
+window.criarBackupGoogleDrive=criarBackupGoogleDrive;
+function selecionarBackupGoogleDrive(id){
+  STATE.googleDriveBackupSelecionadoId=id;
+}
+window.selecionarBackupGoogleDrive=selecionarBackupGoogleDrive;
+async function restaurarBackupGoogleDrive(){
+  if(!exigirAdmin()) return;
+  const firebaseUid=STATE.authUser&&STATE.authUser.uid;
+  const backupSelecionado=STATE.googleDriveBackups.find(item=>item.id===STATE.googleDriveBackupSelecionadoId);
+  if(!backupSelecionado){
+    definirEstadoGoogleDrive({status:'',erro:'Selecione um backup do Google Drive para restaurar.'});
+    renderApp();
+    return;
+  }
+  let tokenPromise;
+  try{
+    verificarConfiguracaoGoogleDrive();
+    tokenPromise=obterTokenVinculadoGoogleDrive();
+  }catch(erro){
+    definirEstadoGoogleDrive({status:'',erro:erro.message});
+    renderApp();
+    return;
+  }
+  definirEstadoGoogleDrive({ocupado:true,status:'Carregando backup do Google Drive...',erro:''});
+  renderApp();
+  try{
+    const token=await tokenPromise;
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const pasta=await localizarPastaBackupGoogleDrive(token);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    const arquivos=await listarArquivosBackupGoogleDrive(token,pasta.id);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    if(!arquivos.some(item=>item.id===backupSelecionado.id)){
+      throw new Error('O backup selecionado não está mais na pasta do Google Drive. Atualize a lista e tente novamente.');
+    }
+    const resposta=await fetch(`${GOOGLE_DRIVE_API_BASE}/files/${encodeURIComponent(backupSelecionado.id)}?alt=media`,{
+      headers:{Authorization:`Bearer ${token}`},
+    });
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    if(!resposta.ok){
+      const detalhe=await resposta.json().catch(()=>({}));
+      throw new Error(detalhe.error&&detalhe.error.message||`Não foi possível baixar o backup (HTTP ${resposta.status}).`);
+    }
+    const arquivo=new File([await resposta.blob()],backupSelecionado.name,{type:'application/json'});
+    definirEstadoGoogleDrive({ocupado:false,status:'',erro:''});
+    renderApp();
+    await importarBackupLocal(arquivo);
+    return;
+  }catch(erro){
+    console.error('Erro ao restaurar backup do Google Drive',erro);
+    if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
+    definirEstadoGoogleDrive({ocupado:false,status:'',erro:erro.message||'Não foi possível restaurar o backup do Google Drive.'});
+  }
+  renderApp();
+}
+window.restaurarBackupGoogleDrive=restaurarBackupGoogleDrive;
 function baixarBackupJSON(backup, nome){
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -3719,6 +4094,12 @@ async function processarSessaoFirebase(user){
   STATE.authUser=user;
   STATE.authError='';
   STATE.erroRankingPublico='';
+  STATE.googleDriveLink=null;
+  STATE.googleDriveLinkError='';
+  STATE.googleDriveBusy=false;
+  STATE.googleDriveStatus='';
+  STATE.googleDriveBackups=[];
+  STATE.googleDriveBackupSelecionadoId='';
   STATE.isAdmin=false;
   STATE.isOperator=false;
   rankingPublicoSyncAtivo=false;
@@ -3740,6 +4121,7 @@ async function processarSessaoFirebase(user){
   STATE.mostrarLogin=false;
   STATE.isAdmin=role==='admin';
   STATE.isOperator=role==='operator';
+  if(STATE.isAdmin) await carregarVinculoGoogleDrive();
   if(STATE.isAdmin){
     await migrarColecoesFirestoreLegadas();
   } else {
