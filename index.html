@@ -1352,8 +1352,8 @@ function renderTelaAutenticacao(){
     </section></main>`;
   }
   return `<main class="auth-screen"><section class="card auth-card">
-    <h1>Entrar no ranking</h1>
-    <p class="small-note">Entre com sua conta autorizada para o uso administrativo.</p>
+    <h1>Entrar no painel</h1>
+    <p class="small-note">Entre com sua conta autorizada para o acesso administrativo.</p>
     <form onsubmit="event.preventDefault();confirmarLoginAdmin()">
       <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="username" value="${escapeHtml(STATE.authEmail)}" required></div>
       <div class="field"><label for="authPassword">Senha</label><input id="authPassword" type="password" autocomplete="current-password" required></div>
@@ -1380,7 +1380,7 @@ function renderAvisoManutencaoPublica(){
       </div>
       <h1 class="maintenance-title">Estamos em manutenção</h1>
       <span class="badge badge-amber maintenance-badge">Voltaremos em breve</span>
-      <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Acesso administrativo</button>
+      <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Painel administrativo</button>
     </section>
   </main>`;
 }
@@ -1413,7 +1413,7 @@ function renderRankingPublico(){
     <section class="card public-ranking-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
         <div><h1 style="margin:0 0 6px;color:var(--verde-900);">Ranking Reciclapac</h1><p class="small-note" style="margin:0;">Acompanhe as posições e os saldos por material. Os dados são atualizados automaticamente.</p></div>
-        <button class="btn btn-outline" onclick="abrirLoginAdmin()">Entrar</button>
+        <button class="btn btn-outline" onclick="abrirLoginAdmin()">Painel administrativo</button>
       </div>
       ${STATE.erroRankingPublico? `<p class="auth-error" role="alert">${escapeHtml(STATE.erroRankingPublico)}</p>`:''}
       ${STATE.rankingsPublicos.length? `
