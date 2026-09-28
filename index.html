@@ -689,6 +689,40 @@ async function restaurarRegistroLixeira(id){
   }
 }
 window.restaurarRegistroLixeira=restaurarRegistroLixeira;
+async function excluirDefinitivamenteLixeira(id){
+  if(!exigirAdmin()) return;
+  const item=STATE.lixeira.find(registro=>registro.id===id);
+  if(!item) return;
+  if(!confirm(`Excluir definitivamente "${resumoItemLixeira(item)}"? Esta ação não pode ser desfeita.`)) return;
+  try{
+    if(STORAGE_MODE==='firestore'){
+      const baseline=FIRESTORE_BASELINES.get('lixeira')||new Map();
+      const original=baseline.get(id);
+      if(original===undefined) throw new Error('O item não está na versão carregada. Atualize a página antes de excluir.');
+      const referencia=FIREBASE_DB.collection('reciclar-apac').doc('lixeira').collection('records').doc(id);
+      await FIREBASE_DB.runTransaction(async transacao=>{
+        const snapshot=await transacao.get(referencia);
+        if(!snapshot.exists || serializarEstavel(snapshot.data())!==original){
+          throw new Error('O item foi alterado por outra pessoa. Atualize a página antes de excluir.');
+        }
+        transacao.delete(referencia);
+      });
+      baseline.delete(id);
+      FIRESTORE_BASELINES.set('lixeira',baseline);
+    }else{
+      const lixeiraAtualizada=STATE.lixeira.filter(registro=>registro.id!==id);
+      if(!await storageSet('lixeira',lixeiraAtualizada)){
+        throw STORAGE_ERRORS.get('lixeira')||new Error('Não foi possível excluir definitivamente o item.');
+      }
+    }
+    STATE.lixeira=STATE.lixeira.filter(registro=>registro.id!==id);
+    renderApp();
+  }catch(erro){
+    console.error('Erro ao excluir definitivamente item da lixeira',id,erro);
+    alert(erro.message||'Não foi possível excluir definitivamente o item. Atualize a página e tente novamente.');
+  }
+}
+window.excluirDefinitivamenteLixeira=excluirDefinitivamenteLixeira;
 async function limparLixeiraExpirada(){
   if(!STATE.isAdmin || !Array.isArray(STATE.lixeira)) return;
   const limite=Date.now()-PRAZO_LIXEIRA_MS;
@@ -1243,10 +1277,8 @@ async function alterarManutencaoPublica(ativada){
   STATE.salvandoManutencaoPublica=true;
   STATE.erroManutencaoPublica='';
   const checkbox=document.getElementById('manutencaoPublicaCheckbox');
-  const status=document.getElementById('manutencaoPublicaStatus');
   const erroElemento=document.getElementById('manutencaoPublicaErro');
   if(checkbox){checkbox.checked=ativada;checkbox.disabled=true;}
-  if(status){status.textContent='Salvando configuração...';status.hidden=false;}
   if(erroElemento){erroElemento.textContent='';erroElemento.hidden=true;}
   try{
     if(STORAGE_MODE==='firestore'){
@@ -1271,7 +1303,6 @@ async function alterarManutencaoPublica(ativada){
   }finally{
     STATE.salvandoManutencaoPublica=false;
     if(checkbox) checkbox.disabled=false;
-    if(status) status.hidden=true;
   }
 }
 window.alterarManutencaoPublica=alterarManutencaoPublica;
@@ -3115,7 +3146,10 @@ function renderLixeira(){
           <td>${escapeHtml(resumoItemLixeira(item))}</td>
           <td>${escapeHtml(new Date(item.excluidoEm).toLocaleString('pt-BR'))}</td>
           <td>${diasRestantes} dia${diasRestantes===1?'':'s'}</td>
-          <td><button class="btn btn-outline btn-sm" type="button" onclick="restaurarRegistroLixeira('${escapeHtml(item.id)}')">${icon('upload',15)}Restaurar</button></td>
+          <td><div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <button class="btn btn-outline btn-sm" type="button" onclick="restaurarRegistroLixeira('${escapeHtml(item.id)}')">${icon('upload',15)}Restaurar</button>
+            <button class="btn btn-danger btn-sm" type="button" onclick="excluirDefinitivamenteLixeira('${escapeHtml(item.id)}')">${icon('trash',15)}Excluir definitivamente</button>
+          </div></td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>
@@ -3157,7 +3191,6 @@ function renderConfig(){
         <input id="manutencaoPublicaCheckbox" type="checkbox" ${STATE.manutencaoPublica?'checked':''} ${STATE.salvandoManutencaoPublica?'disabled':''} onchange="alterarManutencaoPublica(this.checked)" style="width:auto;margin-top:3px;">
         <span><b>Mostrar aviso de manutenção</b><span class="small-note" style="display:block;font-weight:400;margin-top:4px;">Substitui temporariamente o ranking público por um aviso ilustrado. O acesso administrativo continua disponível.</span></span>
       </label>
-      <p id="manutencaoPublicaStatus" class="small-note" role="status" ${STATE.salvandoManutencaoPublica?'':'hidden'}>Salvando configuração...</p>
       <p id="manutencaoPublicaErro" class="auth-error" role="alert" ${STATE.erroManutencaoPublica?'':'hidden'}>${escapeHtml(STATE.erroManutencaoPublica)}</p>
     </div>
 
