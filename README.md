@@ -13,6 +13,8 @@ Papéis aceitos em `reciclar-apac-roles/{uid}`:
 
 Os dados são legíveis somente por contas com um desses papéis. O operador não pode excluir dados nem alterar campanhas pelas regras do Firestore.
 
+Cada usuário pode salvar o próprio nome de exibição no Firebase Authentication. O papel exibido no app vem do campo `role` do documento `reciclar-apac-roles/{uid}` e não pode ser alterado pelo próprio usuário.
+
 ### Ranking público
 
 Visitantes sem login veem somente os rankings que um administrador publicar. Cada publicação contém posição, nome exibido e pontuação dos colaboradores com posição naquele mês; dados de cadastro, entregas, setores e detalhes por material continuam protegidos. O administrador escolhe a campanha e o mês na tela **Ranking mensal** e usa **Publicar na página**. Cada publicação é uma fotografia: publique novamente após alterações para atualizar o que os visitantes veem. Os períodos publicados ficam disponíveis para seleção na página pública.
