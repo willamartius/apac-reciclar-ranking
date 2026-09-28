@@ -73,6 +73,9 @@ a{color:var(--verde-700);}
   font-size:12.5px;color:var(--verde-300);
 }
 .admin-pill button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;padding:6px 10px;border-radius:20px;font-size:12px;font-weight:700;}
+.account-summary{min-width:0;display:flex;flex-direction:column;gap:3px;}
+.account-name{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-weight:700;}
+.account-role{color:var(--verde-300);}
 
 .main{flex:1;min-width:0;display:flex;flex-direction:column;}
 .topbar{
@@ -1142,7 +1145,10 @@ function renderApp(){
       </div>
       <div class="sidebar-foot">
         <div class="admin-pill">
-          <span>${STATE.isAdmin? '🔓 Administrador':STATE.isOperator?'📝 Operador':'🔒 Somente leitura'}</span>
+          <button class="account-summary" style="padding:0;border:0;background:transparent;text-align:left;border-radius:0;" onclick="abrirPerfilUsuario()" title="Editar meu perfil">
+            <span class="account-name">${escapeHtml(nomeExibicaoUsuario())}</span>
+            <span class="account-role">${STATE.isAdmin?'🔓 Administrador':'📝 Operador'}</span>
+          </button>
           <button onclick="${STATE.authUser? 'sairAdmin()':'abrirLoginAdmin()'}">${STATE.authUser?'Sair':'Entrar'}</button>
         </div>
       </div>
@@ -1180,6 +1186,8 @@ function abrirMaisSheet(){
   abrirModal(`
     <div class="modal-head"><h3>Mais opções</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <div style="display:flex;flex-direction:column;gap:8px;">
+      ${STATE.authUser? `<div class="card" style="padding:12px;"><b>${escapeHtml(nomeExibicaoUsuario())}</b><div class="small-note">${STATE.isAdmin?'Administrador':'Operador'}</div></div>
+      <button class="btn btn-outline btn-block" style="justify-content:flex-start" onclick="fecharModal();abrirPerfilUsuario()">Meu perfil</button>`:''}
       ${extras.map(k=>{
         const n = navItemsVisiveis().find(i=>i.key===k);
         if(!n) return '';
@@ -1281,6 +1289,62 @@ function exigirOperador(){
   alert('Esta ação exige um perfil autorizado para cadastrar dados.');
   return false;
 }
+
+function nomeExibicaoUsuario(){
+  return STATE.authUser && STATE.authUser.displayName && STATE.authUser.displayName.trim()
+    ? STATE.authUser.displayName.trim()
+    : (STATE.authUser && STATE.authUser.email) || 'Usuário';
+}
+function partesNomeUsuario(){
+  const partes=STATE.authUser && STATE.authUser.displayName
+    ? STATE.authUser.displayName.trim().split(/\s+/).filter(Boolean)
+    : [];
+  return {nome:partes.shift()||'', sobrenome:partes.join(' ')};
+}
+function renderCamposPerfilUsuario(prefixo){
+  const partes=partesNomeUsuario();
+  return `<div class="grid grid-2">
+    <div class="field"><label for="${prefixo}Nome">Nome</label><input id="${prefixo}Nome" type="text" maxlength="60" value="${escapeHtml(partes.nome)}" autocomplete="given-name" required></div>
+    <div class="field"><label for="${prefixo}Sobrenome">Sobrenome</label><input id="${prefixo}Sobrenome" type="text" maxlength="100" value="${escapeHtml(partes.sobrenome)}" autocomplete="family-name" required></div>
+  </div>
+  <div class="field"><label>Perfil de acesso</label><input type="text" value="${STATE.isAdmin?'Administrador':'Operador'}" readonly aria-readonly="true"></div>`;
+}
+function abrirPerfilUsuario(){
+  if(!STATE.authUser) return;
+  abrirModal(`
+    <div class="modal-head"><h3>Meu perfil</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p class="small-note">Conta: ${escapeHtml(STATE.authUser.email||'')}</p>
+    <form onsubmit="event.preventDefault();salvarPerfilUsuario('perfilModal')">
+      ${renderCamposPerfilUsuario('perfilModal')}
+      <p class="small-note">O perfil de acesso é definido pelo administrador no Firebase e não pode ser alterado aqui.</p>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-block" type="button" onclick="fecharModal()">Cancelar</button>
+        <button class="btn btn-primary btn-block" type="submit">Salvar nome</button>
+      </div>
+    </form>
+  `);
+}
+async function salvarPerfilUsuario(prefixo){
+  if(!STATE.authUser || !FIREBASE_AUTH) return;
+  const nome=document.getElementById(`${prefixo}Nome`)?.value.trim()||'';
+  const sobrenome=document.getElementById(`${prefixo}Sobrenome`)?.value.trim()||'';
+  if(!nome || !sobrenome){
+    alert('Informe seu nome e sobrenome.');
+    return;
+  }
+  const displayName=`${nome} ${sobrenome}`;
+  try{
+    await STATE.authUser.updateProfile({displayName});
+    STATE.authUser=FIREBASE_AUTH.currentUser;
+    fecharModal();
+    renderApp();
+  }catch(e){
+    console.error('Erro ao atualizar nome do usuário',e);
+    alert('Não foi possível salvar seu nome no Firebase Authentication. Tente novamente.');
+  }
+}
+window.abrirPerfilUsuario=abrirPerfilUsuario;
+window.salvarPerfilUsuario=salvarPerfilUsuario;
 
 async function publicarRankingPublico(mes, ano){
   if(!exigirAdmin()) return;
@@ -2218,7 +2282,7 @@ function renderRanking(){
       ${STATE.isAdmin? `<div class="toolbar-right">
         <button class="btn btn-outline" onclick="publicarRankingPublico(${mes},${ano})">Publicar na página</button>
         <button class="btn btn-outline" onclick="abrirCompartilhamentoRanking(${mes},${ano})">Compartilhar no WhatsApp</button>
-        <button class="btn btn-primary" onclick="gerarCardRanking(${mes},${ano})">Gerar card do ranking</button>
+        <button class="btn btn-outline" onclick="gerarCardRanking(${mes},${ano})">Gerar card do ranking</button>
       </div>` : ''}
     </div>
     ${resultados.length===0? `<div class="card"><div class="empty-state"><div class="icon">${icon('ranking',44)}</div>Nenhum colaborador com entregas validadas neste período.</div></div>` : `
@@ -2614,6 +2678,15 @@ function renderConfig(){
     return `<div class="card"><div class="empty-state">Esta área é restrita ao administrador.</div></div>`;
   }
   return `
+    <div class="section-title">Meu perfil</div>
+    <div class="card">
+      <p class="small-note">Seu nome aparece junto ao botão de sair. O perfil administrativo ou operacional é carregado do Firebase e não pode ser alterado por este formulário.</p>
+      <form onsubmit="event.preventDefault();salvarPerfilUsuario('perfilConfig')">
+        ${renderCamposPerfilUsuario('perfilConfig')}
+        <button class="btn btn-outline" type="submit">Salvar nome</button>
+      </form>
+    </div>
+
     <div class="section-title">Campanhas</div>
     <div class="card">
       <p class="small-note">Cada campanha é independente: pode coexistir com outras, mesmo com períodos sobrepostos. Uma entrega ou transferência sempre pertence a uma campanha específica, escolhida no momento do registro, nunca deduzida pela data. Cada campanha tem suas próprias metas e seu próprio acúmulo de excedente.</p>
