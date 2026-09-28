@@ -218,6 +218,21 @@ select{text-overflow:ellipsis;}
 .auth-card{width:min(100%,420px);}
 .auth-card h1{margin:0 0 8px;color:var(--verde-900);font-size:24px;}
 .auth-error{color:var(--vermelho);font-size:13px;margin:10px 0;}
+.public-ranking-screen{align-items:start;padding:clamp(24px,8vh,72px) 16px;}
+.public-ranking-card{width:min(100%,760px);margin:0 auto;padding:20px;}
+.public-ranking-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end;}
+.public-ranking-filters .field{min-width:0;margin-bottom:10px;}
+.public-ranking-table{width:100%;margin:0 auto;}
+.public-detail-table{min-width:560px;}
+@media(max-width:600px){
+  .public-ranking-screen{padding:20px 10px;}
+  .public-ranking-card{padding:14px;width:100%;}
+  .public-ranking-filters{grid-template-columns:1fr;gap:0;}
+  .public-ranking-card .table-wrap{width:100%;max-width:100%;margin-inline:auto;}
+  .public-detail-table{min-width:520px;}
+  .modal-overlay-public-details{align-items:center;padding:10px;}
+  .modal-public-details{padding:16px 12px calc(16px + env(safe-area-inset-bottom));}
+}
 
 .checklist{font-size:13.5px;line-height:1.9;padding-left:20px;color:var(--text);}
 .checklist li{margin-bottom:4px;}
@@ -359,6 +374,7 @@ let STATE = {
   mostrarLogin: false,
   rankingsPublicos: [],
   rankingPublicoSelecionadoId: '',
+  rankingPublicoCampanhaId: '',
   erroRankingPublico: '',
   metasSnapshots: [],
   entregasSecao: 'entregas',
@@ -1071,39 +1087,64 @@ function rankingPublicoPorId(id){
 }
 function renderRankingPublico(){
   if(STATE.mostrarLogin) return renderTelaAutenticacao();
-  const ranking = rankingPublicoPorId(STATE.rankingPublicoSelecionadoId)
-    || [...STATE.rankingsPublicos].sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))[0]
+  const rankingsOrdenados=[...STATE.rankingsPublicos].sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes));
+  const campanhasPublicas=[...new Map(rankingsOrdenados.map(item=>[item.campanhaId,{id:item.campanhaId,nome:item.campanhaNome}])).values()]
+    .sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const selecionadoAnterior=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
+  const campanhaId=campanhasPublicas.some(item=>item.id===STATE.rankingPublicoCampanhaId)
+    ? STATE.rankingPublicoCampanhaId
+    : (selecionadoAnterior&&campanhasPublicas.some(item=>item.id===selecionadoAnterior.campanhaId)
+      ? selecionadoAnterior.campanhaId
+      : (campanhasPublicas[0]||{}).id||'');
+  STATE.rankingPublicoCampanhaId=campanhaId;
+  const periodosPublicos=rankingsOrdenados.filter(item=>item.campanhaId===campanhaId);
+  const ranking=periodosPublicos.find(item=>item.id===STATE.rankingPublicoSelecionadoId)
+    || periodosPublicos[0]
     || null;
   if(ranking) STATE.rankingPublicoSelecionadoId=ranking.id;
-  const opcoes = [...STATE.rankingsPublicos]
-    .sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))
-    .map(item=>`<option value="${escapeHtml(item.id)}" ${ranking&&item.id===ranking.id?'selected':''}>${escapeHtml(item.campanhaNome)} · ${escapeHtml(formatarMesRankingPublico(item.mes,item.ano))}</option>`)
+  const opcoesCampanha=campanhasPublicas
+    .map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===campanhaId?'selected':''}>${escapeHtml(item.nome)}</option>`)
+    .join('');
+  const opcoesPeriodo=periodosPublicos
+    .map(item=>`<option value="${escapeHtml(item.id)}" ${ranking&&item.id===ranking.id?'selected':''}>${escapeHtml(formatarMesRankingPublico(item.mes,item.ano))}</option>`)
     .join('');
   const mostraDetalhes=!!ranking&&ranking.ranking.some(item=>item.detalhes&&item.detalhes.length);
-  return `<main class="auth-screen" style="align-items:start;padding-top:clamp(24px,8vh,72px);">
-    <section class="card" style="width:min(100%,760px);">
+  return `<main class="auth-screen public-ranking-screen">
+    <section class="card public-ranking-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
         <div><h1 style="margin:0 0 6px;color:var(--verde-900);">Ranking Reciclapac</h1><p class="small-note" style="margin:0;">Acompanhe as posições e os saldos por material. Os dados são atualizados automaticamente.</p></div>
         <button class="btn btn-outline" onclick="abrirLoginAdmin()">Entrar</button>
       </div>
       ${STATE.erroRankingPublico? `<p class="auth-error" role="alert">${escapeHtml(STATE.erroRankingPublico)}</p>`:''}
       ${STATE.rankingsPublicos.length? `
-        <div class="field"><label for="seletorRankingPublico">Campanha e período</label><select id="seletorRankingPublico" onchange="selecionarRankingPublico(this.value)">${opcoes}</select></div>
-        <h2 style="font-size:18px;color:var(--verde-900);">${escapeHtml(ranking.campanhaNome)} · ${escapeHtml(formatarMesRankingPublico(ranking.mes,ranking.ano))}</h2>
-        ${ranking.ranking.length?`<div class="table-wrap"><table><thead><tr><th>Posição</th><th>Colaborador</th><th>Pontuação</th>${mostraDetalhes?'<th>Detalhes</th>':''}</tr></thead>
+        <div class="public-ranking-filters">
+          <div class="field"><label for="seletorCampanhaPublica">Campanha</label><select id="seletorCampanhaPublica" onchange="selecionarCampanhaRankingPublico(this.value)">${opcoesCampanha}</select></div>
+          <div class="field"><label for="seletorPeriodoPublico">Mês e ano</label><select id="seletorPeriodoPublico" onchange="selecionarRankingPublico(this.value)">${opcoesPeriodo}</select></div>
+        </div>
+        <h2 style="font-size:18px;color:var(--verde-900);">${escapeHtml(formatarMesRankingPublico(ranking.mes,ranking.ano))}</h2>
+        ${ranking.ranking.length?`<div class="table-wrap public-ranking-table"><table><thead><tr><th>Posição</th><th>Colaborador</th><th>Pontuação</th>${mostraDetalhes?'<th>Detalhes</th>':''}</tr></thead>
           <tbody>${ranking.ranking.map((item,index)=>`<tr><td><b>${item.posicao?`${item.posicao}º`:'—'}</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${item.detalhes&&item.detalhes.length?`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`:'<span class="small-note">—</span>'}</td>`:''}</tr>`).join('')}</tbody>
         </table></div>
         `:`<div class="empty-state">Ainda não há colaboradores ativos cadastrados para este período.</div>`}
         <p class="small-note" style="margin:12px 0 0;">Atualizado automaticamente em ${escapeHtml(new Date(ranking.atualizadoEm).toLocaleString('pt-BR'))}.</p>
       ` : `<div class="empty-state">${STATE.erroRankingPublico?'Não foi possível carregar o ranking público.':'A página pública será preenchida automaticamente após um administrador ou operador abrir o aplicativo.'}</div>`}
-      <p class="small-note" style="margin:16px 0 0;">A página mostra somente nome, posição, pontuação e resumo mensal por material (disponível, meta, quanto falta, excedente e percentual). Entregas individuais, transferências, setor e demais dados cadastrais continuam protegidos por login.</p>
+      <p class="small-note" style="margin:16px 0 0;">A página exibe apenas o nome, a posição, a pontuação e o resumo mensal por material, incluindo disponibilidade, meta, quantidade restante, excedente e percentual. As entregas individuais, transferências, e demais dados cadastrais permanecem protegidos e acessíveis somente por pessoal autorizado.</p>
     </section>
   </main>`;
+}
+function selecionarCampanhaRankingPublico(campanhaId){
+  STATE.rankingPublicoCampanhaId=campanhaId;
+  const maisRecente=STATE.rankingsPublicos
+    .filter(item=>item.campanhaId===campanhaId)
+    .sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))[0];
+  STATE.rankingPublicoSelecionadoId=maisRecente?maisRecente.id:'';
+  renderApp();
 }
 function selecionarRankingPublico(id){
   STATE.rankingPublicoSelecionadoId=id;
   renderApp();
 }
+window.selecionarCampanhaRankingPublico=selecionarCampanhaRankingPublico;
 function abrirDetalhesRankingPublico(indice){
   const ranking=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
   const item=ranking&&ranking.ranking[indice];
@@ -1111,23 +1152,17 @@ function abrirDetalhesRankingPublico(indice){
   const categorias=item.detalhes;
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(item.nome)} — ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note" style="margin-top:-6px;">Acompanhe a quantidade disponível, o que falta para a meta e os excedentes em cada material.</p>
-    <div class="table-wrap"><table><thead><tr><th>Material</th><th>Disponível</th><th>Meta do mês</th><th>Falta</th><th>Excedente</th><th>% cumprimento</th></tr></thead>
-      <tbody>${categorias.map(cat=>{
-        const falta=Math.max(0,cat.meta-cat.quantidade);
-        const excedente=Math.max(0,cat.quantidade-cat.meta);
-        return `<tr>
+    <p class="small-note" style="margin-top:-6px;">A pontuação geral é a média do cumprimento das ${categorias.length} categorias abaixo, cada uma contando no máximo 100%. Por isso, entregar bastante em só uma ou duas categorias não é suficiente para uma pontuação alta: é preciso avançar em todas.</p>
+    <div class="table-wrap public-ranking-table"><table class="public-detail-table"><thead><tr><th>Categoria</th><th>Disponível (com excedente)</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
+      <tbody>${categorias.map(cat=>`<tr>
         <td>${escapeHtml(cat.nome)}</td>
         <td>${Math.round(cat.quantidade).toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
         <td>${cat.meta.toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
-        <td>${falta.toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
-        <td>${excedente.toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
         <td>${cat.percentual>=100?'<span class="badge badge-green">'+cat.percentual.toFixed(0)+'%</span>':cat.percentual.toFixed(0)+'%'}</td>
-      </tr>`;
-      }).join('')}</tbody>
+      </tr>`).join('')}</tbody>
     </table></div>
     <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%).</p>
-  `, true);
+  `, true, 'public-details');
 }
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
 async function voltarAoRankingPublico(){
@@ -1174,8 +1209,7 @@ function renderApp(){
           <path d="M20 24c-7 0-10-4-9-10 7 0 11 3 10 9M20 20c0-7 4-11 11-11 1 7-3 11-10 12"/>
         </svg>
         <div class="brand-text">
-          <div class="brand-title">RECICLAR É CUIDAR<br>DA CASA COMUM</div>
-          <div class="brand-sub">Ranking de colaboradores da APAC</div>
+          <div class="brand-title">RECICLAPAC</div>
         </div>
       </div>
       <div class="nav">
@@ -1238,12 +1272,12 @@ function abrirMaisSheet(){
 window.abrirMaisSheet = abrirMaisSheet;
 
 /* ---------- MODAL GENÉRICO ---------- */
-function abrirModal(innerHtml, wide){
+function abrirModal(innerHtml, wide, modalClass=''){
   fecharModal();
   const wrap = document.createElement('div');
-  wrap.className='modal-overlay'; wrap.id='modalOverlay';
+  wrap.className=`modal-overlay${modalClass?' modal-overlay-'+modalClass:''}`; wrap.id='modalOverlay';
   wrap.onclick=(e)=>{ if(e.target===wrap) fecharModal(); };
-  wrap.innerHTML = `<div class="modal" style="${wide?'max-width:720px':''}">${innerHtml}</div>`;
+  wrap.innerHTML = `<div class="modal${modalClass?' modal-'+modalClass:''}" style="${wide?'max-width:720px':''}">${innerHtml}</div>`;
   document.body.appendChild(wrap);
 }
 function fecharModal(){ const m=document.getElementById('modalOverlay'); if(m) m.remove(); }
@@ -1482,7 +1516,12 @@ async function sincronizarRankingsPublicos(){
           }));
         const id=`${encodeURIComponent(campanha.id)}_${chave}`;
         const anterior=documentos.get(id);
+        const mesAtual=chave===chaveMA(atual.mes,atual.ano);
+        const temDados=mesAtual||ranking.some(item=>item.pontuacao>0
+          || item.detalhes.some(cat=>cat.quantidade>0));
+        if(!temDados && !anterior) continue;
         if(anterior && anterior.campanhaNome===campanha.nome
+          && anterior.temDados===temDados
           && serializarEstavel(anterior.ranking)===serializarEstavel(ranking)) continue;
         const documento={
           campanhaId:campanha.id,
@@ -1490,6 +1529,7 @@ async function sincronizarRankingsPublicos(){
           mes,
           ano,
           atualizadoEm:new Date().toISOString(),
+          temDados,
           ranking,
         };
         await colecao.doc(id).set(documento);
@@ -3421,6 +3461,8 @@ function carregarRankingsPublicos(){
         }
         return {posicao:item.posicao,nome:item.nome,pontuacao:item.pontuacao,...(detalhes?{detalhes}:{})};
       }).sort((a,b)=>(a.posicao||Number.MAX_SAFE_INTEGER)-(b.posicao||Number.MAX_SAFE_INTEGER));
+      const temDados=data.temDados===true || entradas.some(item=>item.pontuacao>0
+        || (item.detalhes||[]).some(cat=>cat.quantidade>0));
       return {
         id:doc.id,
         campanhaId:data.campanhaId,
@@ -3428,9 +3470,10 @@ function carregarRankingsPublicos(){
         mes:data.mes,
         ano:data.ano,
         atualizadoEm:data.atualizadoEm,
+        temDados,
         ranking:entradas,
       };
-    });
+    }).filter(ranking=>ranking.temDados);
     STATE.rankingsPublicos=rankings;
     STATE.erroRankingPublico='';
     const rankingMaisRecente=[...rankings].sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))[0];

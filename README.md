@@ -17,7 +17,7 @@ Cada usuário pode salvar o próprio nome de exibição no Firebase Authenticati
 
 ### Ranking público
 
-Visitantes sem login veem o ranking por campanha e período, atualizado automaticamente quando um administrador ou operador salva alterações no app. A página mostra nome, posição, pontuação e um resumo mensal por material com quantidade disponível (incluindo excedentes), meta, quanto falta e percentual. Também lista colaboradores ativos ainda sem pontuação, para que possam acompanhar seu progresso. Entregas individuais, transferências, setor e demais dados cadastrais continuam protegidos por login.
+Visitantes sem login veem o ranking por campanha e período, atualizado automaticamente quando um administrador ou operador salva alterações no app. Os seletores de campanha e mês mostram somente períodos com atividade e o mês atual. A página mostra nome, posição, pontuação e um resumo mensal por material com quantidade disponível (incluindo excedentes), meta, quanto falta e percentual. Também lista colaboradores ativos ainda sem pontuação no mês atual, para que possam acompanhar seu progresso. Entregas individuais, transferências, setor e demais dados cadastrais continuam protegidos por login.
 
 O botão único **Compartilhar no WhatsApp** abre uma prévia editável, com opção de resumo do Top 3 ou ranking completo. A mensagem inclui um link para a página pública; revise o conteúdo antes de abrir o WhatsApp ou copiar o texto.
 
