@@ -3223,7 +3223,7 @@ function renderConfig(){
 
     <div class="section-title">Backup no Google Drive</div>
     <div class="card" style="display:grid;gap:12px;">
-      <p class="small-note" style="margin:0;">Cada administrador vincula a própria conta Google. Os backups ficam privados em uma pasta do Drive e o app conserva os 10 mais recentes. Para ativar, configure o ID de cliente OAuth conforme as instruções do README.</p>
+      <p class="small-note" style="margin:0;">Cada administrador vincula a própria conta Google. Os backups ficam privados em uma pasta do Drive e o app conserva os 10 mais recentes.</p>
       ${STATE.googleDriveLink?`<p class="small-note" style="margin:0;">Conta vinculada: <b>${escapeHtml(STATE.googleDriveLink.email)}</b></p>`:'<p class="small-note" style="margin:0;">Nenhuma conta Google vinculada a este usuário administrador.</p>'}
       ${STATE.googleDriveStatus?`<p class="small-note" role="status" style="margin:0;">${escapeHtml(STATE.googleDriveStatus)}</p>`:''}
       ${STATE.googleDriveLinkError?`<p class="auth-error" role="alert" style="margin:0;">${escapeHtml(STATE.googleDriveLinkError)}</p>`:''}
