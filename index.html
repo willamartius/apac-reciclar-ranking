@@ -219,6 +219,10 @@ select{text-overflow:ellipsis;}
 .auth-card{width:min(100%,420px);}
 .auth-card h1{margin:0 0 8px;color:var(--verde-900);font-size:24px;}
 .auth-error{color:var(--vermelho);font-size:13px;margin:10px 0;}
+.login-loading-overlay{position:fixed;inset:0;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:rgba(18,48,31,.94);color:#fff;text-align:center;}
+.login-loading-spinner{width:44px;height:44px;border:4px solid rgba(143,203,158,.3);border-top-color:#8FCB9E;border-radius:50%;animation:login-spin .8s linear infinite;}
+@keyframes login-spin{to{transform:rotate(360deg);}}
+@media(prefers-reduced-motion:reduce){.login-loading-spinner{animation-duration:1.8s;}}
 .public-ranking-screen{align-items:start;padding:clamp(24px,8vh,72px) 16px;}
 .public-ranking-card{width:min(100%,760px);margin:0 auto;padding:20px;}
 .maintenance-card{text-align:center;padding:clamp(24px,6vw,44px);}
@@ -393,6 +397,7 @@ let STATE = {
   authUser: null,
   authError: '',
   authNotice: '',
+  loginCarregando: false,
   authEmail: '',
   mostrarLogin: false,
   rankingsPublicos: [],
@@ -1325,6 +1330,13 @@ function irPara(view){
 }
 window.irPara = irPara;
 function renderTelaAutenticacao(){
+  if(STATE.loginCarregando){
+    return `<main class="login-loading-overlay" role="status" aria-live="polite">
+      <span class="login-loading-spinner" aria-hidden="true"></span>
+      <strong>Verificando seu acesso...</strong>
+      <span class="small-note" style="color:rgba(255,255,255,.8);">Aguarde enquanto validamos sua conta.</span>
+    </main>`;
+  }
   if(STATE.authUser){
     return `<main class="auth-screen"><section class="card auth-card">
       <h1>Acesso não autorizado</h1>
@@ -1360,11 +1372,11 @@ function renderAvisoManutencaoPublica(){
   return `<main class="auth-screen public-ranking-screen">
     <section class="card public-ranking-card maintenance-card">
       <div class="maintenance-illustration">
-        <img src="maintenance-kitten.png" alt="Gatinho brincando com fios" loading="lazy">
+        <img src="maintenance-working-kitten.png" alt="Gatinho trabalhando no computador" loading="lazy">
       </div>
-      <span class="badge badge-amber maintenance-badge">Voltamos em breve</span>
       <h1 class="maintenance-title">Estamos em manutenção</h1>
-      <p class="maintenance-message">Estamos fazendo alguns ajustes por aqui. Em breve voltamos com novidades!</p>
+      <p class="maintenance-message">Realizando em alguns ajustes</p>
+      <span class="badge badge-amber maintenance-badge">Voltamos em breve</span>
       <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Acesso administrativo</button>
     </section>
   </main>`;
@@ -1612,6 +1624,7 @@ async function solicitarRedefinicaoSenhaLogin(){
   renderApp();
 }
 async function confirmarLoginAdmin(){
+  if(STATE.loginCarregando) return;
   if(!FIREBASE_AUTH){ STATE.authError='O Firebase Authentication não está disponível.'; renderApp(); return; }
   const email=document.getElementById('authEmail')?.value.trim();
   const senha=document.getElementById('authPassword')?.value;
@@ -1619,9 +1632,12 @@ async function confirmarLoginAdmin(){
   STATE.authEmail=email;
   STATE.authError='';
   STATE.authNotice='';
+  STATE.loginCarregando=true;
+  renderApp();
   try{
     await FIREBASE_AUTH.signInWithEmailAndPassword(email,senha);
   }catch(e){
+    STATE.loginCarregando=false;
     console.error('Erro ao autenticar usuário',e);
     const mensagens={
       'auth/too-many-requests':'Muitas tentativas. Aguarde antes de tentar novamente.',
@@ -4071,6 +4087,7 @@ async function iniciar(){
     FIREBASE_AUTH.onAuthStateChanged(user=>{
       processarSessaoFirebase(user).catch(erro=>{
         console.error('Erro ao carregar o acesso do usuário',erro);
+        STATE.loginCarregando=false;
         STATE.isAdmin=false; STATE.isOperator=false;
         STATE.authError=erro && erro.message ? erro.message : 'Não foi possível validar o acesso.';
         finalizarCarregamento();
@@ -4105,6 +4122,7 @@ async function processarSessaoFirebase(user){
   rankingPublicoSyncAtivo=false;
   await carregarRankingsPublicos();
   if(!user){
+    STATE.loginCarregando=false;
     STATE.mostrarLogin=false;
     STATE.colaboradores=[]; STATE.entregas=[]; STATE.transferencias=[]; STATE.trocas=[];
     STATE.campanhas=[]; STATE.lixeira=[]; STATE.metasSnapshots=[]; STATE.config=null;
@@ -4114,6 +4132,7 @@ async function processarSessaoFirebase(user){
   const perfil=await FIREBASE_DB.collection('reciclar-apac-roles').doc(user.uid).get();
   const role=perfil.exists ? perfil.data().role : null;
   if(role!=='admin' && role!=='operator'){
+    STATE.loginCarregando=false;
     STATE.authError='Esta conta ainda não recebeu um perfil de administrador ou operador.';
     finalizarCarregamento();
     return;
@@ -4130,6 +4149,7 @@ async function processarSessaoFirebase(user){
     await verificarInstalacaoFirestore();
   }
   await carregarDados();
+  STATE.loginCarregando=false;
   rankingPublicoSyncAtivo=true;
   sincronizarRankingsPublicos().catch(mostrarErroSincronizacaoRankingPublico);
   finalizarCarregamento();
