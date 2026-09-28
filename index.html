@@ -1324,7 +1324,7 @@ function renderTelaAutenticacao(){
   }
   return `<main class="auth-screen"><section class="card auth-card">
     <h1>Entrar no ranking</h1>
-    <p class="small-note">Entre com sua conta autorizada para o uso das funções administrativas.</p>
+    <p class="small-note">Entre com sua conta autorizada para o uso administrativo.</p>
     <form onsubmit="event.preventDefault();confirmarLoginAdmin()">
       <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="username" value="${escapeHtml(STATE.authEmail)}" required></div>
       <div class="field"><label for="authPassword">Senha</label><input id="authPassword" type="password" autocomplete="current-password" required></div>
