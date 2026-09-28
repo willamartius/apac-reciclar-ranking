@@ -56,7 +56,7 @@ a{color:var(--verde-700);}
 .brand{display:flex;align-items:center;gap:10px;padding:0 6px 20px 6px;border-bottom:1px solid rgba(255,255,255,0.12);margin-bottom:16px;}
 .brand-icon{width:34px;height:34px;flex-shrink:0;}
 .brand-text{line-height:1.15;}
-.brand-title{font-family:'Fraunces',serif;font-weight:600;font-size:14.5px;color:#fff;letter-spacing:.2px;}
+.brand-title{font-family:'Fraunces',serif;font-weight:600;font-size:17px;color:#fff;letter-spacing:.2px;}
 .brand-sub{font-size:11px;color:var(--verde-300);margin-top:2px;}
 .nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .nav button{
@@ -400,6 +400,7 @@ let FIREBASE_AUTH = null;
 let STORAGE_MODE = 'none';
 const FIRESTORE_RECORD_COLLECTIONS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
 const FIRESTORE_BASELINES = new Map();
+const STORAGE_ERRORS = new Map();
 const PUBLIC_RANKING_SOURCE_KEYS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
 let rankingPublicoSyncAtivo = false;
 let rankingPublicoSyncTimer = null;
@@ -463,11 +464,12 @@ async function storageGet(key, fallback){
 }
 async function storageSet(key, value){
   try{
-    if(STORAGE_MODE==='claude'){ await window.storage.set(key, JSON.stringify(value), true); return true; }
+    if(STORAGE_MODE==='claude'){ await window.storage.set(key, JSON.stringify(value), true); STORAGE_ERRORS.delete(key); return true; }
     if(STORAGE_MODE==='firestore'){
       if(!FIRESTORE_RECORD_COLLECTIONS.has(key)){
         await FIREBASE_DB.collection('reciclar-apac').doc(key).set({value: JSON.stringify(value)});
         agendarSincronizacaoRankingsPublicos(key);
+        STORAGE_ERRORS.delete(key);
         return true;
       }
       if(!Array.isArray(value)) throw new Error(`A coleção "${key}" precisa ser uma lista.`);
@@ -503,11 +505,15 @@ async function storageSet(key, value){
       }
       FIRESTORE_BASELINES.set(key,base);
       agendarSincronizacaoRankingsPublicos(key);
+      STORAGE_ERRORS.delete(key);
       return true;
     }
-    localStorage.setItem('reciclar-apac:'+key, JSON.stringify(value)); return true;
+    localStorage.setItem('reciclar-apac:'+key, JSON.stringify(value));
+    STORAGE_ERRORS.delete(key);
+    return true;
   }catch(e){
     console.error('Erro ao salvar', key, e);
+    STORAGE_ERRORS.set(key,e);
     return false;
   }
 }
@@ -1128,7 +1134,7 @@ function renderRankingPublico(){
         `:`<div class="empty-state">Ainda não há colaboradores ativos cadastrados para este período.</div>`}
         <p class="small-note" style="margin:12px 0 0;">Atualizado automaticamente em ${escapeHtml(new Date(ranking.atualizadoEm).toLocaleString('pt-BR'))}.</p>
       ` : `<div class="empty-state">${STATE.erroRankingPublico?'Não foi possível carregar o ranking público.':'A página pública será preenchida automaticamente após um administrador ou operador abrir o aplicativo.'}</div>`}
-      <p class="small-note" style="margin:16px 0 0;">A página exibe apenas o nome, a posição, a pontuação e o resumo mensal por material, incluindo disponibilidade, meta, quantidade restante, excedente e percentual. As entregas individuais, transferências, e demais dados cadastrais permanecem protegidos e acessíveis somente por pessoal autorizado.</p>
+      <p class="small-note" style="margin:16px 0 0;">A página apresenta o ranking e os saldos mensais por material. Os registros detalhados permanecem acessíveis somente à equipe autorizada.</p>
     </section>
   </main>`;
 }
@@ -3078,13 +3084,30 @@ async function salvarCampanha(id){
     if(Object.keys(kit).length===0){ erroEl.textContent='Informe a quantidade exigida de pelo menos um material para o kit de troca.'; erroEl.style.display='block'; return; }
     trocaCartela = { ativo:true, nomeItem, cartelasPorKit, kit };
   }
+  const campanhasAnteriores=JSON.parse(JSON.stringify(STATE.campanhas));
   if(id){
     const c = STATE.campanhas.find(x=>x.id===id);
     Object.assign(c, {nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, nomesPersonalizados, materiaisExtras, categoriasDesativadas, trocaCartela});
   } else {
     STATE.campanhas.push({ id:uid(), nome, mesInicio, anoInicio, mesFim, anoFim, status, metasDefault, metasHistorico:{}, nomesPersonalizados, materiaisExtras, categoriasDesativadas, trocaCartela });
   }
-  if(!await salvarCampanhas()){ erroEl.textContent='Não foi possível salvar a campanha no Firebase. Atualize a página e tente novamente.'; erroEl.style.display='block'; return; }
+  if(!await salvarCampanhas()){
+    STATE.campanhas=campanhasAnteriores;
+    const erro=STORAGE_ERRORS.get('campanhas');
+    const codigo=erro&&erro.code;
+    const mensagem=codigo==='permission-denied'
+      ? 'O Firestore recusou a gravação. Confirme que esta conta tem papel de administrador e que as regras implantadas permitem gravar campanhas.'
+      : codigo==='unavailable' || codigo==='deadline-exceeded'
+        ? 'Não foi possível conectar ao Firestore. Verifique a conexão e tente novamente.'
+        : codigo==='failed-precondition'
+          ? 'O Firestore recusou a gravação por uma condição inválida. Verifique os dados da campanha e tente novamente.'
+          : erro&&erro.message
+            ? `Erro do Firestore (${codigo||'sem código'}): ${erro.message}`
+            : 'Não foi possível salvar a campanha. Verifique sua conexão, atualize a página e tente novamente.';
+    erroEl.textContent=mensagem;
+    erroEl.style.display='block';
+    return;
+  }
   if(!STATE.campanhaSelecionadaId) STATE.campanhaSelecionadaId = STATE.campanhas[STATE.campanhas.length-1].id;
   fecharModal(); renderApp();
 }
