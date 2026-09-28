@@ -58,6 +58,19 @@ service cloud.firestore {
       allow delete: if settingId == 'maintenance' && isAdmin();
     }
 
+    match /reciclar-apac-drive-links/{userId} {
+      allow get: if isAdmin() && request.auth.uid == userId;
+      allow list: if false;
+      allow create, update: if isAdmin()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['googleSub', 'email', 'linkedAt'])
+        && request.resource.data.keys().hasAll(['googleSub', 'email', 'linkedAt'])
+        && request.resource.data.googleSub is string
+        && request.resource.data.email is string
+        && request.resource.data.linkedAt is string;
+      allow delete: if isAdmin() && request.auth.uid == userId;
+    }
+
     match /reciclar-apac-public-ranking/{rankingId} {
       allow read: if true;
       allow create, update: if canUseApp()
