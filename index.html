@@ -228,7 +228,7 @@ select{text-overflow:ellipsis;}
 .maintenance-card{text-align:center;padding:clamp(24px,6vw,44px);}
 .maintenance-illustration{width:min(100%,250px);margin:0 auto 12px;}
 .maintenance-illustration img{display:block;width:100%;height:auto;}
-.maintenance-badge{margin-bottom:10px;}
+.maintenance-badge{display:block;width:max-content;margin:0 auto 20px;}
 .maintenance-title{margin:0 0 8px;color:var(--verde-900);}
 .maintenance-message{max-width:440px;margin:0 auto 20px;color:var(--text-muted);line-height:1.6;}
 .public-ranking-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end;}
@@ -1375,8 +1375,7 @@ function renderAvisoManutencaoPublica(){
         <img src="maintenance-working-kitten.png" alt="Gatinho trabalhando no computador" loading="lazy">
       </div>
       <h1 class="maintenance-title">Estamos em manutenção</h1>
-      <p class="maintenance-message">Realizando em alguns ajustes</p>
-      <span class="badge badge-amber maintenance-badge">Voltamos em breve</span>
+      <span class="badge badge-amber maintenance-badge">Voltaremos em breve</span>
       <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Acesso administrativo</button>
     </section>
   </main>`;
