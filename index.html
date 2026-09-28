@@ -147,6 +147,8 @@ a{color:var(--verde-700);}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px;}
 .toolbar-left,.toolbar-right{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
 .backup-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.drive-backup-actions{grid-template-columns:repeat(3,minmax(0,1fr));}
+.drive-backup-actions .btn{min-width:0;padding:8px 6px;font-size:12px;line-height:1.25;white-space:normal;}
 .backup-import-btn{cursor:pointer;display:flex;align-items:center;gap:7px;margin:0;}
 
 input[type=text],input[type=date],input[type=number],input[type=email],input[type=password],select,textarea{
@@ -3244,7 +3246,7 @@ function renderConfig(){
       ${STATE.googleDriveLink?`<p class="small-note" style="margin:0;">Conta vinculada: <b>${escapeHtml(STATE.googleDriveLink.email)}</b></p>`:'<p class="small-note" style="margin:0;">Nenhuma conta Google vinculada a este usuário administrador.</p>'}
       ${STATE.googleDriveStatus?`<p class="small-note" role="status" style="margin:0;">${escapeHtml(STATE.googleDriveStatus)}</p>`:''}
       ${STATE.googleDriveLinkError?`<p class="auth-error" role="alert" style="margin:0;">${escapeHtml(STATE.googleDriveLinkError)}</p>`:''}
-      <div class="backup-actions">
+      <div class="backup-actions drive-backup-actions">
         ${STATE.googleDriveLink
           ?`<button class="btn btn-outline btn-block" type="button" onclick="desvincularGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>Desvincular Conta Google</button>`
           :`<button class="btn btn-outline btn-block" type="button" onclick="conectarGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>Vincular Conta Google</button>`}
