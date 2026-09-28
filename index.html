@@ -402,6 +402,7 @@ let STATE = {
   mostrarLogin: false,
   rankingsPublicos: [],
   manutencaoPublica: false,
+  manutencaoPublicaCarregada: false,
   salvandoManutencaoPublica: false,
   erroManutencaoPublica: '',
   googleDriveLink: null,
@@ -4098,6 +4099,7 @@ async function iniciar(){
   finalizarCarregamento();
 }
 function finalizarCarregamento(){
+  if(STORAGE_MODE==='firestore' && !STATE.authUser && !STATE.manutencaoPublicaCarregada) return;
   document.getElementById('loading').style.display='none';
   document.getElementById('app').style.display='flex';
   renderApp();
@@ -4168,14 +4170,27 @@ function carregarRankingsPublicos(){
         }else{
           STATE.manutencaoPublica=false;
         }
-        if(!STATE.authUser) renderApp();
+        const primeiraLeitura=!STATE.manutencaoPublicaCarregada;
+        STATE.manutencaoPublicaCarregada=true;
+        if(!STATE.authUser){
+          if(primeiraLeitura) finalizarCarregamento();
+          else renderApp();
+        }
       }catch(erro){
         console.error('Erro ao carregar o aviso público de manutenção',erro);
         STATE.manutencaoPublica=true;
-        if(!STATE.authUser) renderApp();
+        const primeiraLeitura=!STATE.manutencaoPublicaCarregada;
+        STATE.manutencaoPublicaCarregada=true;
+        if(!STATE.authUser){
+          if(primeiraLeitura) finalizarCarregamento();
+          else renderApp();
+        }
       }
     },erro=>{
       console.error('Erro ao carregar o aviso público de manutenção',erro);
+      const primeiraLeitura=!STATE.manutencaoPublicaCarregada;
+      STATE.manutencaoPublicaCarregada=true;
+      if(primeiraLeitura && !STATE.authUser) finalizarCarregamento();
     });
   }
   if(rankingsPublicosUnsubscribe) return;
