@@ -17,11 +17,11 @@ Cada usuário pode salvar o próprio nome de exibição no Firebase Authenticati
 
 ### Ranking público
 
-Visitantes sem login veem somente os rankings que um administrador publicar. Cada publicação contém posição, nome exibido e pontuação dos colaboradores com posição naquele mês; dados de cadastro, entregas, setores e detalhes por material continuam protegidos. O administrador escolhe a campanha e o mês na tela **Ranking mensal** e usa **Publicar na página**. Cada publicação é uma fotografia: publique novamente após alterações para atualizar o que os visitantes veem. Os períodos publicados ficam disponíveis para seleção na página pública.
+Visitantes sem login veem somente os rankings que um administrador publicar. Cada publicação contém posição, nome exibido e pontuação dos colaboradores com posição naquele mês. Quando há detalhes disponíveis, cada colaborador também pode ter quantidade disponível (incluindo excedentes), meta do mês e percentual de cumprimento por material publicados na página. Dados de cadastro, entregas individuais e setores continuam protegidos. O administrador escolhe a campanha e o mês na tela **Ranking mensal** e usa **Publicar na página**; antes de publicar, confirme que os colaboradores foram informados e autorizaram a divulgação dos detalhes. Cada publicação é uma fotografia: publique novamente após alterações para atualizar o que os visitantes veem. Os períodos publicados ficam disponíveis para seleção na página pública.
 
 O botão único **Compartilhar no WhatsApp** abre uma prévia editável, com opção de resumo do Top 3 ou ranking completo. A mensagem inclui um link para a página pública; revise o conteúdo antes de abrir o WhatsApp ou copiar o texto.
 
-As regras dão leitura anônima apenas à coleção `reciclar-apac-public-ranking`; as coleções operacionais continuam exigindo papel autorizado. Ao publicar nomes e pontuações, confirme que os colaboradores foram informados sobre essa divulgação.
+As regras dão leitura anônima apenas à coleção `reciclar-apac-public-ranking`; as coleções operacionais continuam exigindo papel autorizado. Só publique detalhes por material após informar os colaboradores e obter autorização para essa divulgação.
 
 ### Preparar o Firebase existente
 

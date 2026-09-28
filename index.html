@@ -1070,6 +1070,7 @@ function renderRankingPublico(){
     .sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))
     .map(item=>`<option value="${escapeHtml(item.id)}" ${ranking&&item.id===ranking.id?'selected':''}>${escapeHtml(item.campanhaNome)} · ${escapeHtml(formatarMesRankingPublico(item.mes,item.ano))}</option>`)
     .join('');
+  const mostraDetalhes=!!ranking&&ranking.ranking.some(item=>item.detalhes);
   return `<main class="auth-screen" style="align-items:start;padding-top:clamp(24px,8vh,72px);">
     <section class="card" style="width:min(100%,760px);">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
@@ -1080,12 +1081,12 @@ function renderRankingPublico(){
       ${STATE.rankingsPublicos.length? `
         <div class="field"><label for="seletorRankingPublico">Campanha e período</label><select id="seletorRankingPublico" onchange="selecionarRankingPublico(this.value)">${opcoes}</select></div>
         <h2 style="font-size:18px;color:var(--verde-900);">${escapeHtml(ranking.campanhaNome)} · ${escapeHtml(formatarMesRankingPublico(ranking.mes,ranking.ano))}</h2>
-        <div class="table-wrap"><table><thead><tr><th>Posição</th><th>Colaborador</th><th>Pontuação</th></tr></thead>
-          <tbody>${ranking.ranking.map(item=>`<tr><td><b>${item.posicao}º</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td></tr>`).join('')}</tbody>
+        <div class="table-wrap"><table><thead><tr><th>Posição</th><th>Colaborador</th><th>Pontuação</th>${mostraDetalhes?'<th>Detalhes</th>':''}</tr></thead>
+          <tbody>${ranking.ranking.map(item=>`<tr><td><b>${item.posicao}º</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${item.detalhes?`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${item.posicao})">Detalhes</button>`:'<span class="small-note">—</span>'}</td>`:''}</tr>`).join('')}</tbody>
         </table></div>
         <p class="small-note" style="margin:12px 0 0;">Atualizado em ${escapeHtml(new Date(ranking.atualizadoEm).toLocaleString('pt-BR'))}.</p>
       ` : `<div class="empty-state">${STATE.erroRankingPublico?'Não foi possível carregar o ranking público.':'Ainda não há ranking publicado. Entre em contato com a administração da campanha.'}</div>`}
-      <p class="small-note" style="margin:16px 0 0;">Esta página publica somente posição, nome e pontuação. Os demais dados continuam protegidos por login.</p>
+      <p class="small-note" style="margin:16px 0 0;">A página mostra posição, nome e pontuação; quando disponíveis, os detalhes publicados incluem quantidade, meta e percentual por material. Dados de cadastro, entregas individuais e setor continuam protegidos por login.</p>
     </section>
   </main>`;
 }
@@ -1093,6 +1094,26 @@ function selecionarRankingPublico(id){
   STATE.rankingPublicoSelecionadoId=id;
   renderApp();
 }
+function abrirDetalhesRankingPublico(posicao){
+  const ranking=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
+  const item=ranking&&ranking.ranking.find(entrada=>entrada.posicao===posicao);
+  if(!item || !item.detalhes) return;
+  const categorias=item.detalhes;
+  abrirModal(`
+    <div class="modal-head"><h3>${escapeHtml(item.nome)} — ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p class="small-note" style="margin-top:-6px;">A pontuação geral é a média do cumprimento das ${categorias.length} categorias abaixo, cada uma contando no máximo 100%.</p>
+    <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Disponível (com excedente)</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
+      <tbody>${categorias.map(cat=>`<tr>
+        <td>${escapeHtml(cat.nome)}</td>
+        <td>${Math.round(cat.quantidade).toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
+        <td>${cat.meta.toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
+        <td>${cat.percentual>=100?'<span class="badge badge-green">'+cat.percentual.toFixed(0)+'%</span>':cat.percentual.toFixed(0)+'%'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%).</p>
+  `, true);
+}
+window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
 async function voltarAoRankingPublico(){
   if(STATE.authUser && FIREBASE_AUTH){
     try { await FIREBASE_AUTH.signOut(); }
@@ -1351,12 +1372,22 @@ async function publicarRankingPublico(mes, ano){
   if(!exigirAdmin()) return;
   const campanha=campanhaPorId(STATE.campanhaSelecionadaId);
   if(!campanha){ alert('Selecione uma campanha antes de publicar o ranking.'); return; }
+  if(!confirm('Esta publicação incluirá, para cada colaborador, quantidade disponível, meta e percentual de cumprimento por material. Confirme que os colaboradores foram informados e autorizaram a divulgação desses dados. Deseja continuar?')) return;
+  const categorias=categoriasDaCampanha(campanha);
+  const metas=getMetasDoMes(campanha.id,mes,ano);
   const ranking=calcularResultadosMes(campanha.id,mes,ano)
     .filter(resultado=>resultado.posicao)
     .map(resultado=>({
       posicao:resultado.posicao,
       nome:resultado.colaborador.nome,
       pontuacao:Math.round(resultado.pontuacao),
+      detalhes:categorias.map(cat=>({
+        nome:cat.label.split(' (')[0],
+        unidade:cat.unidade,
+        quantidade:Math.round(resultado.totais[cat.key]||0),
+        meta:metas[cat.key]||cat.metaDefault,
+        percentual:resultado.percentuais[cat.key]||0,
+      })),
     }));
   const chave=chaveMA(mes,ano);
   const id=`${encodeURIComponent(campanha.id)}_${chave}`;
@@ -1370,7 +1401,7 @@ async function publicarRankingPublico(mes, ano){
   };
   try{
     await FIREBASE_DB.collection('reciclar-apac-public-ranking').doc(id).set(documento);
-    alert('Ranking publicado. O público poderá ver posição, nome e pontuação deste período.');
+    alert('Ranking publicado. O público poderá ver posição, nome, pontuação e detalhes por material deste período.');
   }catch(e){
     console.error('Erro ao publicar ranking público',e);
     alert('Não foi possível publicar o ranking. Verifique as regras do Firestore e tente novamente.');
@@ -3263,7 +3294,23 @@ async function carregarRankingsPublicos(){
           || typeof item.pontuacao!=='number' || !Number.isFinite(item.pontuacao) || item.pontuacao<0){
           throw new Error('Uma entrada do ranking público tem formato inválido.');
         }
-        return {posicao:item.posicao,nome:item.nome,pontuacao:item.pontuacao};
+        let detalhes;
+        if(item.detalhes!==undefined){
+          if(!Array.isArray(item.detalhes) || item.detalhes.length<1 || item.detalhes.length>30){
+            throw new Error('Os detalhes de uma entrada do ranking público têm formato inválido.');
+          }
+          detalhes=item.detalhes.map(cat=>{
+            if(!cat || typeof cat.nome!=='string' || !cat.nome.trim() || cat.nome.length>120
+              || typeof cat.unidade!=='string' || !cat.unidade.trim() || cat.unidade.length>40
+              || typeof cat.quantidade!=='number' || !Number.isFinite(cat.quantidade) || cat.quantidade<0
+              || typeof cat.meta!=='number' || !Number.isFinite(cat.meta) || cat.meta<0
+              || typeof cat.percentual!=='number' || !Number.isFinite(cat.percentual) || cat.percentual<0){
+              throw new Error('Um detalhe por material do ranking público tem formato inválido.');
+            }
+            return {nome:cat.nome,unidade:cat.unidade,quantidade:cat.quantidade,meta:cat.meta,percentual:cat.percentual};
+          });
+        }
+        return {posicao:item.posicao,nome:item.nome,pontuacao:item.pontuacao,...(detalhes?{detalhes}:{})};
       }).sort((a,b)=>a.posicao-b.posicao);
       return {
         id:doc.id,
