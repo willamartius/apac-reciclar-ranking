@@ -223,13 +223,27 @@ select{text-overflow:ellipsis;}
 .public-ranking-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end;}
 .public-ranking-filters .field{min-width:0;margin-bottom:10px;}
 .public-ranking-table{width:100%;margin:0 auto;}
-.public-detail-table{min-width:560px;}
+.material-detail-table{width:100%;table-layout:fixed;}
+.material-detail-table th{white-space:normal;}
+.material-detail-table th:nth-child(1){width:28%;}
+.material-detail-table th:nth-child(2){width:25%;}
+.material-detail-table th:nth-child(3){width:21%;}
+.material-detail-table th:nth-child(4){width:26%;}
+.material-amount{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap;}
+.material-unit{display:block;margin-top:2px;font-size:10px;color:var(--text-muted);}
+.badge-surplus{padding:2px 5px;font-size:10px;white-space:nowrap;}
+#tcInfoKits{align-items:flex-start;}
+#tcInfoKits>div{min-width:0;overflow-wrap:anywhere;}
 @media(max-width:600px){
   .public-ranking-screen{padding:20px 10px;}
   .public-ranking-card{padding:14px;width:100%;}
   .public-ranking-filters{grid-template-columns:1fr;gap:0;}
   .public-ranking-card .table-wrap{width:100%;max-width:100%;margin-inline:auto;}
-  .public-detail-table{min-width:520px;}
+  .material-detail-table{font-size:11px;}
+  .material-detail-table th{font-size:9px;letter-spacing:0;padding:7px 3px;}
+  .material-detail-table td{padding:8px 3px;overflow-wrap:anywhere;}
+  .material-unit{font-size:9px;}
+  .badge-surplus{font-size:9px;padding:2px 4px;}
   .modal-overlay-public-details{align-items:center;padding:10px;}
   .modal-public-details{padding:16px 12px calc(16px + env(safe-area-inset-bottom));}
 }
@@ -1131,10 +1145,10 @@ function renderRankingPublico(){
         ${ranking.ranking.length?`<div class="table-wrap public-ranking-table"><table><thead><tr><th>Posição</th><th>Colaborador</th><th>Pontuação</th>${mostraDetalhes?'<th>Detalhes</th>':''}</tr></thead>
           <tbody>${ranking.ranking.map((item,index)=>`<tr><td><b>${item.posicao?`${item.posicao}º`:'—'}</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${item.detalhes&&item.detalhes.length?`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`:'<span class="small-note">—</span>'}</td>`:''}</tr>`).join('')}</tbody>
         </table></div>
-        `:`<div class="empty-state">Ainda não há colaboradores ativos cadastrados para este período.</div>`}
+        `:`<div class="empty-state">Ainda não há colaboradores com entregas neste período.</div>`}
         <p class="small-note" style="margin:12px 0 0;">Atualizado automaticamente em ${escapeHtml(new Date(ranking.atualizadoEm).toLocaleString('pt-BR'))}.</p>
       ` : `<div class="empty-state">${STATE.erroRankingPublico?'Não foi possível carregar o ranking público.':'A página pública será preenchida automaticamente após um administrador ou operador abrir o aplicativo.'}</div>`}
-      <p class="small-note" style="margin:16px 0 0;">A página apresenta o ranking e os saldos mensais por material. Os registros detalhados permanecem acessíveis somente à equipe autorizada.</p>
+      <p class="small-note" style="margin:16px 0 0;">A página apresenta o ranking e os saldos mensais por material. Os registros são realizados somente por pessoal autorizado.</p>
     </section>
   </main>`;
 }
@@ -1158,19 +1172,25 @@ function abrirDetalhesRankingPublico(indice){
   const categorias=item.detalhes;
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(item.nome)} — ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note" style="margin-top:-6px;">A pontuação geral é a média do cumprimento das ${categorias.length} categorias abaixo, cada uma contando no máximo 100%. Por isso, entregar bastante em só uma ou duas categorias não é suficiente para uma pontuação alta: é preciso avançar em todas.</p>
-    <div class="table-wrap public-ranking-table"><table class="public-detail-table"><thead><tr><th>Categoria</th><th>Disponível (com excedente)</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
-      <tbody>${categorias.map(cat=>`<tr>
-        <td>${escapeHtml(cat.nome)}</td>
-        <td>${Math.round(cat.quantidade).toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
-        <td>${cat.meta.toLocaleString('pt-BR')} ${escapeHtml(cat.unidade)}</td>
-        <td>${cat.percentual>=100?'<span class="badge badge-green">'+cat.percentual.toFixed(0)+'%</span>':cat.percentual.toFixed(0)+'%'}</td>
-      </tr>`).join('')}</tbody>
-    </table></div>
+    <p class="small-note" style="margin-top:-6px;">A pontuação é a média do cumprimento das categorias, limitada a 100% por categoria.</p>
+    <div class="table-wrap public-ranking-table">${renderTabelaDetalhesMateriais(categorias)}
+    </div>
     <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%).</p>
   `, true, 'public-details');
 }
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
+function renderTabelaDetalhesMateriais(categorias){
+  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th>Disponível</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
+    <tbody>${categorias.map(cat=>{
+      const excedente=Math.max(0,cat.quantidade-cat.meta);
+      return `<tr>
+        <td>${escapeHtml(cat.nome)}</td>
+        <td><div class="material-amount"><span>${Math.round(cat.quantidade).toLocaleString('pt-BR')}</span>${excedente>0?`<span class="badge badge-green badge-surplus">+${Math.round(excedente).toLocaleString('pt-BR')}</span>`:''}</div><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
+        <td><span>${cat.meta.toLocaleString('pt-BR')}</span><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
+        <td>${cat.percentual>=100?'<span class="badge badge-green">'+cat.percentual.toFixed(0)+'%</span>':cat.percentual.toFixed(0)+'%'}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
 async function voltarAoRankingPublico(){
   if(STATE.authUser && FIREBASE_AUTH){
     try { await FIREBASE_AUTH.signOut(); }
@@ -1507,7 +1527,7 @@ async function sincronizarRankingsPublicos(){
         const [ano,mes]=chave.split('-').map(Number);
         const metas=getMetasDoMes(campanha.id,mes,ano);
         const ranking=calcularResultadosMes(campanha.id,mes,ano)
-          .filter(resultado=>resultado.colaborador.status!=='desligado')
+          .filter(resultado=>resultado.colaborador.status!=='desligado' && resultado.primeiraEntrega)
           .map(resultado=>({
             posicao:resultado.posicao||null,
             nome:resultado.colaborador.nome,
@@ -1523,8 +1543,7 @@ async function sincronizarRankingsPublicos(){
         const id=`${encodeURIComponent(campanha.id)}_${chave}`;
         const anterior=documentos.get(id);
         const mesAtual=chave===chaveMA(atual.mes,atual.ano);
-        const temDados=mesAtual||ranking.some(item=>item.pontuacao>0
-          || item.detalhes.some(cat=>cat.quantidade>0));
+        const temDados=mesAtual||ranking.length>0;
         if(!temDados && !anterior) continue;
         if(anterior && anterior.campanhaNome===campanha.nome
           && anterior.temDados===temDados
@@ -2379,7 +2398,8 @@ function atualizarKitsDisponiveisForm(){
   const colaboradorId = document.getElementById('tcColab').value;
   const totais = totaisAcumuladosColaborador(campanhaId, colaboradorId);
   const kits = kitsDisponiveis(campanha, totais);
-  document.getElementById('tcInfoKits').innerHTML = `<span>${icon('ranking')}</span><div>Este colaborador tem direito a <b>${kits} kit(s)</b>, equivalente a <b>${kits*cfgTroca.cartelasPorKit} ${escapeHtml(cfgTroca.nomeItem)}(s)</b> no momento.</div>`;
+  const itens= kits*cfgTroca.cartelasPorKit;
+  document.getElementById('tcInfoKits').innerHTML = `<span>${icon('ranking')}</span><div>Disponível para troca agora: <b>${kits} kit${kits===1?'':'s'}</b>, equivalente${kits===1?'':'s'} a <b>${itens} ${escapeHtml(cfgTroca.nomeItem)}${itens===1?'':'s'}</b>.</div>`;
   document.getElementById('tcQuantidadeKits').max = kits || 1;
   atualizarPreviaTroca();
 }
@@ -2387,7 +2407,8 @@ window.atualizarKitsDisponiveisForm = atualizarKitsDisponiveisForm;
 function atualizarPreviaTroca(){
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const qtd = parseInt(document.getElementById('tcQuantidadeKits').value,10) || 0;
-  document.getElementById('tcPrevia').textContent = qtd>0 ? `Isso vai emitir ${qtd*campanha.trocaCartela.cartelasPorKit} ${campanha.trocaCartela.nomeItem}(s) e descontar o material correspondente do saldo do colaborador.` : '';
+  const itens=qtd*campanha.trocaCartela.cartelasPorKit;
+  document.getElementById('tcPrevia').textContent = qtd>0 ? `A troca emitirá ${itens} ${campanha.trocaCartela.nomeItem}${itens===1?'':'s'} e descontará os materiais correspondentes do saldo do colaborador.` : '';
 }
 window.atualizarPreviaTroca = atualizarPreviaTroca;
 async function salvarTroca(){
@@ -2405,7 +2426,7 @@ async function salvarTroca(){
   if(!validacaoData.ok){ erroEl.textContent = validacaoData.motivo; erroEl.style.display='block'; return; }
   const totais = totaisAcumuladosColaborador(campanhaId, colaboradorId);
   const kitsMax = kitsDisponiveis(campanha, totais);
-  if(quantidadeKits > kitsMax){ erroEl.textContent = `Este colaborador só tem direito a ${kitsMax} kit(s) no momento.`; erroEl.style.display='block'; return; }
+  if(quantidadeKits > kitsMax){ erroEl.textContent = `Este colaborador só pode trocar ${kitsMax} kit${kitsMax===1?'':'s'} no momento.`; erroEl.style.display='block'; return; }
   const kitConsumido = {};
   Object.keys(cfgTroca.kit).forEach(catKey=>{ kitConsumido[catKey] = cfgTroca.kit[catKey] * quantidadeKits; });
   STATE.trocas.push({
@@ -2525,22 +2546,14 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
   if(!r) return;
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(r.colaborador.nome)} — ${nomeMes(mes)}/${ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note" style="margin-top:-6px;">A pontuação geral é a média do cumprimento das ${categorias.length} categorias abaixo, cada uma contando no máximo 100%. Por isso, entregar bastante em só uma ou duas categorias não é suficiente para uma pontuação alta: é preciso avançar em todas.</p>
-    <div class="table-wrap"><table><thead><tr><th>Categoria</th><th>Disponível (com excedente)</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
-      <tbody>
-        ${categorias.map(cat=>{
-          const total = r.totais[cat.key]||0;
-          const meta = getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault;
-          const pct = r.percentuais[cat.key]||0;
-          return `<tr>
-            <td>${escapeHtml(cat.label.split(' (')[0])}</td>
-            <td>${Math.round(total).toLocaleString('pt-BR')} ${cat.unidade}</td>
-            <td>${meta.toLocaleString('pt-BR')} ${cat.unidade}</td>
-            <td>${pct>=100? '<span class="badge badge-green">'+pct.toFixed(0)+'%</span>' : pct.toFixed(0)+'%'}</td>
-          </tr>`;
-        }).join('')}
-      </tbody></table>
-    </div>
+    <p class="small-note" style="margin-top:-6px;">A pontuação é a média do cumprimento das categorias, limitada a 100% por categoria.</p>
+    <div class="table-wrap">${renderTabelaDetalhesMateriais(categorias.map(cat=>({
+      nome:cat.label.split(' (')[0],
+      unidade:cat.unidade,
+      quantidade:r.totais[cat.key]||0,
+      meta:getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault,
+      percentual:r.percentuais[cat.key]||0,
+    })))}</div>
     <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%).</p>
   `, true);
 }
