@@ -222,7 +222,7 @@ select{text-overflow:ellipsis;}
 .public-ranking-card{width:min(100%,760px);margin:0 auto;padding:20px;}
 .maintenance-card{text-align:center;padding:clamp(24px,6vw,44px);}
 .maintenance-illustration{width:min(100%,250px);margin:0 auto 12px;}
-.maintenance-illustration svg{display:block;width:100%;height:auto;}
+.maintenance-illustration img{display:block;width:100%;height:auto;}
 .maintenance-badge{margin-bottom:10px;}
 .maintenance-title{margin:0 0 8px;color:var(--verde-900);}
 .maintenance-message{max-width:440px;margin:0 auto 20px;color:var(--text-muted);line-height:1.6;}
@@ -1242,7 +1242,12 @@ async function alterarManutencaoPublica(ativada){
   STATE.manutencaoPublica=ativada;
   STATE.salvandoManutencaoPublica=true;
   STATE.erroManutencaoPublica='';
-  renderApp();
+  const checkbox=document.getElementById('manutencaoPublicaCheckbox');
+  const status=document.getElementById('manutencaoPublicaStatus');
+  const erroElemento=document.getElementById('manutencaoPublicaErro');
+  if(checkbox){checkbox.checked=ativada;checkbox.disabled=true;}
+  if(status){status.textContent='Salvando configuração...';status.hidden=false;}
+  if(erroElemento){erroElemento.textContent='';erroElemento.hidden=true;}
   try{
     if(STORAGE_MODE==='firestore'){
       await FIREBASE_DB.collection('reciclar-apac-public-settings').doc('maintenance').set({
@@ -1255,11 +1260,18 @@ async function alterarManutencaoPublica(ativada){
     }
   }catch(erro){
     STATE.manutencaoPublica=anterior;
+    if(STORAGE_MODE!=='firestore') STATE.config.manutencaoPublica=anterior;
     STATE.erroManutencaoPublica=erro.message||'Não foi possível atualizar o aviso público.';
+    if(checkbox) checkbox.checked=anterior;
+    if(erroElemento){
+      erroElemento.textContent=STATE.erroManutencaoPublica;
+      erroElemento.hidden=false;
+    }
     console.error('Erro ao atualizar o modo de manutenção público',erro);
   }finally{
     STATE.salvandoManutencaoPublica=false;
-    renderApp();
+    if(checkbox) checkbox.disabled=false;
+    if(status) status.hidden=true;
   }
 }
 window.alterarManutencaoPublica=alterarManutencaoPublica;
@@ -1281,7 +1293,7 @@ function renderTelaAutenticacao(){
   }
   return `<main class="auth-screen"><section class="card auth-card">
     <h1>Entrar no ranking</h1>
-    <p class="small-note">Entre com sua conta autorizada para consultar os dados e usar as funções do seu perfil.</p>
+    <p class="small-note">Entre com sua conta autorizada para o uso das funções administrativas.</p>
     <form onsubmit="event.preventDefault();confirmarLoginAdmin()">
       <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="username" value="${escapeHtml(STATE.authEmail)}" required></div>
       <div class="field"><label for="authPassword">Senha</label><input id="authPassword" type="password" autocomplete="current-password" required></div>
@@ -1303,25 +1315,13 @@ function rankingPublicoPorId(id){
 function renderAvisoManutencaoPublica(){
   return `<main class="auth-screen public-ranking-screen">
     <section class="card public-ranking-card maintenance-card">
-      <div class="maintenance-illustration" role="img" aria-label="Gatinho brincando com um novelo de fios">
-        <svg viewBox="0 0 260 210" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M34 169c33-23 49 15 78-4 27-18 38-2 61-13 18-9 30-23 52-16" stroke="#76A982" stroke-width="7" stroke-linecap="round"/>
-          <path d="M57 148c10-34 53-49 82-32 30 17 33 57 7 78-25 20-70 10-86-18-5-9-6-19-3-28Z" fill="#D8EBD8" stroke="#477A52" stroke-width="4"/>
-          <path d="M71 145c19 23 45 36 76 41M65 160c25 6 54 4 83-7M73 130c18 13 44 20 73 20" stroke="#8EBE91" stroke-width="4" stroke-linecap="round"/>
-          <path d="m107 83-3-30 27 18c14-4 29 0 39 10l24-18 1 37" fill="#F1B88E" stroke="#704B42" stroke-width="5" stroke-linejoin="round"/>
-          <path d="M109 81c17-13 48-13 66 1 16 13 17 37 4 53-12 15-43 22-64 12-20-9-28-30-22-47 3-8 8-14 16-19Z" fill="#F4C8A5" stroke="#704B42" stroke-width="5"/>
-          <path d="M119 108h2m34 0h2" stroke="#3E3532" stroke-width="7" stroke-linecap="round"/>
-          <path d="M132 120c5 5 11 5 16 0m-8 1v7" stroke="#704B42" stroke-width="3" stroke-linecap="round"/>
-          <path d="M108 124 79 116m31 18-29 7m96-16 28-11m-29 21 28 9" stroke="#704B42" stroke-width="2.5" stroke-linecap="round"/>
-          <path d="M176 154c18-8 24-24 32-32 7-10 16-9 21-4m-19 7c-3 12 5 17 14 14" stroke="#477A52" stroke-width="5" stroke-linecap="round"/>
-          <path d="M90 101c-12-8-19-6-23 1m-4 47-11 1" stroke="#704B42" stroke-width="4" stroke-linecap="round"/>
-          <path d="M198 68v-9m-5 4h10m-139 20v-8m-4 4h8" stroke="#D49B42" stroke-width="3" stroke-linecap="round"/>
-        </svg>
+      <div class="maintenance-illustration">
+        <img src="maintenance-kitten.png" alt="Gatinho brincando com fios" loading="lazy">
       </div>
       <span class="badge badge-amber maintenance-badge">Voltamos em breve</span>
       <h1 class="maintenance-title">Estamos em manutenção</h1>
       <p class="maintenance-message">Estamos fazendo alguns ajustes por aqui. Em breve voltamos com novidades!</p>
-      <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Acesso da equipe</button>
+      <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Acesso administrativo</button>
     </section>
   </main>`;
 }
@@ -3154,11 +3154,11 @@ function renderConfig(){
     <div class="section-title">Página pública</div>
     <div class="card">
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;color:var(--text);font-size:14px;">
-        <input type="checkbox" ${STATE.manutencaoPublica?'checked':''} ${STATE.salvandoManutencaoPublica?'disabled':''} onchange="alterarManutencaoPublica(this.checked)" style="width:auto;margin-top:3px;">
+        <input id="manutencaoPublicaCheckbox" type="checkbox" ${STATE.manutencaoPublica?'checked':''} ${STATE.salvandoManutencaoPublica?'disabled':''} onchange="alterarManutencaoPublica(this.checked)" style="width:auto;margin-top:3px;">
         <span><b>Mostrar aviso de manutenção</b><span class="small-note" style="display:block;font-weight:400;margin-top:4px;">Substitui temporariamente o ranking público por um aviso ilustrado. O acesso administrativo continua disponível.</span></span>
       </label>
-      ${STATE.salvandoManutencaoPublica?'<p class="small-note" role="status">Salvando configuração...</p>':''}
-      ${STATE.erroManutencaoPublica?`<p class="auth-error" role="alert">${escapeHtml(STATE.erroManutencaoPublica)}</p>`:''}
+      <p id="manutencaoPublicaStatus" class="small-note" role="status" ${STATE.salvandoManutencaoPublica?'':'hidden'}>Salvando configuração...</p>
+      <p id="manutencaoPublicaErro" class="auth-error" role="alert" ${STATE.erroManutencaoPublica?'':'hidden'}>${escapeHtml(STATE.erroManutencaoPublica)}</p>
     </div>
 
     <div class="section-title">Backup e restauração</div>
