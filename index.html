@@ -378,6 +378,7 @@ let STATE = {
   transferencias: [],
   trocas: [],
   campanhas: [],
+  lixeira: [],
   campanhaSelecionadaId: null,
   config: null,
   isAdmin: false,
@@ -413,7 +414,10 @@ const FIREBASE_CONFIG = {
 let FIREBASE_DB = null;
 let FIREBASE_AUTH = null;
 let STORAGE_MODE = 'none';
-const FIRESTORE_RECORD_COLLECTIONS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
+const FIRESTORE_RECORD_COLLECTIONS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas','lixeira']);
+const FIRESTORE_MIGRATION_COLLECTIONS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
+const COLECOES_RESTAURAVEIS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas']);
+const PRAZO_LIXEIRA_MS = 30*24*60*60*1000;
 const FIRESTORE_BASELINES = new Map();
 const STORAGE_ERRORS = new Map();
 const PUBLIC_RANKING_SOURCE_KEYS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
@@ -554,6 +558,152 @@ async function storageDeleteRecord(key,id){
     return false;
   }
 }
+async function moverRegistroParaLixeira(colecao,id){
+  if(!STATE.isAdmin || !COLECOES_RESTAURAVEIS.has(colecao)) return false;
+  const registros=STATE[colecao];
+  const registro=registros.find(item=>item.id===id);
+  if(!registro) return false;
+  const registroLixeira={
+    id:uid(),
+    colecao,
+    registroId:id,
+    registro:JSON.parse(JSON.stringify(registro)),
+    excluidoEm:new Date().toISOString(),
+    excluidoPor:STATE.authUser?STATE.authUser.uid:'',
+  };
+  try{
+    if(STORAGE_MODE==='firestore'){
+      const referencia=FIREBASE_DB.collection('reciclar-apac').doc(colecao).collection('records');
+      const lixeiraReferencia=FIREBASE_DB.collection('reciclar-apac').doc('lixeira').collection('records');
+      const serializadoOriginal=(FIRESTORE_BASELINES.get(colecao)||new Map()).get(id);
+      if(serializadoOriginal===undefined) throw new Error('O registro não está na versão carregada. Atualize a página antes de excluir.');
+      if(serializarEstavel(registro)!==serializadoOriginal) throw new Error('O registro foi alterado localmente. Atualize a página antes de excluir.');
+      await FIREBASE_DB.runTransaction(async transacao=>{
+        const snapshot=await transacao.get(referencia.doc(id));
+        if(!snapshot.exists || serializarEstavel(snapshot.data())!==serializadoOriginal){
+          throw new Error('O registro foi alterado por outra pessoa. Atualize a página antes de excluir.');
+        }
+        transacao.set(lixeiraReferencia.doc(registroLixeira.id),registroLixeira);
+        transacao.delete(referencia.doc(id));
+      });
+      const baseColecao=FIRESTORE_BASELINES.get(colecao)||new Map();
+      baseColecao.delete(id);
+      FIRESTORE_BASELINES.set(colecao,baseColecao);
+      const baseLixeira=FIRESTORE_BASELINES.get('lixeira')||new Map();
+      baseLixeira.set(registroLixeira.id,serializarEstavel(registroLixeira));
+      FIRESTORE_BASELINES.set('lixeira',baseLixeira);
+    }else{
+      const lixeiraNova=[...STATE.lixeira,registroLixeira];
+      const registrosNovos=registros.filter(item=>item.id!==id);
+      if(!await storageSet('lixeira',lixeiraNova)) return false;
+      if(!await storageSet(colecao,registrosNovos)){
+        if(!await storageSet('lixeira',STATE.lixeira)) console.error('Não foi possível desfazer o arquivamento após falha ao excluir',registroLixeira.id);
+        return false;
+      }
+    }
+    STATE.lixeira=[...STATE.lixeira,registroLixeira];
+    STATE[colecao]=registros.filter(item=>item.id!==id);
+    agendarSincronizacaoRankingsPublicos(colecao);
+    return true;
+  }catch(erro){
+    console.error('Erro ao mover registro para a lixeira',colecao,id,erro);
+    return false;
+  }
+}
+async function restaurarRegistroLixeira(id){
+  if(!exigirAdmin()) return;
+  const registroLixeira=STATE.lixeira.find(item=>item.id===id);
+  if(!registroLixeira || !COLECOES_RESTAURAVEIS.has(registroLixeira.colecao)
+    || !registroLixeira.registro || registroLixeira.registro.id!==registroLixeira.registroId){
+    alert('Este item da lixeira não pode ser restaurado. Atualize a página.');
+    return;
+  }
+  const excluidoEm=Date.parse(registroLixeira.excluidoEm);
+  if(!Number.isFinite(excluidoEm) || Date.now()-excluidoEm>=PRAZO_LIXEIRA_MS){
+    await limparLixeiraExpirada();
+    alert('O prazo de restauração de 30 dias deste item expirou.');
+    renderApp();
+    return;
+  }
+  const colecao=registroLixeira.colecao;
+  const registros=STATE[colecao];
+  if(registros.some(item=>item.id===registroLixeira.registroId)){
+    alert('Já existe um registro com este identificador. O item não foi restaurado.');
+    return;
+  }
+  try{
+    if(STORAGE_MODE==='firestore'){
+      const referencia=FIREBASE_DB.collection('reciclar-apac').doc(colecao).collection('records');
+      const lixeiraReferencia=FIREBASE_DB.collection('reciclar-apac').doc('lixeira').collection('records');
+      await FIREBASE_DB.runTransaction(async transacao=>{
+        const [origem,alvo]=await Promise.all([
+          transacao.get(lixeiraReferencia.doc(id)),
+          transacao.get(referencia.doc(registroLixeira.registroId)),
+        ]);
+        if(!origem.exists || serializarEstavel(origem.data())!==serializarEstavel(registroLixeira)){
+          throw new Error('O item da lixeira foi alterado. Atualize a página antes de restaurar.');
+        }
+        if(alvo.exists) throw new Error('Já existe um registro com este identificador.');
+        transacao.set(referencia.doc(registroLixeira.registroId),registroLixeira.registro);
+        transacao.delete(lixeiraReferencia.doc(id));
+      });
+      const baseColecao=FIRESTORE_BASELINES.get(colecao)||new Map();
+      baseColecao.set(registroLixeira.registroId,serializarEstavel(registroLixeira.registro));
+      FIRESTORE_BASELINES.set(colecao,baseColecao);
+      const baseLixeira=FIRESTORE_BASELINES.get('lixeira')||new Map();
+      baseLixeira.delete(id);
+      FIRESTORE_BASELINES.set('lixeira',baseLixeira);
+    }else{
+      const lixeiraAnterior=STATE.lixeira;
+      STATE[colecao]=[...registros,registroLixeira.registro];
+      if(!await storageSet(colecao,STATE[colecao])){
+        STATE[colecao]=registros;
+        throw new Error('Não foi possível gravar o registro restaurado.');
+      }
+      STATE.lixeira=lixeiraAnterior.filter(item=>item.id!==id);
+      if(!await storageSet('lixeira',STATE.lixeira)){
+        STATE.lixeira=lixeiraAnterior;
+        STATE[colecao]=registros;
+        const rollback=await storageSet(colecao,registros);
+        if(!rollback) console.error('Não foi possível desfazer uma restauração parcial',id);
+        throw new Error('Não foi possível remover o item da lixeira após restaurá-lo.');
+      }
+    }
+    STATE[colecao]=[...registros,registroLixeira.registro];
+    STATE.lixeira=STATE.lixeira.filter(item=>item.id!==id);
+    agendarSincronizacaoRankingsPublicos(colecao);
+    renderApp();
+  }catch(erro){
+    console.error('Erro ao restaurar registro da lixeira',id,erro);
+    alert(erro.message||'Não foi possível restaurar este item. Atualize a página e tente novamente.');
+  }
+}
+window.restaurarRegistroLixeira=restaurarRegistroLixeira;
+async function limparLixeiraExpirada(){
+  if(!STATE.isAdmin || !Array.isArray(STATE.lixeira)) return;
+  const limite=Date.now()-PRAZO_LIXEIRA_MS;
+  const expirados=STATE.lixeira.filter(item=>{
+    const data=Date.parse(item.excluidoEm);
+    return Number.isFinite(data) && data<=limite;
+  });
+  if(!expirados.length) return;
+  if(STORAGE_MODE==='firestore'){
+    for(const item of expirados){
+      if(!await storageDeleteRecord('lixeira',item.id)){
+        console.error('Não foi possível remover um item expirado da lixeira',item.id);
+        return;
+      }
+      STATE.lixeira=STATE.lixeira.filter(atual=>atual.id!==item.id);
+    }
+  }else{
+    const idsExpirados=new Set(expirados.map(item=>item.id));
+    STATE.lixeira=STATE.lixeira.filter(item=>!idsExpirados.has(item.id));
+    if(!await storageSet('lixeira',STATE.lixeira)){
+      STATE.lixeira=[...STATE.lixeira,...expirados];
+      console.error('Não foi possível remover itens expirados da lixeira');
+    }
+  }
+}
 async function storageReplaceCollection(key,records){
   if(STORAGE_MODE!=='firestore') return storageSet(key,records);
   if(!FIRESTORE_RECORD_COLLECTIONS.has(key) || !Array.isArray(records)) return false;
@@ -575,7 +725,7 @@ function firestoreCollectionMatches(records, snapshot){
 }
 async function migrarColecoesFirestoreLegadas(){
   const base=FIREBASE_DB.collection('reciclar-apac');
-  for(const key of FIRESTORE_RECORD_COLLECTIONS){
+  for(const key of FIRESTORE_MIGRATION_COLLECTIONS){
     const marcadorRef=FIREBASE_DB.collection('reciclar-apac-migrations').doc(key);
     const marcador=await marcadorRef.get();
     if(marcador.exists && marcador.data().schemaVersion===1) continue;
@@ -607,7 +757,7 @@ async function migrarColecoesFirestoreLegadas(){
 async function verificarMigracaoFirestoreLegada(){
   const base=FIREBASE_DB.collection('reciclar-apac');
   const pendentes=[];
-  for(const key of FIRESTORE_RECORD_COLLECTIONS){
+  for(const key of FIRESTORE_MIGRATION_COLLECTIONS){
     const marcador=await FIREBASE_DB.collection('reciclar-apac-migrations').doc(key).get();
     if(marcador.exists && marcador.data().schemaVersion===1) continue;
     const legado=await base.doc(key).get();
@@ -624,7 +774,7 @@ async function verificarMigracaoFirestoreLegada(){
 async function verificarInstalacaoFirestore(){
   const config=await FIREBASE_DB.collection('reciclar-apac').doc('config').get();
   const marcadores=await FIREBASE_DB.collection('reciclar-apac-migrations').get();
-  if(!config.exists || [...FIRESTORE_RECORD_COLLECTIONS].some(key=>!marcadores.docs.some(doc=>doc.id===key && doc.data().schemaVersion===1))){
+  if(!config.exists || [...FIRESTORE_MIGRATION_COLLECTIONS].some(key=>!marcadores.docs.some(doc=>doc.id===key && doc.data().schemaVersion===1))){
     throw new Error('O administrador precisa entrar primeiro para inicializar o app e migrar os dados antigos.');
   }
 }
@@ -709,7 +859,10 @@ function selecionarCampanhaPadraoSeNecessario(){
   salvarCampanhaSelecionadaPersistida(STATE.campanhaSelecionadaId);
 }
 function campanhaTemEntregas(campanhaId){
-  return STATE.entregas.some(e=>e.campanhaId===campanhaId) || STATE.transferencias.some(t=>t.campanhaId===campanhaId);
+  return STATE.entregas.some(e=>e.campanhaId===campanhaId)
+    || STATE.transferencias.some(t=>t.campanhaId===campanhaId)
+    || STATE.trocas.some(t=>t.campanhaId===campanhaId)
+    || STATE.metasSnapshots.some(meta=>meta.campanhaId===campanhaId);
 }
 async function salvarCampanhas(){ return storageSet('campanhas', STATE.campanhas); }
 async function migrarParaCampanhas(configAntigo){
@@ -751,6 +904,8 @@ async function carregarDados(){
   STATE.entregas = await storageGet('entregas', []);
   STATE.transferencias = await storageGet('transferencias', []);
   STATE.trocas = await storageGet('trocas', []);
+  STATE.lixeira = STATE.isAdmin ? await storageGet('lixeira', []) : [];
+  await limparLixeiraExpirada();
   STATE.metasSnapshots = await storageGet('metas', []);
   STATE.config = await storageGet('config', null);
   const configAntigoParaMigrar = STATE.config; // pode conter metasDefault/metasHistorico do formato anterior
@@ -1062,15 +1217,16 @@ const NAV_ITEMS_BASE = [
   {key:'historico', label:'Histórico', icon:'historico'},
   {key:'relatorios', label:'Relatórios', icon:'relatorios'},
 ];
+const NAV_ITEM_TRASH = {key:'lixeira', label:'Itens apagados', icon:'trash'};
 const NAV_ITEM_CONFIG = {key:'config', label:'Configurações', icon:'config'};
 function navItemsVisiveis(){
   const itens = STATE.isAdmin
-    ? [...NAV_ITEMS_BASE, NAV_ITEM_CONFIG]
+    ? [...NAV_ITEMS_BASE, NAV_ITEM_TRASH, NAV_ITEM_CONFIG]
     : NAV_ITEMS_BASE.filter(n=>n.key!=='relatorios');
   return itens;
 }
 function irPara(view){
-  if((view==='config' || view==='relatorios') && !STATE.isAdmin){ exigirAdmin(); return; }
+  if((view==='config' || view==='relatorios' || view==='lixeira') && !STATE.isAdmin){ exigirAdmin(); return; }
   STATE.view=view; renderApp(); window.scrollTo(0,0);
 }
 window.irPara = irPara;
@@ -1268,20 +1424,20 @@ function renderApp(){
     <div class="bottomnav">
       <div class="bottomnav-row">
         ${navItems.slice(0,4).map(n=>`<button class="${n.key===STATE.view?'active':''}" onclick="irPara('${n.key}')">${icon(n.icon,20)}<span>${n.label.split(' ')[0]}</span></button>`).join('')}
-        <button class="${['historico','relatorios','config'].includes(STATE.view)?'active':''}" onclick="abrirMaisSheet()">${icon('more',20)}<span>Mais</span></button>
+        <button class="${['historico','relatorios','lixeira','config'].includes(STATE.view)?'active':''}" onclick="abrirMaisSheet()">${icon('more',20)}<span>Mais</span></button>
       </div>
     </div>
   `;
   const content = document.getElementById('viewContent');
   const renderers = {
     dashboard: renderDashboard, colaboradores: renderColaboradores, entregas: renderEntregas,
-    ranking: renderRanking, historico: renderHistorico, relatorios: renderRelatorios, config: renderConfig,
+    ranking: renderRanking, historico: renderHistorico, relatorios: renderRelatorios, lixeira: renderLixeira, config: renderConfig,
   };
   content.innerHTML = renderers[STATE.view] ? renderers[STATE.view]() : '';
 }
 
 function abrirMaisSheet(){
-  const extras = STATE.isAdmin? ['historico','relatorios','config'] : ['historico'];
+  const extras = STATE.isAdmin? ['historico','relatorios','lixeira','config'] : ['historico'];
   abrirModal(`
     <div class="modal-head"><h3>Mais opções</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <div style="display:flex;flex-direction:column;gap:8px;">
@@ -1887,7 +2043,7 @@ function confirmarExcluirColaborador(id){
   const c = STATE.colaboradores.find(x=>x.id===id);
   abrirModal(`
     <div class="modal-head"><h3>Excluir colaborador</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p>Tem certeza que deseja excluir <b>${escapeHtml(c.nome)}</b>? As entregas já registradas para ele serão mantidas no histórico, mas ele deixará de aparecer nos cadastros e rankings futuros.</p>
+    <p>Tem certeza que deseja excluir <b>${escapeHtml(c.nome)}</b>? Ele poderá ser restaurado em "Itens apagados" por até 30 dias. As entregas já registradas serão mantidas no histórico.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-danger btn-block" onclick="excluirColaborador('${id}')">${icon('trash',16)}Excluir</button>
@@ -1896,9 +2052,7 @@ function confirmarExcluirColaborador(id){
 }
 async function excluirColaborador(id){
   if(!exigirAdmin()) return;
-  if(!await storageDeleteRecord('colaboradores',id)){ alert('Não foi possível excluir o colaborador. Atualize a página e tente novamente.'); return; }
-  STATE.colaboradores = STATE.colaboradores.filter(x=>x.id!==id);
-  if(!await salvarColaboradores()){ alert('O colaborador foi excluído, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
+  if(!await moverRegistroParaLixeira('colaboradores',id)){ alert('Não foi possível mover o colaborador para Itens apagados. Atualize a página e tente novamente.'); return; }
   fecharModal(); renderApp();
 }
 function abrirImportarCsv(){
@@ -2153,7 +2307,7 @@ function confirmarExcluirEntrega(id){
   if(!exigirAdmin()) return;
   abrirModal(`
     <div class="modal-head"><h3>Excluir entrega</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p>Tem certeza que deseja excluir este registro de entrega? Essa ação não pode ser desfeita.</p>
+    <p>Tem certeza que deseja excluir este registro de entrega? Ele poderá ser restaurado em "Itens apagados" por até 30 dias.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-danger btn-block" onclick="excluirEntrega('${id}')">${icon('trash',16)}Excluir</button>
@@ -2162,9 +2316,7 @@ function confirmarExcluirEntrega(id){
 }
 async function excluirEntrega(id){
   if(!exigirAdmin()) return;
-  if(!await storageDeleteRecord('entregas',id)){ alert('Não foi possível excluir a entrega. Atualize a página e tente novamente.'); return; }
-  STATE.entregas = STATE.entregas.filter(x=>x.id!==id);
-  if(!await salvarEntregas()){ alert('A entrega foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
+  if(!await moverRegistroParaLixeira('entregas',id)){ alert('Não foi possível mover a entrega para Itens apagados. Atualize a página e tente novamente.'); return; }
   fecharModal(); renderApp();
 }
 function renderSaldoTransportado(mes,ano){
@@ -2315,7 +2467,7 @@ function confirmarExcluirTransferencia(id){
   if(!exigirAdmin()) return;
   abrirModal(`
     <div class="modal-head"><h3>Excluir transferência</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p>Tem certeza que deseja excluir esta transferência? O material volta a contar para o colaborador e categoria de origem.</p>
+    <p>Tem certeza que deseja excluir esta transferência? O material volta a contar para o colaborador e categoria de origem. A transferência poderá ser restaurada por até 30 dias.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-danger btn-block" onclick="excluirTransferencia('${id}')">${icon('trash',16)}Excluir</button>
@@ -2324,9 +2476,7 @@ function confirmarExcluirTransferencia(id){
 }
 async function excluirTransferencia(id){
   if(!exigirAdmin()) return;
-  if(!await storageDeleteRecord('transferencias',id)){ alert('Não foi possível excluir a transferência. Atualize a página e tente novamente.'); return; }
-  STATE.transferencias = STATE.transferencias.filter(x=>x.id!==id);
-  if(!await salvarTransferencias()){ alert('A transferência foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
+  if(!await moverRegistroParaLixeira('transferencias',id)){ alert('Não foi possível mover a transferência para Itens apagados. Atualize a página e tente novamente.'); return; }
   fecharModal(); renderApp();
 }
 window.abrirFormTransferencia=abrirFormTransferencia; window.salvarTransferencia=salvarTransferencia;
@@ -2443,7 +2593,7 @@ function confirmarExcluirTroca(id){
   if(!exigirAdmin()) return;
   abrirModal(`
     <div class="modal-head"><h3>Excluir troca</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p>Tem certeza que deseja excluir este registro de troca? O material consumido volta a contar no saldo do colaborador.</p>
+    <p>Tem certeza que deseja excluir este registro de troca? O material consumido volta a contar no saldo do colaborador. A troca poderá ser restaurada por até 30 dias.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-danger btn-block" onclick="excluirTroca('${id}')">${icon('trash',16)}Excluir</button>
@@ -2452,9 +2602,7 @@ function confirmarExcluirTroca(id){
 }
 async function excluirTroca(id){
   if(!exigirAdmin()) return;
-  if(!await storageDeleteRecord('trocas',id)){ alert('Não foi possível excluir a troca. Atualize a página e tente novamente.'); return; }
-  STATE.trocas = STATE.trocas.filter(x=>x.id!==id);
-  if(!await salvarTrocas()){ alert('A troca foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
+  if(!await moverRegistroParaLixeira('trocas',id)){ alert('Não foi possível mover a troca para Itens apagados. Atualize a página e tente novamente.'); return; }
   fecharModal(); renderApp();
 }
 window.confirmarExcluirTroca=confirmarExcluirTroca; window.excluirTroca=excluirTroca;
@@ -2866,6 +3014,49 @@ window.exportarCsvRanking=exportarCsvRanking; window.exportarCsvColaboradores=ex
 /* =========================================================
    CONFIGURAÇÕES
    ========================================================= */
+function resumoItemLixeira(item){
+  const registro=item.registro;
+  if(item.colecao==='colaboradores') return registro.nome||'Colaborador sem nome';
+  if(item.colecao==='campanhas') return registro.nome||'Campanha sem nome';
+  if(item.colecao==='entregas'){
+    const colaborador=STATE.colaboradores.find(colab=>colab.id===registro.colaboradorId);
+    const categoria=resolverCategoria(registro.campanhaId,registro.tipo);
+    return `Entrega · ${colaborador?colaborador.nome:'colaborador removido'} · ${categoria?categoria.label.split(' (')[0]:'material'} · ${formatarData(registro.data)}`;
+  }
+  if(item.colecao==='transferencias'){
+    const origem=STATE.colaboradores.find(colab=>colab.id===registro.colaboradorOrigemId);
+    const destino=STATE.colaboradores.find(colab=>colab.id===registro.colaboradorDestinoId);
+    return `Transferência · ${origem?origem.nome:'origem removida'} → ${destino?destino.nome:'destino removido'} · ${formatarData(registro.data)}`;
+  }
+  if(item.colecao==='trocas'){
+    const colaborador=STATE.colaboradores.find(colab=>colab.id===registro.colaboradorId);
+    return `Troca · ${colaborador?colaborador.nome:'colaborador removido'} · ${registro.nomeItem||'item'} · ${formatarData(registro.data)}`;
+  }
+  return 'Registro';
+}
+function renderLixeira(){
+  if(!STATE.isAdmin) return `<div class="card"><div class="empty-state">Esta área é restrita ao administrador.</div></div>`;
+  const itens=[...STATE.lixeira]
+    .filter(item=>Date.now()-Date.parse(item.excluidoEm)<PRAZO_LIXEIRA_MS)
+    .sort((a,b)=>Date.parse(b.excluidoEm)-Date.parse(a.excluidoEm));
+  if(!itens.length) return `<div class="card"><div class="empty-state">A lixeira está vazia.<p class="small-note">Itens apagados ficam disponíveis para restauração por até 30 dias.</p></div></div>`;
+  const rotulos={colaboradores:'Colaborador',entregas:'Entrega',transferencias:'Transferência',trocas:'Troca',campanhas:'Campanha'};
+  return `<div class="card">
+    <p class="small-note">Os itens são removidos definitivamente após 30 dias. Restaure um item para devolvê-lo à coleção original.</p>
+    <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Item</th><th>Apagado em</th><th>Prazo</th><th></th></tr></thead>
+      <tbody>${itens.map(item=>{
+        const diasRestantes=Math.max(0,Math.ceil((Date.parse(item.excluidoEm)+PRAZO_LIXEIRA_MS-Date.now())/86400000));
+        return `<tr>
+          <td>${rotulos[item.colecao]||'Registro'}</td>
+          <td>${escapeHtml(resumoItemLixeira(item))}</td>
+          <td>${escapeHtml(new Date(item.excluidoEm).toLocaleString('pt-BR'))}</td>
+          <td>${diasRestantes} dia${diasRestantes===1?'':'s'}</td>
+          <td><button class="btn btn-outline btn-sm" type="button" onclick="restaurarRegistroLixeira('${escapeHtml(item.id)}')">${icon('upload',15)}Restaurar</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
 function renderConfig(){
   if(!STATE.isAdmin){
     return `<div class="card"><div class="empty-state">Esta área é restrita ao administrador.</div></div>`;
@@ -3131,14 +3322,14 @@ function confirmarExcluirCampanha(id){
   if(campanhaTemEntregas(id)){
     abrirModal(`
       <div class="modal-head"><h3>Não é possível excluir</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-      <p>A campanha <b>${escapeHtml(c.nome)}</b> já tem entregas registradas no seu período. Para preservar o histórico, marque-a como "Encerrada" em vez de excluir.</p>
+      <p>A campanha <b>${escapeHtml(c.nome)}</b> já possui movimentações ou metas registradas. Para preservar o histórico, marque-a como "Encerrada" em vez de excluir.</p>
       <div class="modal-actions"><button class="btn btn-primary btn-block" onclick="fecharModal()">Entendi</button></div>
     `);
     return;
   }
   abrirModal(`
     <div class="modal-head"><h3>Excluir campanha</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p>Tem certeza que deseja excluir a campanha <b>${escapeHtml(c.nome)}</b>? Essa ação não pode ser desfeita.</p>
+    <p>Tem certeza que deseja excluir a campanha <b>${escapeHtml(c.nome)}</b>? Ela poderá ser restaurada em "Itens apagados" por até 30 dias.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-danger btn-block" onclick="excluirCampanha('${id}')">${icon('trash',16)}Excluir</button>
@@ -3147,10 +3338,8 @@ function confirmarExcluirCampanha(id){
 }
 async function excluirCampanha(id){
   if(!exigirAdmin()) return;
-  if(!await storageDeleteRecord('campanhas',id)){ alert('Não foi possível excluir a campanha. Atualize a página e tente novamente.'); return; }
-  STATE.campanhas = STATE.campanhas.filter(x=>x.id!==id);
+  if(!await moverRegistroParaLixeira('campanhas',id)){ alert('Não foi possível mover a campanha para Itens apagados. Atualize a página e tente novamente.'); return; }
   if(STATE.campanhaSelecionadaId===id) STATE.campanhaSelecionadaId = (campanhaAtiva()||{}).id || null;
-  if(!await salvarCampanhas()){ alert('A campanha foi excluída, mas não foi possível sincronizar a lista. Atualize a página.'); return; }
   fecharModal(); renderApp();
 }
 window.abrirFormCampanha=abrirFormCampanha; window.salvarCampanha=salvarCampanha;
@@ -3430,7 +3619,7 @@ async function processarSessaoFirebase(user){
   if(!user){
     STATE.mostrarLogin=false;
     STATE.colaboradores=[]; STATE.entregas=[]; STATE.transferencias=[]; STATE.trocas=[];
-    STATE.campanhas=[]; STATE.metasSnapshots=[]; STATE.config=null;
+    STATE.campanhas=[]; STATE.lixeira=[]; STATE.metasSnapshots=[]; STATE.config=null;
     finalizarCarregamento();
     return;
   }
