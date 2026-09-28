@@ -47,6 +47,17 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /reciclar-apac-public-settings/{settingId} {
+      allow read: if settingId == 'maintenance';
+      allow create, update: if settingId == 'maintenance'
+        && isAdmin()
+        && request.resource.data.keys().hasOnly(['ativada', 'atualizadoEm'])
+        && request.resource.data.keys().hasAll(['ativada', 'atualizadoEm'])
+        && request.resource.data.ativada is bool
+        && request.resource.data.atualizadoEm is string;
+      allow delete: if settingId == 'maintenance' && isAdmin();
+    }
+
     match /reciclar-apac-public-ranking/{rankingId} {
       allow read: if true;
       allow create, update: if canUseApp()

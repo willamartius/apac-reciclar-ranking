@@ -21,9 +21,11 @@ Registros excluídos por um administrador ficam em **Itens apagados** por até 3
 
 Visitantes sem login veem o ranking por campanha e período, atualizado automaticamente quando um administrador ou operador salva alterações no app. Os seletores de campanha e mês mostram somente períodos com atividade e o mês atual. A página mostra nome, posição, pontuação e um resumo mensal por material com disponibilidade (excedentes destacados em verde), meta e percentual. Somente colaboradores com entregas validadas no período aparecem no ranking. Entregas individuais, transferências, setor e demais dados cadastrais continuam protegidos por login.
 
+Em **Configurações > Página pública**, um administrador pode ativar temporariamente um aviso ilustrado de manutenção, que substitui o ranking para visitantes e é atualizado em tempo real. O login da equipe continua disponível. Publique as regras atualizadas do Firestore para permitir a leitura pública do aviso e limitar sua alteração a administradores.
+
 O botão único **Compartilhar no WhatsApp** abre uma prévia editável, com opção de resumo do Top 3 ou ranking completo. A mensagem inclui um link para a página pública; revise o conteúdo antes de abrir o WhatsApp ou copiar o texto.
 
-As regras dão leitura anônima apenas à coleção `reciclar-apac-public-ranking`; as coleções operacionais continuam exigindo papel autorizado. Usuários autenticados com papel de administrador ou operador atualizam o resumo público ao salvar dados. Para habilitar essa sincronização, publique as regras atualizadas do Firestore junto com o app.
+As regras dão leitura anônima somente aos resumos de `reciclar-apac-public-ranking` e ao indicador de manutenção em `reciclar-apac-public-settings`; as coleções operacionais continuam exigindo papel autorizado. Usuários autenticados com papel de administrador ou operador atualizam o resumo público ao salvar dados. Para habilitar esses recursos, publique as regras atualizadas do Firestore junto com o app.
 
 ### Preparar o Firebase existente
 
