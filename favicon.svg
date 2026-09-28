@@ -1,8 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="14" fill="#12301f"/>
   <g fill="none" stroke="#a8ddb4" stroke-linecap="round" stroke-linejoin="round" stroke-width="3">
-    <path d="M16 22h32l-3 32H19l-3-32Z"/>
-    <path d="M13 18h38M23 18l2-6h14l2 6M26 28v19M38 28v19"/>
+    <path d="M18 43h28l-4 12H22l-4-12Z"/>
+    <path d="M32 43V24"/>
+    <path d="M31 34c-10 0-15-6-13-15 10 0 16 5 14 14"/>
+    <path d="M33 29c0-10 6-16 16-15 1 10-5 16-15 17"/>
+    <path d="M21 59h22"/>
   </g>
-  <text x="32" y="39" text-anchor="middle" dominant-baseline="central" fill="#a8ddb4" font-family="Segoe UI Symbol,Arial Unicode MS,sans-serif" font-size="21">♻</text>
 </svg>

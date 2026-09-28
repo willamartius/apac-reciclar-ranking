@@ -1129,8 +1129,8 @@ function renderApp(){
     <div class="sidebar">
       <div class="brand">
         <svg class="brand-icon" viewBox="0 0 40 40" fill="none" stroke="#8FCB9E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M9 12h22l-2 23H11L9 12Z"/><path d="M7 9h26M15 9l1-4h8l1 4M16 16v13M24 16v13"/>
-          <text x="20" y="23" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI Symbol,Arial Unicode MS,sans-serif" font-size="16" fill="#8FCB9E" stroke="none">♻</text>
+          <path d="M10 31h20l-3 7H13l-3-7Z"/><path d="M20 31V16"/>
+          <path d="M20 24c-7 0-10-4-9-10 7 0 11 3 10 9M20 20c0-7 4-11 11-11 1 7-3 11-10 12"/>
         </svg>
         <div class="brand-text">
           <div class="brand-title">RECICLAR É CUIDAR<br>DA CASA COMUM</div>
@@ -1324,7 +1324,7 @@ function abrirAjuda(){
       <li><b>Transferir material:</b> em Entregas → Transferir material, é possível mover o crédito de um colaborador para outro, ou trocar uma categoria por outra do mesmo colaborador, com autorização do administrador.</li>
       <li><b>Ver o ranking:</b> em Ranking mensal, escolha o mês e veja a posição de cada colaborador.</li>
       <li><b>Acompanhar a campanha inteira:</b> o Painel geral mostra a evolução e um resumo de todos os colaboradores desde maio de 2026.</li>
-      <li><b>Compartilhar no WhatsApp:</b> use os botões "Compartilhar resultado" ou "Gerar card do ranking" na tela de Ranking.</li>
+      <li><b>Compartilhar no WhatsApp:</b> na tela de Ranking, escolha o resumo do Top 3 ou o ranking completo, revise o texto e envie pelo WhatsApp.</li>
     </ol>
     <p class="small-note">Ações de cadastro, validação, transferência e exclusão exigem o modo administrador, disponível no menu lateral (ou em "Mais" no celular).</p>
   `);
@@ -2216,10 +2216,9 @@ function renderRanking(){
         </select>
       </div>
       ${STATE.isAdmin? `<div class="toolbar-right">
-        <button class="btn btn-outline" onclick="publicarRankingPublico(${mes},${ano})">Publicar para o público</button>
-        <button class="btn btn-outline" onclick="compartilharTop3(${mes},${ano})">Compartilhar resultado</button>
-        <button class="btn btn-outline" onclick="compartilharRankingCompleto(${mes},${ano})">Compartilhar ranking completo</button>
-        <button class="btn btn-primary" onclick="gerarCardRanking(${mes},${ano})">${icon('image')}Gerar card do ranking</button>
+        <button class="btn btn-outline" onclick="publicarRankingPublico(${mes},${ano})">Publicar na página</button>
+        <button class="btn btn-outline" onclick="abrirCompartilhamentoRanking(${mes},${ano})">Compartilhar no WhatsApp</button>
+        <button class="btn btn-primary" onclick="gerarCardRanking(${mes},${ano})">Gerar card do ranking</button>
       </div>` : ''}
     </div>
     ${resultados.length===0? `<div class="card"><div class="empty-state"><div class="icon">${icon('ranking',44)}</div>Nenhum colaborador com entregas validadas neste período.</div></div>` : `
@@ -2309,57 +2308,92 @@ function montarMensagemTop3(mes,ano){
   const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
   const top3 = resultados.filter(r=> r.pontuacao>0 || r.totalMateriais>0).slice(0,3);
   const medalhas = ['🥇 1º lugar','🥈 2º lugar','🥉 3º lugar'];
-  let msg = `♻️ RANKING RECICLAR É CUIDAR DA CASA COMUM\n`;
-  msg += `APAC DE IMPERATRIZ\n\n`;
-  msg += `Resultado do mês: ${nomeMes(mes)} de ${ano}\n\n`;
-  msg += `🏆 TOP 3 COLABORADORES\n\n`;
+  const campanha=campanhaPorId(STATE.campanhaSelecionadaId);
+  let msg = `♻️ *RANKING DA CAMPANHA*\n${campanha?campanha.nome:'Reciclar é Cuidar da Casa Comum'} · APAC de Imperatriz\n`;
+  msg += `${nomeMes(mes)} de ${ano}\n\n🏆 *TOP 3*\n`;
+  if(!top3.length) msg += '\nNenhum colaborador pontuou neste mês.\n';
   top3.forEach((r,i)=>{
-    msg += `${medalhas[i]}: ${r.colaborador.nome}\nPontuação: ${r.pontuacao.toFixed(0)} pontos\nMeta atingida: ${r.mediaReal.toFixed(0)}%\n\n`;
+    msg += `\n${medalhas[i]}: *${r.colaborador.nome}*\n${r.pontuacao.toFixed(0)} pontos · ${r.mediaReal.toFixed(0)}% da meta\n`;
   });
-  const totalMateriais = resultados.reduce((a,r)=>a+r.totalMateriais,0);
   const atingiramMeta = resultados.filter(r=>r.metaAtingida).length;
-  msg += `📊 RESULTADO GERAL\n\n`;
-  msg += `Colaboradores participantes: ${resultados.length}\n`;
-  msg += `Colaboradores que atingiram a meta: ${atingiramMeta}\n`;
-  msg += `Total de materiais arrecadados: ${totalMateriais.toLocaleString('pt-BR')} unidades\n\n`;
-  msg += `🌱 Parabéns a todos que contribuíram com a campanha!`;
+  msg += `\n📊 ${atingiramMeta} de ${resultados.length} colaboradores atingiram a meta.\n`;
+  msg += `\n🌱 Obrigado a todos que contribuíram!\n\nAcompanhe o ranking: ${linkPaginaPublicaRanking()}`;
   return msg;
+}
+function linkPaginaPublicaRanking(){
+  return window.location.origin+window.location.pathname;
 }
 function montarMensagemCompleta(mes,ano){
   const resultados = calcularResultadosMes(STATE.campanhaSelecionadaId, mes,ano);
   const comPosicao = resultados.filter(r=>r.posicao);
-  const semPosicao = resultados.filter(r=>!r.posicao);
-  let msg = `♻️ RANKING COMPLETO — RECICLAR É CUIDAR DA CASA COMUM\nAPAC DE IMPERATRIZ\n${nomeMes(mes)} de ${ano}\n\n`;
-  comPosicao.forEach(r=>{ msg += `${r.posicao}º — ${r.colaborador.nome}: ${r.pontuacao.toFixed(0)} pontos (${r.mediaReal.toFixed(0)}% da meta)\n`; });
-  if(semPosicao.length){ msg += `\nAinda sem entregas pontuadas neste mês: ${semPosicao.map(r=>r.colaborador.nome).join(', ')}\n`; }
-  msg += `\n🌱 Cuidar da casa comum é responsabilidade de todos!`;
+  const campanha=campanhaPorId(STATE.campanhaSelecionadaId);
+  let msg = `♻️ *RANKING COMPLETO*\n${campanha?campanha.nome:'Reciclar é Cuidar da Casa Comum'} · APAC de Imperatriz\n${nomeMes(mes)} de ${ano}\n`;
+  if(comPosicao.length){
+    msg+='\n';
+    comPosicao.forEach(r=>{ msg += `${r.posicao}º · *${r.colaborador.nome}* — ${r.pontuacao.toFixed(0)} pontos (${r.mediaReal.toFixed(0)}% da meta)\n`; });
+  } else {
+    msg+='\nNenhum colaborador pontuou neste mês.\n';
+  }
+  msg += `\n🌱 Cuidar da casa comum é responsabilidade de todos!\n\nAcompanhe o ranking: ${linkPaginaPublicaRanking()}`;
   return msg;
 }
-function abrirPreviaCompartilhamento(texto, titulo){
+function abrirCompartilhamentoRanking(mes,ano){
+  if(!exigirAdmin()) return;
+  abrirPreviaCompartilhamento('top3',mes,ano);
+}
+function abrirPreviaCompartilhamento(formato,mes,ano){
+  const texto=formato==='completo' ? montarMensagemCompleta(mes,ano) : montarMensagemTop3(mes,ano);
   abrirModal(`
-    <div class="modal-head"><h3>${titulo}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <textarea id="textoCompartilhar" rows="14" style="font-size:13px;white-space:pre-wrap;">${texto}</textarea>
-    <p class="small-note" style="margin-top:8px;">Revise a mensagem. Ela só será enviada depois que você confirmar no WhatsApp.</p>
+    <div class="modal-head"><h3>Compartilhar ranking</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <div class="field"><label for="formatoCompartilhamento">Formato</label>
+      <select id="formatoCompartilhamento" onchange="atualizarPreviaCompartilhamento(this.value,${mes},${ano})">
+        <option value="top3" ${formato==='top3'?'selected':''}>Resumo: Top 3</option>
+        <option value="completo" ${formato==='completo'?'selected':''}>Ranking completo</option>
+      </select>
+    </div>
+    <textarea id="textoCompartilhar" rows="14" style="font-size:13px;white-space:pre-wrap;">${escapeHtml(texto)}</textarea>
+    <p class="small-note" style="margin-top:8px;">Revise o texto. O WhatsApp será aberto para você escolher a conversa e confirmar o envio.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="copiarTextoCompartilhar()">Copiar texto</button>
       <button class="btn btn-primary btn-block" onclick="enviarParaWhatsapp()">Abrir no WhatsApp</button>
     </div>
   `, true);
 }
+function atualizarPreviaCompartilhamento(formato,mes,ano){
+  const texto=document.getElementById('textoCompartilhar');
+  if(texto) texto.value=formato==='completo' ? montarMensagemCompleta(mes,ano) : montarMensagemTop3(mes,ano);
+}
 function copiarTextoCompartilhar(){
-  const t = document.getElementById('textoCompartilhar').value;
-  navigator.clipboard?.writeText(t).then(()=>alert('Texto copiado!')).catch(()=>alert('Não foi possível copiar automaticamente. Selecione o texto manualmente.'));
-}
-async function enviarParaWhatsapp(){
-  const t = document.getElementById('textoCompartilhar').value;
-  if(navigator.share){
-    try{ await navigator.share({text:t}); return; }catch(e){ /* usuário cancelou ou sem suporte, cai no fallback */ }
+  const campo=document.getElementById('textoCompartilhar');
+  if(!campo) return;
+  const texto=campo.value;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(texto)
+      .then(()=>alert('Texto copiado!'))
+      .catch(()=>copiarTextoManualmente(campo));
+    return;
   }
-  window.open('https://wa.me/?text='+encodeURIComponent(t), '_blank');
+  copiarTextoManualmente(campo);
 }
-function compartilharTop3(mes,ano){ if(!exigirAdmin()) return; abrirPreviaCompartilhamento(montarMensagemTop3(mes,ano), 'Compartilhar resultado do mês'); }
-function compartilharRankingCompleto(mes,ano){ if(!exigirAdmin()) return; abrirPreviaCompartilhamento(montarMensagemCompleta(mes,ano), 'Compartilhar ranking completo'); }
-window.compartilharTop3=compartilharTop3; window.compartilharRankingCompleto=compartilharRankingCompleto;
+function copiarTextoManualmente(campo){
+  campo.focus();
+  campo.select();
+  const copiado=document.execCommand('copy');
+  alert(copiado?'Texto copiado!':'Não foi possível copiar automaticamente. Selecione o texto e copie manualmente.');
+}
+function enviarParaWhatsapp(){
+  const campo=document.getElementById('textoCompartilhar');
+  if(!campo) return;
+  const link=document.createElement('a');
+  link.href='https://wa.me/?text='+encodeURIComponent(campo.value);
+  link.target='_blank';
+  link.rel='noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+window.abrirCompartilhamentoRanking=abrirCompartilhamentoRanking;
+window.atualizarPreviaCompartilhamento=atualizarPreviaCompartilhamento;
 window.copiarTextoCompartilhar=copiarTextoCompartilhar; window.enviarParaWhatsapp=enviarParaWhatsapp;
 
 /* ---------- CARD PNG PARA WHATSAPP ---------- */
