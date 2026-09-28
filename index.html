@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Reciclar é Cuidar da Casa Comum — APAC Imperatriz</title>
-<link rel="manifest" id="manifestLink">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -53,7 +54,7 @@ a{color:var(--verde-700);}
   display:flex;flex-direction:column;padding:22px 16px;position:sticky;top:0;height:100vh;
 }
 .brand{display:flex;align-items:center;gap:10px;padding:0 6px 20px 6px;border-bottom:1px solid rgba(255,255,255,0.12);margin-bottom:16px;}
-.brand-leaf{width:34px;height:34px;flex-shrink:0;}
+.brand-icon{width:34px;height:34px;flex-shrink:0;}
 .brand-text{line-height:1.15;}
 .brand-title{font-family:'Fraunces',serif;font-weight:600;font-size:14.5px;color:#fff;letter-spacing:.2px;}
 .brand-sub{font-size:11px;color:var(--verde-300);margin-top:2px;}
@@ -140,6 +141,8 @@ a{color:var(--verde-700);}
 
 .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px;}
 .toolbar-left,.toolbar-right{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.backup-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.backup-import-btn{cursor:pointer;display:flex;align-items:center;gap:7px;margin:0;}
 
 input[type=text],input[type=date],input[type=number],input[type=email],input[type=password],select,textarea{
   border:1.5px solid var(--border);border-radius:9px;padding:9px 11px;font-size:14px;color:var(--text);
@@ -347,6 +350,8 @@ let STATE = {
   isOperator: false,
   authUser: null,
   authError: '',
+  authNotice: '',
+  authEmail: '',
   mostrarLogin: false,
   rankingsPublicos: [],
   rankingPublicoSelecionadoId: '',
@@ -984,8 +989,6 @@ const ICONS = {
   historico:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/>',
   relatorios:'<path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/><path d="M9 13h6M9 17h6M9 9h3"/>',
   config:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 0 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/>',
-  leaf:'<path d="M11 21c-4-1-7-4.5-7-9 0-5 4-9 9-9 4.5 0 8 3 9 7-1 5-5.5 9-11 11z" fill="rgba(255,255,255,.08)"/><path d="M20 3c0 9-6 15-9 18M4.5 12c3 0 6-1.5 7.5-4"/>',
-  whatsapp:'<path d="M20 12a8 8 0 1 1-3.8-6.8"/><path d="M20 12a8 8 0 0 0-8-8"/><path d="M8.5 9.5c.3 2.6 2.4 4.7 5 5l1-1.3-1.9-.8-.7.7c-1-.6-1.8-1.4-2.4-2.4l.7-.7-.8-1.9-1.3 1z"/>',
   more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
@@ -1036,11 +1039,13 @@ function renderTelaAutenticacao(){
     <h1>Entrar no ranking</h1>
     <p class="small-note">Entre com sua conta autorizada para consultar os dados e usar as funções do seu perfil.</p>
     <form onsubmit="event.preventDefault();confirmarLoginAdmin()">
-      <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="username" required></div>
+      <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="username" value="${escapeHtml(STATE.authEmail)}" required></div>
       <div class="field"><label for="authPassword">Senha</label><input id="authPassword" type="password" autocomplete="current-password" required></div>
       ${STATE.authError? `<p class="auth-error" role="alert">${escapeHtml(STATE.authError)}</p>`:''}
+      ${STATE.authNotice? `<p class="small-note" role="status">${escapeHtml(STATE.authNotice)}</p>`:''}
       <button class="btn btn-primary btn-block" type="submit">Entrar</button>
     </form>
+    <button class="btn btn-ghost btn-block" type="button" onclick="solicitarRedefinicaoSenhaLogin()">Esqueci minha senha</button>
     <button class="btn btn-ghost btn-block" onclick="voltarAoRankingPublico()">Voltar ao ranking público</button>
   </section></main>`;
 }
@@ -1123,7 +1128,10 @@ function renderApp(){
   app.innerHTML = `
     <div class="sidebar">
       <div class="brand">
-        <svg class="brand-leaf" viewBox="0 0 24 24" fill="none" stroke="#8FCB9E" stroke-width="1.6">${ICONS.leaf}</svg>
+        <svg class="brand-icon" viewBox="0 0 40 40" fill="none" stroke="#8FCB9E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 12h22l-2 23H11L9 12Z"/><path d="M7 9h26M15 9l1-4h8l1 4M16 16v13M24 16v13"/>
+          <text x="20" y="23" text-anchor="middle" dominant-baseline="central" font-family="Segoe UI Symbol,Arial Unicode MS,sans-serif" font-size="16" fill="#8FCB9E" stroke="none">♻</text>
+        </svg>
         <div class="brand-text">
           <div class="brand-title">RECICLAR É CUIDAR<br>DA CASA COMUM</div>
           <div class="brand-sub">Ranking de colaboradores da APAC</div>
@@ -1203,15 +1211,43 @@ function abrirLoginAdmin(){
   }
   STATE.mostrarLogin=true;
   STATE.authError='';
+  STATE.authNotice='';
   renderApp();
   setTimeout(()=>document.getElementById('authEmail')?.focus(),50);
+}
+async function solicitarRedefinicaoSenhaLogin(){
+  if(!FIREBASE_AUTH){ STATE.authError='O Firebase Authentication não está disponível.'; renderApp(); return; }
+  const campoEmail=document.getElementById('authEmail');
+  const email=campoEmail && campoEmail.value.trim();
+  if(!email){
+    campoEmail?.reportValidity();
+    return;
+  }
+  if(!campoEmail.checkValidity()){ campoEmail.reportValidity(); return; }
+  STATE.authEmail=email;
+  STATE.authError='';
+  STATE.authNotice='';
+  try{
+    await FIREBASE_AUTH.sendPasswordResetEmail(email);
+    STATE.authNotice='Se houver uma conta cadastrada com esse e-mail, enviaremos um link de redefinição.';
+  }catch(e){
+    console.error('Erro ao solicitar redefinição de senha no login',e);
+    STATE.authError=e.code==='auth/too-many-requests'
+      ? 'Muitas tentativas. Aguarde antes de solicitar outro e-mail.'
+      : e.code==='auth/operation-not-allowed'
+        ? 'A redefinição por e-mail ainda não está habilitada no Firebase Authentication.'
+        : 'Não foi possível solicitar a redefinição. Verifique sua conexão e tente novamente.';
+  }
+  renderApp();
 }
 async function confirmarLoginAdmin(){
   if(!FIREBASE_AUTH){ STATE.authError='O Firebase Authentication não está disponível.'; renderApp(); return; }
   const email=document.getElementById('authEmail')?.value.trim();
   const senha=document.getElementById('authPassword')?.value;
   if(!email || !senha){ STATE.authError='Informe o e-mail e a senha.'; renderApp(); return; }
+  STATE.authEmail=email;
   STATE.authError='';
+  STATE.authNotice='';
   try{
     await FIREBASE_AUTH.signInWithEmailAndPassword(email,senha);
   }catch(e){
@@ -2181,8 +2217,8 @@ function renderRanking(){
       </div>
       ${STATE.isAdmin? `<div class="toolbar-right">
         <button class="btn btn-outline" onclick="publicarRankingPublico(${mes},${ano})">Publicar para o público</button>
-        <button class="btn btn-outline" onclick="compartilharTop3(${mes},${ano})">${icon('whatsapp')}Compartilhar resultado</button>
-        <button class="btn btn-outline" onclick="compartilharRankingCompleto(${mes},${ano})">${icon('whatsapp')}Compartilhar ranking completo</button>
+        <button class="btn btn-outline" onclick="compartilharTop3(${mes},${ano})">Compartilhar resultado</button>
+        <button class="btn btn-outline" onclick="compartilharRankingCompleto(${mes},${ano})">Compartilhar ranking completo</button>
         <button class="btn btn-primary" onclick="gerarCardRanking(${mes},${ano})">${icon('image')}Gerar card do ranking</button>
       </div>` : ''}
     </div>
@@ -2306,7 +2342,7 @@ function abrirPreviaCompartilhamento(texto, titulo){
     <p class="small-note" style="margin-top:8px;">Revise a mensagem. Ela só será enviada depois que você confirmar no WhatsApp.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="copiarTextoCompartilhar()">Copiar texto</button>
-      <button class="btn btn-primary btn-block" onclick="enviarParaWhatsapp()">${icon('whatsapp',16)}Abrir no WhatsApp</button>
+      <button class="btn btn-primary btn-block" onclick="enviarParaWhatsapp()">Abrir no WhatsApp</button>
     </div>
   `, true);
 }
@@ -2565,9 +2601,9 @@ function renderConfig(){
       <div>
         <p class="small-note">Crie um backup local dos dados do app para recuperação adicional. O backup local é uma camada extra e não substitui o armazenamento principal no Firebase.</p>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        <button class="btn btn-outline" onclick="exportarBackupLocal()">${icon('download',16)}Exportar backup</button>
-        <label class="btn btn-outline" style="cursor:pointer;">
+      <div class="backup-actions">
+        <button class="btn btn-outline btn-block" onclick="exportarBackupLocal()">${icon('download',16)}Exportar backup</button>
+        <label class="btn btn-outline btn-block backup-import-btn">
           ${icon('upload',16)}Importar backup
           <input type="file" id="arquivoBackupImport" accept="application/json,.json" style="display:none;" onchange="importarBackupLocal(this.files[0])">
         </label>
