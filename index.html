@@ -74,7 +74,8 @@ a{color:var(--verde-700);}
 }
 .admin-pill button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;padding:6px 10px;border-radius:20px;font-size:12px;font-weight:700;}
 .account-summary{min-width:0;display:flex;flex-direction:column;gap:3px;}
-.account-name{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-weight:700;}
+.account-name{max-width:160px;display:flex;align-items:center;gap:5px;overflow:hidden;color:#fff;font-weight:700;}
+.account-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .account-role{color:var(--verde-300);}
 
 .main{flex:1;min-width:0;display:flex;flex-direction:column;}
@@ -1146,7 +1147,7 @@ function renderApp(){
       <div class="sidebar-foot">
         <div class="admin-pill">
           <button class="account-summary" style="padding:0;border:0;background:transparent;text-align:left;border-radius:0;" onclick="abrirPerfilUsuario()" title="Editar meu perfil">
-            <span class="account-name">${escapeHtml(nomeExibicaoUsuario())}</span>
+            <span class="account-name">${icon('users',14)}<span class="account-name-text">${escapeHtml(nomeExibicaoUsuario())}</span></span>
             <span class="account-role">${STATE.isAdmin?'🔓 Administrador':'📝 Operador'}</span>
           </button>
           <button onclick="${STATE.authUser? 'sairAdmin()':'abrirLoginAdmin()'}">${STATE.authUser?'Sair':'Entrar'}</button>
