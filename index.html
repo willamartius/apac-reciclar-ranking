@@ -411,6 +411,7 @@ let STATE = {
   googleDriveStatus: '',
   googleDriveBackups: [],
   googleDriveBackupSelecionadoId: '',
+  googleDriveBackupsVisiveis: false,
   rankingPublicoSelecionadoId: '',
   rankingPublicoCampanhaId: '',
   erroRankingPublico: '',
@@ -3210,15 +3211,15 @@ function renderConfig(){
 
     <div class="section-title">Segurança</div>
     <div class="card">
-      <p class="small-note">O acesso é validado pelo Firebase Authentication e pelos papéis definidos no Firestore. Para trocar sua senha, solicite um e-mail de redefinição.</p>
-      <button class="btn btn-outline" onclick="enviarRedefinicaoSenha()">Enviar e-mail de redefinição de senha</button>
+      <p class="small-note">A autenticação é gerenciada pelo Firebase Authentication e as permissões são controladas pelos papéis definidos no Firestore. Para alterar sua senha, solicite um link de redefinição por e-mail.</p>
+      <button class="btn btn-outline" onclick="enviarRedefinicaoSenha()">Enviar link de redefinição de senha</button>
     </div>
 
     <div class="section-title">Página pública</div>
     <div class="card">
       <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;color:var(--text);font-size:14px;">
         <input id="manutencaoPublicaCheckbox" type="checkbox" ${STATE.manutencaoPublica?'checked':''} ${STATE.salvandoManutencaoPublica?'disabled':''} onchange="alterarManutencaoPublica(this.checked)" style="width:auto;margin-top:3px;">
-        <span><b>Mostrar aviso de manutenção</b><span class="small-note" style="display:block;font-weight:400;margin-top:4px;">Substitui temporariamente o ranking público por um aviso ilustrado. O acesso administrativo continua disponível.</span></span>
+        <span><b>Exibir aviso de manutenção</b><span class="small-note" style="display:block;font-weight:400;margin-top:4px;">Substitui temporariamente o ranking público por um aviso de manutenção. O acesso administrativo permanece disponível.</span></span>
       </label>
       <p id="manutencaoPublicaErro" class="auth-error" role="alert" ${STATE.erroManutencaoPublica?'':'hidden'}>${escapeHtml(STATE.erroManutencaoPublica)}</p>
     </div>
@@ -3226,7 +3227,7 @@ function renderConfig(){
     <div class="section-title">Backup e restauração</div>
     <div class="card" style="display:grid;gap:12px;">
       <div>
-        <p class="small-note">Crie um backup local dos dados do app para recuperação adicional. O backup local é uma camada extra e não substitui o armazenamento principal no Firebase.</p>
+        <p class="small-note">Gere uma cópia local dos dados do aplicativo como camada adicional de recuperação. O backup local complementa o armazenamento principal no Firebase, mas não o substitui.</p>
       </div>
       <div class="backup-actions">
         <button class="btn btn-outline btn-block" onclick="exportarBackupLocal()">${icon('download',16)}Exportar backup</button>
@@ -3239,17 +3240,18 @@ function renderConfig(){
 
     <div class="section-title">Backup no Google Drive</div>
     <div class="card" style="display:grid;gap:12px;">
-      <p class="small-note" style="margin:0;">Cada administrador vincula a própria conta Google. Os backups ficam privados em uma pasta do Drive e o app conserva os 10 mais recentes.</p>
+      <p class="small-note" style="margin:0;">Cada administrador vincula sua própria conta Google. Os backups são armazenados de forma privada em uma pasta do Google Drive, e o aplicativo mantém os dez arquivos de restauração mais recentes.</p>
       ${STATE.googleDriveLink?`<p class="small-note" style="margin:0;">Conta vinculada: <b>${escapeHtml(STATE.googleDriveLink.email)}</b></p>`:'<p class="small-note" style="margin:0;">Nenhuma conta Google vinculada a este usuário administrador.</p>'}
       ${STATE.googleDriveStatus?`<p class="small-note" role="status" style="margin:0;">${escapeHtml(STATE.googleDriveStatus)}</p>`:''}
       ${STATE.googleDriveLinkError?`<p class="auth-error" role="alert" style="margin:0;">${escapeHtml(STATE.googleDriveLinkError)}</p>`:''}
       <div class="backup-actions">
-        <button class="btn btn-outline btn-block" type="button" onclick="conectarGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>${STATE.googleDriveLink?'Trocar conta Google':'Vincular Google Drive'}</button>
-        ${STATE.googleDriveLink?`<button class="btn btn-outline btn-block" type="button" onclick="desvincularGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>Desvincular Google Drive</button>`:''}
-        <button class="btn btn-outline btn-block" type="button" onclick="criarBackupGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('download',16)}Criar backup no Drive</button>
-        <button class="btn btn-outline btn-block" type="button" onclick="listarBackupsGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('upload',16)}Listar backups</button>
+        ${STATE.googleDriveLink
+          ?`<button class="btn btn-outline btn-block" type="button" onclick="desvincularGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>Desvincular Conta Google</button>`
+          :`<button class="btn btn-outline btn-block" type="button" onclick="conectarGoogleDrive()" ${STATE.googleDriveBusy?'disabled':''}>Vincular Conta Google</button>`}
+        <button class="btn btn-outline btn-block" type="button" onclick="criarBackupGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('download',16)}Salvar backup</button>
+        <button class="btn btn-outline btn-block" type="button" onclick="listarBackupsGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('upload',16)}Exibir backup</button>
       </div>
-      ${STATE.googleDriveBackups.length?`<div class="field" style="margin:0;">
+      ${STATE.googleDriveBackupsVisiveis&&STATE.googleDriveBackups.length?`<div class="field" style="margin:0;">
         <label for="googleDriveBackupSelecionado">Backup para restaurar</label>
         <select id="googleDriveBackupSelecionado" onchange="selecionarBackupGoogleDrive(this.value)" ${STATE.googleDriveBusy?'disabled':''}>
           ${STATE.googleDriveBackups.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===STATE.googleDriveBackupSelecionadoId?'selected':''}>${escapeHtml(item.name)} · ${escapeHtml(item.createdTime?new Date(item.createdTime).toLocaleString('pt-BR'):'data desconhecida')}</option>`).join('')}
@@ -3645,7 +3647,7 @@ async function obterTokenVinculadoGoogleDrive(){
     throw new Error('A sessão administrativa ou o vínculo Google mudou durante a autorização. Tente novamente.');
   }
   if(identidade.googleSub!==vinculo.googleSub){
-    throw new Error(`A conta autorizada (${identidade.email}) não é a vinculada (${vinculo.email}). Use "Trocar conta Google" para alterar o vínculo.`);
+    throw new Error(`A conta autorizada (${identidade.email}) não é a vinculada (${vinculo.email}). Desvincule a conta atual e vincule a conta Google desejada.`);
   }
   return token;
 }
@@ -3732,6 +3734,7 @@ async function conectarGoogleDrive(){
     STATE.googleDriveLink=vinculo;
     STATE.googleDriveBackups=[];
     STATE.googleDriveBackupSelecionadoId='';
+    STATE.googleDriveBackupsVisiveis=false;
     definirEstadoGoogleDrive({ocupado:false,status:`Conta ${identidade.email} vinculada.`,erro:''});
   }catch(erro){
     console.error('Erro ao vincular conta Google Drive',erro);
@@ -3753,6 +3756,7 @@ async function desvincularGoogleDrive(){
     STATE.googleDriveLink=null;
     STATE.googleDriveBackups=[];
     STATE.googleDriveBackupSelecionadoId='';
+    STATE.googleDriveBackupsVisiveis=false;
     definirEstadoGoogleDrive({ocupado:false,status:'Conta Google desvinculada. Os arquivos no Drive foram mantidos.',erro:''});
   }catch(erro){
     console.error('Erro ao desvincular conta Google Drive',erro);
@@ -3785,6 +3789,7 @@ async function listarBackupsGoogleDrive(){
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
     STATE.googleDriveBackups=arquivos;
     STATE.googleDriveBackupSelecionadoId=arquivos[0]?arquivos[0].id:'';
+    STATE.googleDriveBackupsVisiveis=true;
     definirEstadoGoogleDrive({ocupado:false,status:arquivos.length?`${arquivos.length} backup${arquivos.length===1?'':'s'} encontrado${arquivos.length===1?'':'s'}.`:'Nenhum backup encontrado no Google Drive.',erro:''});
   }catch(erro){
     console.error('Erro ao listar backups do Google Drive',erro);
@@ -4118,6 +4123,7 @@ async function processarSessaoFirebase(user){
   STATE.googleDriveStatus='';
   STATE.googleDriveBackups=[];
   STATE.googleDriveBackupSelecionadoId='';
+  STATE.googleDriveBackupsVisiveis=false;
   STATE.isAdmin=false;
   STATE.isOperator=false;
   rankingPublicoSyncAtivo=false;
