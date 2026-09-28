@@ -1,4 +1,4 @@
-# Reciclar é Cuidar da Casa Comum
+# Reciclapac - Reciclar é Cuidar da Casa Comum
 
 Aplicativo web para acompanhar a arrecadação de materiais recicláveis dos colaboradores da APAC de Imperatriz-MA.
 
@@ -17,11 +17,11 @@ Cada usuário pode salvar o próprio nome de exibição no Firebase Authenticati
 
 ### Ranking público
 
-Visitantes sem login veem somente os rankings que um administrador publicar. Cada publicação contém posição, nome exibido e pontuação dos colaboradores com posição naquele mês. Quando há detalhes disponíveis, cada colaborador também pode ter quantidade disponível (incluindo excedentes), meta do mês e percentual de cumprimento por material publicados na página. Dados de cadastro, entregas individuais e setores continuam protegidos. O administrador escolhe a campanha e o mês na tela **Ranking mensal** e usa **Publicar na página**; antes de publicar, confirme que os colaboradores foram informados e autorizaram a divulgação dos detalhes. Cada publicação é uma fotografia: publique novamente após alterações para atualizar o que os visitantes veem. Os períodos publicados ficam disponíveis para seleção na página pública.
+Visitantes sem login veem o ranking por campanha e período, atualizado automaticamente quando um administrador ou operador salva alterações no app. A página mostra nome, posição, pontuação e um resumo mensal por material com quantidade disponível (incluindo excedentes), meta, quanto falta e percentual. Também lista colaboradores ativos ainda sem pontuação, para que possam acompanhar seu progresso. Entregas individuais, transferências, setor e demais dados cadastrais continuam protegidos por login.
 
 O botão único **Compartilhar no WhatsApp** abre uma prévia editável, com opção de resumo do Top 3 ou ranking completo. A mensagem inclui um link para a página pública; revise o conteúdo antes de abrir o WhatsApp ou copiar o texto.
 
-As regras dão leitura anônima apenas à coleção `reciclar-apac-public-ranking`; as coleções operacionais continuam exigindo papel autorizado. Só publique detalhes por material após informar os colaboradores e obter autorização para essa divulgação.
+As regras dão leitura anônima apenas à coleção `reciclar-apac-public-ranking`; as coleções operacionais continuam exigindo papel autorizado. Usuários autenticados com papel de administrador ou operador atualizam o resumo público ao salvar dados. Para habilitar essa sincronização, publique as regras atualizadas do Firestore junto com o app.
 
 ### Preparar o Firebase existente
 
@@ -29,11 +29,11 @@ As regras dão leitura anônima apenas à coleção `reciclar-apac-public-rankin
 2. No Firebase Console do projeto `apac-reciclar`, habilite **Authentication > Sign-in method > Email/Password**, configure e aplique uma política forte (por exemplo, mínimo de 12 caracteres, com maiúsculas, minúsculas, números e símbolos) e inclua o domínio do site em **Authentication > Settings > Authorized domains**.
 3. Em **Authentication > Users**, crie a conta inicial do administrador e copie o UID.
 4. No Firestore Console, crie `reciclar-apac-roles/{UID}` com o campo `role` igual a `admin`. Faça isso antes de substituir as regras abertas atuais.
-5. Publique o conteúdo de `firestore.rules` em **Firestore Database > Rules**. Isso remove o acesso anônimo e limita operadores.
-6. Publique esta versão do app. Entre com a conta administradora; no primeiro acesso, o app copia as coleções antigas para documentos individuais, verifica a cópia e remove a senha local antiga da configuração. Os documentos legados são mantidos como cópia de segurança.
+5. Publique o conteúdo de `firestore.rules` em **Firestore Database > Rules**. As coleções operacionais continuam restritas a contas autorizadas; apenas o resumo em `reciclar-apac-public-ranking` tem leitura anônima, e administradores e operadores podem atualizá-lo.
+6. Publique esta versão do app. Entre com uma conta autorizada; o primeiro acesso sincroniza os rankings públicos existentes e, dali em diante, os resumos são atualizados após salvar alterações. No primeiro acesso administrativo, o app também copia as coleções antigas para documentos individuais, verifica a cópia e remove a senha local antiga da configuração. Os documentos legados são mantidos como cópia de segurança.
 7. Para cada operador, crie uma conta em **Authentication > Users** e um documento `reciclar-apac-roles/{UID}` com `role: "operator"`.
 
-Não deixe as regras antigas (`allow read, write: if true`) publicadas. Antes de finalizar a implantação, teste o login, a leitura com uma conta autorizada e a recusa de leitura anônima.
+Não deixe as regras antigas (`allow read, write: if true`) publicadas. Antes de finalizar a implantação, teste o login, a leitura operacional com uma conta autorizada, a recusa de leitura anônima nas coleções operacionais e a leitura pública apenas do ranking.
 
 ### Criar o primeiro acesso administrativo
 
