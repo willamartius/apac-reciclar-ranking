@@ -690,7 +690,7 @@ function selecionarCampanhaPadraoSeNecessario(){
 function campanhaTemEntregas(campanhaId){
   return STATE.entregas.some(e=>e.campanhaId===campanhaId) || STATE.transferencias.some(t=>t.campanhaId===campanhaId);
 }
-async function salvarCampanhas(){ await storageSet('campanhas', STATE.campanhas); }
+async function salvarCampanhas(){ return storageSet('campanhas', STATE.campanhas); }
 async function migrarParaCampanhas(configAntigo){
   // Idempotente: nunca substitui a lista de campanhas já existente, nunca gera um id novo
   // para a campanha histórica, e só toca em entregas/transferências que ainda não têm
