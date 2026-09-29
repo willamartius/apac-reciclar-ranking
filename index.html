@@ -227,15 +227,19 @@ select{text-overflow:ellipsis;}
 @media(prefers-reduced-motion:reduce){.login-loading-spinner{animation-duration:1.8s;}}
 .public-ranking-screen{align-items:start;padding:clamp(24px,8vh,72px) 16px;}
 .public-ranking-card{width:min(100%,760px);margin:0 auto;padding:20px;}
-.public-achievement-toggle{display:inline-grid;grid-template-areas:"label";place-items:center;min-width:74px;}
-.public-achievement-toggle>span{grid-area:label;white-space:nowrap;}
-.public-achievement-details{animation:public-achievement-details 6s steps(1,end) infinite;}
-.public-achievement-status{animation:public-achievement-status 6s steps(1,end) infinite;}
-@keyframes public-achievement-details{0%,49.99%{opacity:1;}50%,100%{opacity:0;}}
-@keyframes public-achievement-status{0%,49.99%{opacity:0;}50%,100%{opacity:1;}}
+.public-achievement-toggle{min-width:84px;padding:6px 9px;background:var(--verde-100);color:var(--verde-700);}
+.public-achievement-toggle:hover{background:var(--verde-300);}
+.public-achievement-window{display:block;height:1.25em;overflow:hidden;}
+.public-achievement-track{display:flex;flex-direction:column;animation:public-achievement-roll 6s cubic-bezier(.4,0,.2,1) infinite;}
+.public-achievement-track>span{display:flex;height:1.25em;align-items:center;justify-content:center;white-space:nowrap;}
+.public-achievement-status{font-weight:800;}
+@keyframes public-achievement-roll{
+  0%,45%{transform:translateY(0);}
+  50%,95%{transform:translateY(-33.333%);}
+  100%{transform:translateY(-66.666%);}
+}
 @media(prefers-reduced-motion:reduce){
-  .public-achievement-details{animation:none;opacity:0;}
-  .public-achievement-status{animation:none;opacity:1;}
+  .public-achievement-track{animation:none;transform:translateY(-33.333%);}
 }
 .maintenance-card{text-align:center;padding:clamp(24px,6vw,44px);}
 .maintenance-illustration{width:min(100%,250px);margin:0 auto 12px;}
@@ -1437,7 +1441,7 @@ function renderRankingPublico(){
             const detalhesDisponiveis=!!(item.detalhes&&item.detalhes.length);
             const metaAtingida=detalhesDisponiveis&&item.detalhes.every(categoria=>categoria.percentual>=100);
             const botaoDetalhes=metaAtingida
-              ?`<button class="btn btn-ghost btn-sm public-achievement-toggle" type="button" aria-label="Meta atingida. Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-achievement-details" aria-hidden="true">Detalhes</span><span class="badge badge-green public-achievement-status" aria-hidden="true">Atingida</span></button>`
+              ?`<button class="btn btn-sm public-achievement-toggle" type="button" aria-label="Meta atingida. Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-achievement-window" aria-hidden="true"><span class="public-achievement-track"><span>Detalhes</span><span class="public-achievement-status">Atingida</span><span>Detalhes</span></span></span></button>`
               :`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`;
             return `<tr><td><b>${item.posicao?`${item.posicao}º`:'—'}</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${detalhesDisponiveis?botaoDetalhes:'<span class="small-note">—</span>'}</td>`:''}</tr>`;
           }).join('')}</tbody>
