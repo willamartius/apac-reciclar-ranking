@@ -1484,11 +1484,13 @@ function renderTabelaDetalhesMateriais(categorias){
   return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th>Disponível</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
     <tbody>${categorias.map(cat=>{
       const excedente=Math.max(0,cat.quantidade-cat.meta);
+      const metaAtingida=cat.percentual>=100;
+      const percentualExibido=metaAtingida?cat.percentual.toFixed(0):Math.floor(cat.percentual).toFixed(0);
       return `<tr>
         <td>${escapeHtml(cat.nome)}</td>
         <td><div class="material-amount"><span>${Math.round(cat.quantidade).toLocaleString('pt-BR')}</span>${excedente>0?`<span class="badge badge-green badge-surplus">+${Math.round(excedente).toLocaleString('pt-BR')}</span>`:''}</div><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
         <td><span>${cat.meta.toLocaleString('pt-BR')}</span><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
-        <td>${cat.percentual>=100?'<span class="badge badge-green">'+cat.percentual.toFixed(0)+'%</span>':cat.percentual.toFixed(0)+'%'}</td>
+        <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
     }).join('')}</tbody></table>`;
 }
