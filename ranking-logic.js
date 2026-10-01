@@ -77,6 +77,26 @@
     };
   }
 
+  function calcularSaldoMensal(creditos,carryIn,meta){
+    if([creditos,carryIn,meta].some(function(valor){return typeof valor!=='number'||!Number.isFinite(valor);})
+      || creditos<0 || carryIn<0 || meta<0){
+      throw new TypeError('Créditos, saldo transportado e meta precisam ser números válidos e não negativos.');
+    }
+    var totalDisponivel=creditos+carryIn;
+    return {
+      totalDisponivel:totalDisponivel,
+      leftover:Math.max(0,totalDisponivel-meta)
+    };
+  }
+
+  function deveIncluirNoRankingPublico(resultado){
+    return !!resultado && (
+      !!resultado.primeiraEntrega
+      || (typeof resultado.pontuacao==='number' && resultado.pontuacao>0)
+      || (typeof resultado.totalMateriais==='number' && resultado.totalMateriais>0)
+    );
+  }
+
   var api={
     filtrarEntregasValidadas:filtrarEntregasValidadas,
     somarEntregasValidadas:somarEntregasValidadas,
@@ -84,7 +104,9 @@
     atribuirPosicoes:atribuirPosicoes,
     quantidadeUnitariaValida:quantidadeUnitariaValida,
     todasMetasAtingidas:todasMetasAtingidas,
-    resumirDetalhesCategorias:resumirDetalhesCategorias
+    resumirDetalhesCategorias:resumirDetalhesCategorias,
+    calcularSaldoMensal:calcularSaldoMensal,
+    deveIncluirNoRankingPublico:deveIncluirNoRankingPublico
   };
   root.ReciclarRankingLogic=api;
   if(typeof module==='object' && module.exports) module.exports=api;
