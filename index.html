@@ -12,7 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="ranking-logic.js?v=20261001-surplus2"></script>
+<script src="ranking-logic.js?v=20261001-carryover"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
@@ -267,6 +267,7 @@ select{text-overflow:ellipsis;}
 .material-detail-table th:nth-child(4){width:26%;}
 .material-amount{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap;}
 .material-unit{display:block;margin-top:2px;font-size:10px;color:var(--text-muted);}
+.material-carryover{display:block;margin-top:3px;font-size:9px;color:var(--verde-700);font-weight:700;}
 .badge-surplus{padding:2px 5px;font-size:10px;white-space:nowrap;}
 #tcInfoKits{align-items:flex-start;}
 #tcInfoKits>div{min-width:0;overflow-wrap:anywhere;}
@@ -1201,8 +1202,7 @@ function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
         trocas.filter(t=>t.colaboradorId===c.id && t.kitConsumido && t.kitConsumido[cat.key]).forEach(t=> creditos -= t.kitConsumido[cat.key]);
         const carryIn = chaveAnterior && saldos[c.id][cat.key][chaveAnterior] ? saldos[c.id][cat.key][chaveAnterior].leftover : 0;
         const meta = metas[cat.key] || cat.metaDefault;
-        const totalDisponivel = creditos + carryIn;
-        const leftover = Math.max(0, totalDisponivel - meta);
+        const {totalDisponivel,leftover} = ReciclarRankingLogic.calcularSaldoMensal(creditos,carryIn,meta);
         saldos[c.id][cat.key][chave] = { creditos, carryIn, totalDisponivel, leftover, meta };
       });
     });
@@ -1221,7 +1221,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
   colaboradores = colaboradores.filter(c=> !c.dataCadastro || c.dataCadastro.slice(0,7) <= chave);
   const entregasDoMes = entregasValidadasDoMes(campanhaId, mes,ano);
   const resultados = colaboradores.map(c=>{
-    const totais = {}, percentuais = {}, percentuaisReais={}, frescos = {}, totaisAcumulados = {}, metasPorCategoria = {}, categoriasAtingidas = {};
+    const totais = {}, percentuais = {}, percentuaisReais={}, frescos = {}, carryInsPorCategoria={}, totaisAcumulados = {}, metasPorCategoria = {}, categoriasAtingidas = {};
     categorias.forEach(cat=>{
       const s = saldos[c.id]?.[cat.key]?.[chave];
       const totalDisponivelBruto = s? s.totalDisponivel : 0;
@@ -1231,6 +1231,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
       metasPorCategoria[cat.key] = meta;
       categoriasAtingidas[cat.key] = cumprimento.atingida;
       frescos[cat.key] = Math.max(0, s? s.creditos : 0);
+      carryInsPorCategoria[cat.key] = Math.max(0, s? s.carryIn : 0);
       percentuais[cat.key] = cumprimento.percentual;
       percentuaisReais[cat.key] = meta>0 ? totalDisponivelBruto/meta*100 : 0;
       totaisAcumulados[cat.key] = Object.values(saldos[c.id]?.[cat.key] || {}).reduce((a,x)=>a+x.creditos, 0);
@@ -1242,7 +1243,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
     const totalMateriais = Math.round(categorias.reduce((a,cat)=>a+totais[cat.key],0));
     const datasDoColaborador = entregasDoMes.filter(e=>e.colaboradorId===c.id).map(e=>e.data).sort();
     const primeiraEntrega = datasDoColaborador.length? datasDoColaborador[0] : null;
-    return { colaborador:c, totais, metasPorCategoria, totaisAcumulados, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais, primeiraEntrega };
+    return { colaborador:c, totais, carryInsPorCategoria, metasPorCategoria, totaisAcumulados, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais, primeiraEntrega };
   });
   resultados.sort((a,b)=>
     b.pontuacao-a.pontuacao
@@ -1502,7 +1503,7 @@ function renderTabelaDetalhesMateriais(categorias){
       const percentualExibido=Math.floor(cumprimento.percentual).toFixed(0);
       return `<tr>
         <td>${escapeHtml(cat.nome)}</td>
-        <td><div class="material-amount"><span>${formatarQuantidade(cumprimento.quantidade)}</span>${excedente>0?`<span class="badge badge-green badge-surplus">+${formatarQuantidade(excedente)}</span>`:''}</div><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
+        <td><div class="material-amount"><span>${formatarQuantidade(cumprimento.quantidade)}</span>${excedente>0?`<span class="badge badge-green badge-surplus">+${formatarQuantidade(excedente)}</span>`:''}</div><span class="material-unit">${escapeHtml(cat.unidade)}</span>${cat.carryIn>0?`<span class="material-carryover">+${formatarQuantidade(cat.carryIn)} do mês anterior</span>`:''}</td>
         <td><span>${cat.meta.toLocaleString('pt-BR')}</span><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
         <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
@@ -1847,7 +1848,8 @@ async function sincronizarRankingsPublicos(){
       for(const chave of periodosValidos){
         const [ano,mes]=chave.split('-').map(Number);
         const ranking=calcularResultadosMes(campanha.id,mes,ano)
-          .filter(resultado=>resultado.colaborador.status!=='desligado' && resultado.primeiraEntrega)
+          .filter(resultado=>resultado.colaborador.status!=='desligado'
+            && ReciclarRankingLogic.deveIncluirNoRankingPublico(resultado))
           .map(resultado=>({
             posicao:resultado.posicao||null,
             nome:resultado.colaborador.nome,
@@ -1873,6 +1875,7 @@ async function sincronizarRankingsPublicos(){
               nome:cat.label.split(' (')[0],
               unidade:cat.unidade,
               quantidade:resultado.totais[cat.key]||0,
+              carryIn:resultado.carryInsPorCategoria[cat.key]||0,
               meta:resultado.metasPorCategoria[cat.key],
             })),
           }));
@@ -2896,6 +2899,7 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
       nome:cat.label.split(' (')[0],
       unidade:cat.unidade,
       quantidade:r.totais[cat.key]||0,
+      carryIn:r.carryInsPorCategoria[cat.key]||0,
       meta:getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault,
       percentual:r.percentuais[cat.key]||0,
     })))}</div>
@@ -4311,6 +4315,7 @@ function carregarRankingsPublicos(){
               || typeof cat.unidade!=='string' || !cat.unidade.trim()
               || typeof cat.quantidade!=='number' || !Number.isFinite(cat.quantidade)
               || typeof cat.meta!=='number' || !Number.isFinite(cat.meta) || cat.meta<0
+              || (cat.carryIn!==undefined && (typeof cat.carryIn!=='number' || !Number.isFinite(cat.carryIn) || cat.carryIn<0))
               || (cat.percentual!==undefined && (typeof cat.percentual!=='number' || !Number.isFinite(cat.percentual)))){
               throw new Error('Um detalhe por material do ranking público tem formato inválido.');
             }
@@ -4319,6 +4324,7 @@ function carregarRankingsPublicos(){
               nome:cat.nome,
               unidade:cat.unidade,
               quantidade:cumprimento.quantidade,
+              ...(Number.isFinite(cat.carryIn)?{carryIn:cat.carryIn}:{}),
               meta:cat.meta,
               percentual:cumprimento.percentual
             };

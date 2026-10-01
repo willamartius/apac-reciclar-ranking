@@ -8,6 +8,8 @@ const {
   quantidadeUnitariaValida,
   todasMetasAtingidas,
   resumirDetalhesCategorias,
+  calcularSaldoMensal,
+  deveIncluirNoRankingPublico,
 } = require('../ranking-logic.js');
 
 const normalizar = entrega => entrega.quantidade;
@@ -112,6 +114,23 @@ test('public summary uses available category quantities including surplus', () =
     percentualGeral: 0,
     metaAtingida: false,
   });
+});
+
+test('surplus carries into the next month and remains available without a new delivery', () => {
+  const setembro = calcularSaldoMensal(100, 0, 80);
+  const outubro = calcularSaldoMensal(15, setembro.leftover, 80);
+  assert.deepEqual(setembro, {totalDisponivel: 100, leftover: 20});
+  assert.deepEqual(outubro, {totalDisponivel: 35, leftover: 0});
+  assert.equal(deveIncluirNoRankingPublico({
+    primeiraEntrega: null,
+    pontuacao: 43.75,
+    totalMateriais: 35,
+  }), true);
+  assert.equal(deveIncluirNoRankingPublico({
+    primeiraEntrega: null,
+    pontuacao: 0,
+    totalMateriais: 0,
+  }), false);
 });
 
 test('equal scorers still receive sequential positions using the existing sorted order', () => {
