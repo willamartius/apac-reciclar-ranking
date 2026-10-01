@@ -117,6 +117,11 @@
     },0);
   }
 
+  function deveDestacarBotaoPublico(metaAtingida,resumoTroca){
+    if(resumoTroca) return Number.isFinite(resumoTroca.quantidade) && resumoTroca.quantidade>0;
+    return metaAtingida===true;
+  }
+
   var api={
     filtrarEntregasValidadas:filtrarEntregasValidadas,
     somarEntregasValidadas:somarEntregasValidadas,
@@ -127,7 +132,8 @@
     resumirDetalhesCategorias:resumirDetalhesCategorias,
     calcularSaldoMensal:calcularSaldoMensal,
     deveIncluirNoRankingPublico:deveIncluirNoRankingPublico,
-    somarItensTrocados:somarItensTrocados
+    somarItensTrocados:somarItensTrocados,
+    deveDestacarBotaoPublico:deveDestacarBotaoPublico
   };
   root.ReciclarRankingLogic=api;
   if(typeof module==='object' && module.exports) module.exports=api;

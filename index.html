@@ -12,7 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="ranking-logic.js?v=20261001-october-exchanges"></script>
+<script src="ranking-logic.js?v=20261001-exchange-button"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
@@ -1449,16 +1449,17 @@ function renderRankingPublico(){
               ?resumoTroca.unidade.replace(/^./,letra=>letra.toLocaleUpperCase('pt-BR'))
               :'';
             const metaAtingida=detalhesDisponiveis&&ReciclarRankingLogic.resumirDetalhesCategorias(item.detalhes).metaAtingida;
+            const botaoDestacado=ReciclarRankingLogic.deveDestacarBotaoPublico(metaAtingida,resumoTroca);
             const quadroDetalhes='<span class="public-details-frame"><strong>Detalhes</strong></span>';
             const quadrosDetalhes=metaAtingida
               ?quadroDetalhes+(resumoTroca
-                ?`<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span><span class="public-details-frame"><strong>Detalhes</strong></span><span class="public-details-frame"><strong>Detalhes</strong></span>`
+                ?`<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span><span class="public-details-frame"><strong>Detalhes</strong></span><span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span>`
                 :`<span class="public-details-frame"><strong>${Math.round(item.percentualGeral??item.pontuacao)}%</strong><small>da Meta</small></span><span class="public-details-frame"><strong>${(item.totalMateriais||0).toLocaleString('pt-BR')}</strong><small>Materiais</small></span><span class="public-details-frame"><strong>Detalhes</strong></span>`)
-              :(resumoTroca
-                ?`<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span>`
+              :(resumoTroca&&botaoDestacado
+                ?`${quadroDetalhes}<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span><span class="public-details-frame"><strong>Detalhes</strong></span><span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span>`
                 :quadroDetalhes);
             const botaoDetalhes=detalhesDisponiveis
-              ?`<button class="btn btn-sm public-details-toggle${metaAtingida?' is-achieved':''}" type="button" aria-label="Detalhes${resumoTroca?`. ${resumoTroca.quantidade} ${resumoTroca.unidade}.`:`. ${Math.round(item.percentualGeral??item.pontuacao)}% da meta, ${(item.totalMateriais||0).toLocaleString('pt-BR')} materiais.`} Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-details-window" aria-hidden="true"><span class="public-details-track">${quadrosDetalhes}</span></span></button>`
+              ?`<button class="btn btn-sm public-details-toggle${botaoDestacado?' is-achieved':''}" type="button" aria-label="Detalhes${resumoTroca?`. ${resumoTroca.quantidade} ${resumoTroca.unidade}.`:`. ${Math.round(item.percentualGeral??item.pontuacao)}% da meta, ${(item.totalMateriais||0).toLocaleString('pt-BR')} materiais.`} Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-details-window" aria-hidden="true"><span class="public-details-track">${quadrosDetalhes}</span></span></button>`
               :`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`;
             return `<tr><td><b>${item.posicao?`${item.posicao}º`:'—'}</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${detalhesDisponiveis?botaoDetalhes:'<span class="small-note">—</span>'}</td>`:''}</tr>`;
           }).join('')}</tbody>
