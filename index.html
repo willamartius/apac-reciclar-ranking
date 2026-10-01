@@ -44,7 +44,8 @@ body{
   min-height:100vh;
 }
 h1,h2,h3,.serif{font-family:'Fraunces',serif;}
-button{font-family:inherit;cursor:pointer;}
+button{font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+button:focus:not(:focus-visible){outline:none;box-shadow:none;}
 input,select,textarea{font-family:inherit;}
 a{color:var(--verde-700);}
 ::selection{background:var(--verde-300);}
@@ -182,6 +183,7 @@ tr:last-child td{border-bottom:none;}
 @media(min-width:720px){.modal-overlay{align-items:center;}}
 .modal{background:#fff;border-radius:18px 18px 0 0;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;padding:22px;}
 @media(min-width:720px){.modal{border-radius:16px;}}
+.modal-public-details{border-radius:18px;}
 .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:10px;}
 .modal-head h3{margin:0;font-size:17px;}
 .modal-close{background:none;border:none;font-size:20px;color:var(--text-muted);line-height:1;padding:2px 6px;}
@@ -228,19 +230,22 @@ select{text-overflow:ellipsis;}
 @media(prefers-reduced-motion:reduce){.login-loading-spinner{animation-duration:1.8s;}}
 .public-ranking-screen{align-items:start;padding:clamp(24px,8vh,72px) 16px;}
 .public-ranking-card{width:min(100%,760px);margin:0 auto;padding:20px;}
-.public-achievement-toggle{min-width:84px;padding:6px 9px;background:var(--verde-100);color:var(--verde-700);}
-.public-achievement-toggle:hover{background:var(--verde-300);}
-.public-achievement-window{display:block;height:1.25em;overflow:hidden;}
-.public-achievement-track{display:flex;flex-direction:column;animation:public-achievement-roll 6s cubic-bezier(.4,0,.2,1) infinite;}
-.public-achievement-track>span{display:flex;height:1.25em;align-items:center;justify-content:center;white-space:nowrap;}
-.public-achievement-status{font-weight:800;}
-@keyframes public-achievement-roll{
-  0%,45%{transform:translateY(0);}
-  50%,95%{transform:translateY(-33.333%);}
-  100%{transform:translateY(-66.666%);}
+.public-details-toggle{min-width:92px;min-height:54px;padding:5px 8px;background:var(--verde-100);color:var(--verde-700);justify-content:center;overflow:hidden;}
+.public-details-toggle:hover{background:var(--verde-300);}
+.public-details-window{display:block;width:100%;height:42px;overflow:hidden;}
+.public-details-track{display:flex;width:100%;height:400%;flex-direction:column;animation:public-details-roll 9s cubic-bezier(.22,.61,.36,1) infinite;}
+.public-details-frame{display:flex;flex:0 0 25%;width:100%;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;white-space:nowrap;}
+.public-details-frame strong{font-size:12.5px;font-weight:800;}
+.public-details-frame small{font-size:10px;font-weight:700;}
+@keyframes public-details-roll{
+  0%,27%{transform:translateY(0);}
+  33.333%,60%{transform:translateY(-25%);}
+  66.666%,93.333%{transform:translateY(-50%);}
+  100%{transform:translateY(-75%);}
 }
 @media(prefers-reduced-motion:reduce){
-  .public-achievement-track{animation:none;transform:translateY(-33.333%);}
+  .public-details-track{animation:none;}
+  .public-details-frame:not(:first-child){display:none;}
 }
 .maintenance-card{text-align:center;padding:clamp(24px,6vw,44px);}
 .maintenance-illustration{width:min(100%,250px);margin:0 auto 12px;}
@@ -274,7 +279,7 @@ select{text-overflow:ellipsis;}
   .material-unit{font-size:9px;}
   .badge-surplus{font-size:9px;padding:2px 4px;}
   .modal-overlay-public-details{align-items:center;padding:10px;}
-  .modal-public-details{padding:16px 12px calc(16px + env(safe-area-inset-bottom));}
+  .modal-public-details{padding:16px 12px calc(16px + env(safe-area-inset-bottom));border-radius:18px;}
 }
 
 .checklist{font-size:13.5px;line-height:1.9;padding-left:20px;color:var(--text);}
@@ -1213,7 +1218,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
   colaboradores = colaboradores.filter(c=> !c.dataCadastro || c.dataCadastro.slice(0,7) <= chave);
   const entregasDoMes = entregasValidadasDoMes(campanhaId, mes,ano);
   const resultados = colaboradores.map(c=>{
-    const totais = {}, percentuais = {}, frescos = {}, totaisAcumulados = {}, metasPorCategoria = {}, categoriasAtingidas = {};
+    const totais = {}, percentuais = {}, percentuaisReais={}, frescos = {}, totaisAcumulados = {}, metasPorCategoria = {}, categoriasAtingidas = {};
     categorias.forEach(cat=>{
       const s = saldos[c.id]?.[cat.key]?.[chave];
       const totalDisponivelBruto = s? s.totalDisponivel : 0;
@@ -1224,12 +1229,12 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
       categoriasAtingidas[cat.key] = cumprimento.atingida;
       frescos[cat.key] = Math.max(0, s? s.creditos : 0);
       percentuais[cat.key] = cumprimento.percentual;
+      percentuaisReais[cat.key] = meta>0 ? totalDisponivelBruto/meta*100 : 0;
       totaisAcumulados[cat.key] = Object.values(saldos[c.id]?.[cat.key] || {}).reduce((a,x)=>a+x.creditos, 0);
     });
     const percentuaisCapped = categorias.map(cat=>Math.min(100,percentuais[cat.key]));
     const pontuacao = percentuaisCapped.reduce((a,b)=>a+b,0)/categorias.length;
-    const percentuaisReais = categorias.map(cat=>percentuais[cat.key]);
-    const mediaReal = percentuaisReais.reduce((a,b)=>a+b,0)/categorias.length;
+    const mediaReal = categorias.reduce((soma,cat)=>soma+percentuaisReais[cat.key],0)/categorias.length;
     const metaAtingida = categorias.every(cat=>categoriasAtingidas[cat.key]);
     const totalMateriais = Math.round(categorias.reduce((a,cat)=>a+frescos[cat.key],0));
     const datasDoColaborador = entregasDoMes.filter(e=>e.colaboradorId===c.id).map(e=>e.data).sort();
@@ -1242,16 +1247,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
     || (a.primeiraEntrega||'9999-99-99').localeCompare(b.primeiraEntrega||'9999-99-99')
     || a.colaborador.nome.localeCompare(b.colaborador.nome)
   );
-  let posAtual=0, vistos=0, ultimoScore=null, ultimaMedia=null, ultimaData=null;
-  resultados.forEach(r=>{
-    if(r.pontuacao<=0){ r.posicao = null; return; } // sem pontuação: não ocupa posição nem recebe medalha
-    vistos++;
-    const empatado = ultimoScore!==null && Math.abs(r.pontuacao-ultimoScore)<0.001 && Math.abs(r.mediaReal-ultimaMedia)<0.001 && (r.primeiraEntrega||null)===ultimaData;
-    if(!empatado) posAtual = vistos;
-    r.posicao = posAtual;
-    ultimoScore = r.pontuacao; ultimaMedia = r.mediaReal; ultimaData = r.primeiraEntrega||null;
-  });
-  return resultados;
+  return ReciclarRankingLogic.atribuirPosicoes(resultados);
 }
 function calcularResultadosMes(campanhaId, mes,ano,setorFiltro){
   const saldos = calcularSaldosAcumulados(campanhaId, mes,ano);
@@ -1442,11 +1438,14 @@ function renderRankingPublico(){
         ${ranking.ranking.length?`<div class="table-wrap public-ranking-table"><table><thead><tr><th>Posição</th><th>Colaborador</th><th>Pontuação</th>${mostraDetalhes?'<th>Detalhes</th>':''}</tr></thead>
           <tbody>${ranking.ranking.map((item,index)=>{
             const detalhesDisponiveis=!!(item.detalhes&&item.detalhes.length);
-            const metaAtingida=detalhesDisponiveis&&item.detalhes.every(categoria=>
-              ReciclarRankingLogic.resumirCategoria(categoria.quantidade,categoria.meta).atingida
-            );
-            const botaoDetalhes=metaAtingida
-              ?`<button class="btn btn-sm public-achievement-toggle" type="button" aria-label="Meta atingida. Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-achievement-window" aria-hidden="true"><span class="public-achievement-track"><span>Detalhes</span><span class="public-achievement-status">Atingida</span><span>Detalhes</span></span></span></button>`
+            const resumoTroca=item.resumoTroca;
+            const rotuloTroca=resumoTroca
+              ?resumoTroca.unidade.replace(/^./,letra=>letra.toLocaleUpperCase('pt-BR'))
+              :'';
+            const botaoDetalhes=detalhesDisponiveis
+              ?`<button class="btn btn-sm public-details-toggle" type="button" aria-label="Detalhes${resumoTroca?`. ${resumoTroca.quantidade} ${resumoTroca.unidade}.`:`. ${Math.round(item.percentualGeral??item.pontuacao)}% da meta, ${(item.totalMateriais||0).toLocaleString('pt-BR')} materiais.`} Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-details-window" aria-hidden="true"><span class="public-details-track"><span class="public-details-frame"><strong>Detalhes</strong></span>${resumoTroca
+                ?`<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span><span class="public-details-frame"><strong>Detalhes</strong></span><span class="public-details-frame"><strong>Detalhes</strong></span>`
+                :`<span class="public-details-frame"><strong>${Math.round(item.percentualGeral??item.pontuacao)}%</strong><small>da Meta</small></span><span class="public-details-frame"><strong>${(item.totalMateriais||0).toLocaleString('pt-BR')}</strong><small>Materiais</small></span><span class="public-details-frame"><strong>Detalhes</strong></span>`}</span></span></button>`
               :`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`;
             return `<tr><td><b>${item.posicao?`${item.posicao}º`:'—'}</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${detalhesDisponiveis?botaoDetalhes:'<span class="small-note">—</span>'}</td>`:''}</tr>`;
           }).join('')}</tbody>
@@ -1845,6 +1844,23 @@ async function sincronizarRankingsPublicos(){
             posicao:resultado.posicao||null,
             nome:resultado.colaborador.nome,
             pontuacao:Math.round(resultado.pontuacao),
+            percentualGeral:resultado.mediaReal,
+            totalMateriais:resultado.totalMateriais,
+            ...(campanha.trocaCartela&&campanha.trocaCartela.ativo?{
+              resumoTroca:(()=>{
+                const cfgTroca=campanha.trocaCartela;
+                const quantidade=trocasDoMes(campanha.id,mes,ano)
+                  .filter(t=>t.colaboradorId===resultado.colaborador.id)
+                  .reduce((total,t)=>total+(Number.isFinite(t.cartelasEmitidas)
+                    ? t.cartelasEmitidas
+                    : (Number(t.quantidadeKits)||0)*(Number(cfgTroca.cartelasPorKit)||1)),0);
+                const nomeItem=String(cfgTroca.nomeItem||'item').trim();
+                return {
+                  quantidade,
+                  unidade:quantidade===1||/s$/i.test(nomeItem)?nomeItem:nomeItem+'s',
+                };
+              })(),
+            }:{ }),
             detalhes:categorias.map(cat=>({
               nome:cat.label.split(' (')[0],
               unidade:cat.unidade,
@@ -2393,7 +2409,7 @@ function abrirFormEntrega(id){
     </div>
     <div class="field"><label>Tipo de material</label><select id="fTipo" onchange="atualizarCampoUnidadeEntrega()" ${e?'disabled':''}>${catOpcoes}</select></div>
     <div class="grid grid-2">
-      <div class="field"><label>Quantidade</label><input type="number" min="0" step="0.1" id="fQtd" value="${e?e.quantidade:''}"></div>
+      <div class="field"><label>Quantidade</label><input type="number" min="0" step="1" id="fQtd" value="${e?e.quantidade:''}"></div>
       <div class="field" id="campoUnidadeWrap"><label>Unidade</label><div id="campoUnidade"></div></div>
     </div>
     <div class="field"><label>Responsável pela contagem</label><input type="text" id="fResp" value="${e?escapeHtml(e.responsavelContagem||''):''}" placeholder="Ex: Encarregada Financeira"></div>
@@ -2415,15 +2431,23 @@ function atualizarCampoUnidadeEntrega(e){
   const tipo = document.getElementById('fTipo').value;
   const holder = document.getElementById('campoUnidade');
   if(tipo==='latinhas'){
-    holder.innerHTML = `<select id="fUnidade"><option value="unidades" ${e&&e.unidade==='unidades'?'selected':''}>Unidades (latinhas)</option><option value="kg" ${e&&e.unidade==='kg'?'selected':''}>Quilogramas (kg)</option></select>`;
+    holder.innerHTML = `<select id="fUnidade" onchange="atualizarPassoQuantidadeEntrega()"><option value="unidades" ${e&&e.unidade==='unidades'?'selected':''}>Unidades (latinhas)</option><option value="kg" ${e&&e.unidade==='kg'?'selected':''}>Quilogramas (kg)</option></select>`;
   } else if(tipo===TIPO_OUTROS){
     holder.innerHTML = `<input type="text" id="fUnidade" value="${e&&e.unidade?escapeHtml(e.unidade):'unidades'}" placeholder="Ex: kg, sacos, unidades">`;
   } else {
     const cat = resolverCategoria(STATE.campanhaSelecionadaId, tipo);
     holder.innerHTML = `<input type="text" value="${cat?cat.unidade:''}" disabled style="background:#F3F5F3;color:var(--text-muted);"><input type="hidden" id="fUnidade" value="unidades">`;
   }
+  atualizarPassoQuantidadeEntrega();
+}
+function atualizarPassoQuantidadeEntrega(){
+  const quantidade=document.getElementById('fQtd');
+  const tipo=document.getElementById('fTipo')?.value;
+  const unidade=document.getElementById('fUnidade')?.value||'unidades';
+  if(quantidade) quantidade.step=tipo==='latinhas'&&unidade==='kg'?'0.1':'1';
 }
 window.atualizarCampoUnidadeEntrega = atualizarCampoUnidadeEntrega;
+window.atualizarPassoQuantidadeEntrega = atualizarPassoQuantidadeEntrega;
 async function salvarEntrega(id){
   if(!exigirOperador()) return;
   const anteriores=STATE.entregas.map(e=>({...e}));
@@ -2439,6 +2463,10 @@ async function salvarEntrega(id){
   const observacoes = document.getElementById('fObs').value.trim();
   const statusValidacao = document.getElementById('fStatusValid').value;
   if(!data || !colaboradorId || !tipo || isNaN(quantidade) || quantidade<0){ alert('Preencha data, colaborador, tipo de material e uma quantidade válida.'); return; }
+  if(!ReciclarRankingLogic.quantidadeUnitariaValida(quantidade,tipo==='latinhas'&&unidade==='kg')){
+    alert('A quantidade desta categoria precisa ser informada em unidades inteiras.');
+    return;
+  }
   const campanhaId = entregaOriginal?entregaOriginal.campanhaId:STATE.campanhaSelecionadaId;
   const validacao = dataDentroDaCampanha(campanhaId, data);
   if(!validacao.ok){ alert(validacao.motivo); return; }
@@ -2591,8 +2619,11 @@ async function salvarTransferencia(){
   const motivo = document.getElementById('tMotivo').value.trim();
   const erroEl = document.getElementById('transfErro');
   erroEl.style.display='none';
-  if(!data || !colaboradorOrigemId || !colaboradorDestinoId || isNaN(quantidade) || quantidade<=0){
+  if(!data || !colaboradorOrigemId || !colaboradorDestinoId || !Number.isFinite(quantidade) || quantidade<=0){
     erroEl.textContent = 'Preencha data, colaboradores e uma quantidade maior que zero.'; erroEl.style.display='block'; return;
+  }
+  if(!ReciclarRankingLogic.quantidadeUnitariaValida(quantidade,false)){
+    erroEl.textContent = 'A quantidade transferida precisa ser um número inteiro de unidades.'; erroEl.style.display='block'; return;
   }
   if(colaboradorOrigemId===colaboradorDestinoId && categoriaOrigem===categoriaDestino){
     erroEl.textContent = 'Origem e destino são iguais. Escolha um colaborador ou categoria diferente para o destino.'; erroEl.style.display='block'; return;
@@ -3045,7 +3076,7 @@ function renderHistorico(){
     </div>
     ${meses.length===0? `<div class="card"><div class="empty-state">Nenhum histórico registrado ainda nesta campanha.</div></div>` : `
     <div class="section-title">Ranking de ${nomeMes(mes)} de ${ano}</div>
-    <div class="card" style="padding:0;">${renderTabelaRanking(resultados,true,mes,ano)}</div>
+    <div class="card" style="padding:0;"><div class="table-wrap">${renderTabelaRanking(resultados,true,mes,ano)}</div></div>
     <div class="section-title">Entregas realizadas no mês</div>
     <div class="card" style="padding:0;"><div class="table-wrap">${renderTabelaEntregasHistorico(mes,ano)}</div></div>
     `}
@@ -3369,7 +3400,7 @@ function abrirFormCampanha(id){
         ${todasCategoriasMateriaisFormulario(c).map(cat=>`
           <div class="field"><label>${escapeHtml(cat.label)}</label>
             <div style="display:flex;gap:8px;align-items:center;">
-              <input type="number" min="0" id="tcKit_${cat.key}" value="${(trocaCartela.kit&&trocaCartela.kit[cat.key])||''}" placeholder="0">
+              <input type="number" min="0" step="1" id="tcKit_${cat.key}" value="${(trocaCartela.kit&&trocaCartela.kit[cat.key])||''}" placeholder="0">
               <span class="small-note" style="white-space:nowrap;">${cat.unidade}</span>
             </div>
           </div>`).join('')}
@@ -3472,11 +3503,16 @@ async function salvarCampanha(id){
     const nomeItem = document.getElementById('tcNomeItem').value.trim() || 'cartela';
     const cartelasPorKit = parseInt(document.getElementById('tcCartelasPorKit').value,10) || 1;
     const kit = {};
-    todasCategoriasMateriaisFormulario().forEach(cat=>{
+    for(const cat of todasCategoriasMateriaisFormulario()){
       const el = document.getElementById('tcKit_'+cat.key);
       const valor = el ? parseFloat(el.value) : 0;
+      if(valor>0 && !ReciclarRankingLogic.quantidadeUnitariaValida(valor,false)){
+        erroEl.textContent='As quantidades do kit precisam ser números inteiros de unidades.';
+        erroEl.style.display='block';
+        return;
+      }
       if(valor>0) kit[cat.key] = valor;
-    });
+    }
     if(Object.keys(kit).length===0){ erroEl.textContent='Informe a quantidade exigida de pelo menos um material para o kit de troca.'; erroEl.style.display='block'; return; }
     trocaCartela = { ativo:true, nomeItem, cartelasPorKit, kit };
   }
@@ -4251,10 +4287,13 @@ function carregarRankingsPublicos(){
       const entradas=data.ranking.map(item=>{
         if(!item || (item.posicao!==null && (!Number.isInteger(item.posicao) || item.posicao<1))
           || typeof item.nome!=='string' || !item.nome.trim()
-          || typeof item.pontuacao!=='number' || !Number.isFinite(item.pontuacao) || item.pontuacao<0){
+          || typeof item.pontuacao!=='number' || !Number.isFinite(item.pontuacao) || item.pontuacao<0
+          || (item.percentualGeral!==undefined && (typeof item.percentualGeral!=='number' || !Number.isFinite(item.percentualGeral) || item.percentualGeral<0))
+          || (item.totalMateriais!==undefined && (typeof item.totalMateriais!=='number' || !Number.isFinite(item.totalMateriais) || item.totalMateriais<0))){
           throw new Error('Uma entrada do ranking público tem formato inválido.');
         }
         let detalhes;
+        let resumoTroca;
         if(item.detalhes!==undefined){
           if(!Array.isArray(item.detalhes)){
             throw new Error('Os detalhes de uma entrada do ranking público têm formato inválido.');
@@ -4277,8 +4316,25 @@ function carregarRankingsPublicos(){
             };
           });
         }
-        return {posicao:item.posicao,nome:item.nome,pontuacao:item.pontuacao,...(detalhes?{detalhes}:{})};
+        if(item.resumoTroca!==undefined){
+          if(!item.resumoTroca || typeof item.resumoTroca.quantidade!=='number'
+            || !Number.isInteger(item.resumoTroca.quantidade) || item.resumoTroca.quantidade<0
+            || typeof item.resumoTroca.unidade!=='string' || !item.resumoTroca.unidade.trim()){
+            throw new Error('O resumo de trocas de uma entrada do ranking público tem formato inválido.');
+          }
+          resumoTroca={quantidade:item.resumoTroca.quantidade,unidade:item.resumoTroca.unidade};
+        }
+        return {
+          posicao:item.posicao,
+          nome:item.nome,
+          pontuacao:item.pontuacao,
+          ...(Number.isFinite(item.percentualGeral)?{percentualGeral:item.percentualGeral}:{}),
+          ...(Number.isFinite(item.totalMateriais)?{totalMateriais:item.totalMateriais}:{}),
+          ...(resumoTroca?{resumoTroca}:{}),
+          ...(detalhes?{detalhes}:{})
+        };
       }).sort((a,b)=>(a.posicao||Number.MAX_SAFE_INTEGER)-(b.posicao||Number.MAX_SAFE_INTEGER));
+      const entradasComPosicoes=ReciclarRankingLogic.atribuirPosicoes(entradas);
       const temDados=data.temDados===true || entradas.some(item=>item.pontuacao>0
         || (item.detalhes||[]).some(cat=>cat.quantidade>0));
       return {
@@ -4289,7 +4345,7 @@ function carregarRankingsPublicos(){
         ano:data.ano,
         atualizadoEm:data.atualizadoEm,
         temDados,
-        ranking:entradas,
+        ranking:entradasComPosicoes,
       };
     }).filter(ranking=>ranking.temDados);
     STATE.rankingsPublicos=rankings;

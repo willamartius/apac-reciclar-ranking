@@ -4,6 +4,8 @@ const {
   filtrarEntregasValidadas,
   somarEntregasValidadas,
   resumirCategoria,
+  atribuirPosicoes,
+  quantidadeUnitariaValida,
 } = require('../ranking-logic.js');
 
 const normalizar = entrega => entrega.quantidade;
@@ -80,4 +82,21 @@ test('achievement uses normalized units and percentages are capped at 100%', () 
     atingida: true,
   });
   assert.equal(resumirCategoria(79.9, 80).atingida, false);
+});
+
+test('equal scorers still receive sequential positions using the existing sorted order', () => {
+  const resultados = Array.from({length: 6}, (_, index) => ({
+    colaborador: {nome: `Pessoa ${index + 1}`},
+    pontuacao: 100,
+  }));
+  assert.deepEqual(
+    atribuirPosicoes(resultados).map(resultado => resultado.posicao),
+    [1, 2, 3, 4, 5, 6]
+  );
+});
+
+test('discrete material quantities reject fractions while kilogram entries allow them', () => {
+  assert.equal(quantidadeUnitariaValida(79.9, false), false);
+  assert.equal(quantidadeUnitariaValida(80, false), true);
+  assert.equal(quantidadeUnitariaValida(79.9, true), true);
 });
