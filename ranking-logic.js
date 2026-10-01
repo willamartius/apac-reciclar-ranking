@@ -43,10 +43,26 @@
     };
   }
 
+  function atribuirPosicoes(resultados){
+    var posicao=0;
+    return resultados.map(function(resultado){
+      if(resultado.pontuacao<=0) return Object.assign({},resultado,{posicao:null});
+      posicao++;
+      return Object.assign({},resultado,{posicao:posicao});
+    });
+  }
+
+  function quantidadeUnitariaValida(quantidade,fracionavel){
+    return typeof quantidade==='number' && Number.isFinite(quantidade)
+      && quantidade>=0 && (fracionavel===true || Number.isInteger(quantidade));
+  }
+
   var api={
     filtrarEntregasValidadas:filtrarEntregasValidadas,
     somarEntregasValidadas:somarEntregasValidadas,
-    resumirCategoria:resumirCategoria
+    resumirCategoria:resumirCategoria,
+    atribuirPosicoes:atribuirPosicoes,
+    quantidadeUnitariaValida:quantidadeUnitariaValida
   };
   root.ReciclarRankingLogic=api;
   if(typeof module==='object' && module.exports) module.exports=api;
