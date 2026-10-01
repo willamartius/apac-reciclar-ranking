@@ -12,7 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="ranking-logic.js?v=20261001-92956c8"></script>
+<script src="ranking-logic.js?v=20261001-surplus2"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
@@ -230,8 +230,10 @@ select{text-overflow:ellipsis;}
 @media(prefers-reduced-motion:reduce){.login-loading-spinner{animation-duration:1.8s;}}
 .public-ranking-screen{align-items:start;padding:clamp(24px,8vh,72px) 16px;}
 .public-ranking-card{width:min(100%,760px);margin:0 auto;padding:20px;}
-.public-details-toggle{min-width:92px;min-height:54px;padding:5px 8px;background:var(--verde-100);color:var(--verde-700);justify-content:center;overflow:hidden;}
-.public-details-toggle:hover{background:var(--verde-300);}
+.public-details-toggle{min-width:92px;min-height:54px;padding:5px 8px;background:transparent;color:var(--text-muted);justify-content:center;overflow:hidden;}
+.public-details-toggle:hover{background:rgba(94,110,100,.08);}
+.public-details-toggle.is-achieved{background:var(--verde-100);color:var(--verde-700);}
+.public-details-toggle.is-achieved:hover{background:var(--verde-300);}
 .public-details-window{display:block;width:100%;height:42px;overflow:hidden;}
 .public-details-track{display:flex;width:100%;height:400%;flex-direction:column;animation:public-details-roll 9s cubic-bezier(.22,.61,.36,1) infinite;}
 .public-details-frame{display:flex;flex:0 0 25%;width:100%;flex-direction:column;align-items:center;justify-content:center;line-height:1.1;white-space:nowrap;}
@@ -1236,7 +1238,7 @@ function resultadosDoMesUsandoSaldos(saldos, campanhaId, mes, ano, setorFiltro){
     const pontuacao = percentuaisCapped.reduce((a,b)=>a+b,0)/categorias.length;
     const mediaReal = categorias.reduce((soma,cat)=>soma+percentuaisReais[cat.key],0)/categorias.length;
     const metaAtingida = categorias.every(cat=>categoriasAtingidas[cat.key]);
-    const totalMateriais = Math.round(categorias.reduce((a,cat)=>a+frescos[cat.key],0));
+    const totalMateriais = Math.round(categorias.reduce((a,cat)=>a+totais[cat.key],0));
     const datasDoColaborador = entregasDoMes.filter(e=>e.colaboradorId===c.id).map(e=>e.data).sort();
     const primeiraEntrega = datasDoColaborador.length? datasDoColaborador[0] : null;
     return { colaborador:c, totais, metasPorCategoria, totaisAcumulados, percentuais, pontuacao, mediaReal, metaAtingida, totalMateriais, primeiraEntrega };
@@ -1442,8 +1444,9 @@ function renderRankingPublico(){
             const rotuloTroca=resumoTroca
               ?resumoTroca.unidade.replace(/^./,letra=>letra.toLocaleUpperCase('pt-BR'))
               :'';
+            const metaAtingida=detalhesDisponiveis&&ReciclarRankingLogic.resumirDetalhesCategorias(item.detalhes).metaAtingida;
             const botaoDetalhes=detalhesDisponiveis
-              ?`<button class="btn btn-sm public-details-toggle" type="button" aria-label="Detalhes${resumoTroca?`. ${resumoTroca.quantidade} ${resumoTroca.unidade}.`:`. ${Math.round(item.percentualGeral??item.pontuacao)}% da meta, ${(item.totalMateriais||0).toLocaleString('pt-BR')} materiais.`} Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-details-window" aria-hidden="true"><span class="public-details-track"><span class="public-details-frame"><strong>Detalhes</strong></span>${resumoTroca
+              ?`<button class="btn btn-sm public-details-toggle${metaAtingida?' is-achieved':''}" type="button" aria-label="Detalhes${resumoTroca?`. ${resumoTroca.quantidade} ${resumoTroca.unidade}.`:`. ${Math.round(item.percentualGeral??item.pontuacao)}% da meta, ${(item.totalMateriais||0).toLocaleString('pt-BR')} materiais.`} Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-details-window" aria-hidden="true"><span class="public-details-track"><span class="public-details-frame"><strong>Detalhes</strong></span>${resumoTroca
                 ?`<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span><span class="public-details-frame"><strong>Detalhes</strong></span><span class="public-details-frame"><strong>Detalhes</strong></span>`
                 :`<span class="public-details-frame"><strong>${Math.round(item.percentualGeral??item.pontuacao)}%</strong><small>da Meta</small></span><span class="public-details-frame"><strong>${(item.totalMateriais||0).toLocaleString('pt-BR')}</strong><small>Materiais</small></span><span class="public-details-frame"><strong>Detalhes</strong></span>`}</span></span></button>`
               :`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`;
@@ -4316,6 +4319,9 @@ function carregarRankingsPublicos(){
             };
           });
         }
+        const resumoDetalhes=detalhes&&detalhes.length
+          ?ReciclarRankingLogic.resumirDetalhesCategorias(detalhes)
+          :null;
         if(item.resumoTroca!==undefined){
           if(!item.resumoTroca || typeof item.resumoTroca.quantidade!=='number'
             || !Number.isInteger(item.resumoTroca.quantidade) || item.resumoTroca.quantidade<0
@@ -4328,8 +4334,12 @@ function carregarRankingsPublicos(){
           posicao:item.posicao,
           nome:item.nome,
           pontuacao:item.pontuacao,
-          ...(Number.isFinite(item.percentualGeral)?{percentualGeral:item.percentualGeral}:{}),
-          ...(Number.isFinite(item.totalMateriais)?{totalMateriais:item.totalMateriais}:{}),
+          ...(resumoDetalhes
+            ?{percentualGeral:resumoDetalhes.percentualGeral,totalMateriais:resumoDetalhes.totalMateriais}
+            :{
+              ...(Number.isFinite(item.percentualGeral)?{percentualGeral:item.percentualGeral}:{}),
+              ...(Number.isFinite(item.totalMateriais)?{totalMateriais:item.totalMateriais}:{})
+            }),
           ...(resumoTroca?{resumoTroca}:{}),
           ...(detalhes?{detalhes}:{})
         };

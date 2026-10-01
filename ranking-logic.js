@@ -35,7 +35,7 @@
     }
     var inteiroMaisProximo=Math.round(quantidade);
     if(Math.abs(quantidade-inteiroMaisProximo)<=1e-9) quantidade=inteiroMaisProximo;
-    var percentual=meta>0 ? Math.min(quantidade/meta,1)*100 : 0;
+    var percentual=meta>0 ? quantidade/meta*100 : 0;
     return {
       quantidade:quantidade,
       percentual:percentual,
@@ -57,12 +57,34 @@
       && quantidade>=0 && (fracionavel===true || Number.isInteger(quantidade));
   }
 
+  function todasMetasAtingidas(categorias){
+    return Array.isArray(categorias) && categorias.length>0
+      && categorias.every(function(categoria){
+        return resumirCategoria(categoria.quantidade,categoria.meta).atingida;
+      });
+  }
+
+  function resumirDetalhesCategorias(categorias){
+    if(!Array.isArray(categorias)) throw new TypeError('Os detalhes das categorias precisam ser uma lista.');
+    if(categorias.length===0) return {totalMateriais:0,percentualGeral:0,metaAtingida:false};
+    var resumo=categorias.map(function(categoria){
+      return resumirCategoria(categoria.quantidade,categoria.meta);
+    });
+    return {
+      totalMateriais:Math.round(resumo.reduce(function(total,item){return total+item.quantidade;},0)),
+      percentualGeral:resumo.reduce(function(total,item){return total+item.percentual;},0)/resumo.length,
+      metaAtingida:resumo.every(function(item){return item.atingida;})
+    };
+  }
+
   var api={
     filtrarEntregasValidadas:filtrarEntregasValidadas,
     somarEntregasValidadas:somarEntregasValidadas,
     resumirCategoria:resumirCategoria,
     atribuirPosicoes:atribuirPosicoes,
-    quantidadeUnitariaValida:quantidadeUnitariaValida
+    quantidadeUnitariaValida:quantidadeUnitariaValida,
+    todasMetasAtingidas:todasMetasAtingidas,
+    resumirDetalhesCategorias:resumirDetalhesCategorias
   };
   root.ReciclarRankingLogic=api;
   if(typeof module==='object' && module.exports) module.exports=api;

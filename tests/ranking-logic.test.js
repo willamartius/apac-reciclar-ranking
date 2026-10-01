@@ -6,6 +6,8 @@ const {
   resumirCategoria,
   atribuirPosicoes,
   quantidadeUnitariaValida,
+  todasMetasAtingidas,
+  resumirDetalhesCategorias,
 } = require('../ranking-logic.js');
 
 const normalizar = entrega => entrega.quantidade;
@@ -70,7 +72,7 @@ test('80/80 reaches 100% and marks the category achieved', () => {
   });
 });
 
-test('achievement uses normalized units and percentages are capped at 100%', () => {
+test('achievement is based on units while percentages preserve surplus above 100%', () => {
   assert.deepEqual(resumirCategoria(79.99999999999999, 80), {
     quantidade: 80,
     percentual: 100,
@@ -78,10 +80,38 @@ test('achievement uses normalized units and percentages are capped at 100%', () 
   });
   assert.deepEqual(resumirCategoria(120, 80), {
     quantidade: 120,
-    percentual: 100,
+    percentual: 150,
     atingida: true,
   });
   assert.equal(resumirCategoria(79.9, 80).atingida, false);
+});
+
+test('all categories must reach their goals for the public achievement state', () => {
+  assert.equal(todasMetasAtingidas([
+    {quantidade: 80, meta: 80},
+    {quantidade: 120, meta: 100},
+  ]), true);
+  assert.equal(todasMetasAtingidas([
+    {quantidade: 80, meta: 80},
+    {quantidade: 99, meta: 100},
+  ]), false);
+  assert.equal(todasMetasAtingidas([]), false);
+});
+
+test('public summary uses available category quantities including surplus', () => {
+  assert.deepEqual(resumirDetalhesCategorias([
+    {quantidade: 120, meta: 80},
+    {quantidade: 20, meta: 20},
+  ]), {
+    totalMateriais: 140,
+    percentualGeral: 125,
+    metaAtingida: true,
+  });
+  assert.deepEqual(resumirDetalhesCategorias([]), {
+    totalMateriais: 0,
+    percentualGeral: 0,
+    metaAtingida: false,
+  });
 });
 
 test('equal scorers still receive sequential positions using the existing sorted order', () => {
