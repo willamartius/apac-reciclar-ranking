@@ -12,7 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="ranking-logic.js?v=20261001-carryover"></script>
+<script src="ranking-logic.js?v=20261001-october-exchanges"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
@@ -478,8 +478,10 @@ const STORAGE_ERRORS = new Map();
 const PUBLIC_RANKING_SOURCE_KEYS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
 let rankingPublicoSyncAtivo = false;
 let rankingPublicoSyncTimer = null;
+let rankingPublicoSyncMesTimer = null;
 let rankingPublicoSyncPromise = null;
 let rankingPublicoSyncPendente = false;
+let rankingPublicoUltimoMesSincronizado = '';
 let rankingsPublicosUnsubscribe = null;
 let manutencaoPublicaUnsubscribe = null;
 function serializarEstavel(valor){
@@ -1452,14 +1454,16 @@ function renderRankingPublico(){
               ?quadroDetalhes+(resumoTroca
                 ?`<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span><span class="public-details-frame"><strong>Detalhes</strong></span><span class="public-details-frame"><strong>Detalhes</strong></span>`
                 :`<span class="public-details-frame"><strong>${Math.round(item.percentualGeral??item.pontuacao)}%</strong><small>da Meta</small></span><span class="public-details-frame"><strong>${(item.totalMateriais||0).toLocaleString('pt-BR')}</strong><small>Materiais</small></span><span class="public-details-frame"><strong>Detalhes</strong></span>`)
-              :quadroDetalhes;
+              :(resumoTroca
+                ?`<span class="public-details-frame"><strong>${resumoTroca.quantidade.toLocaleString('pt-BR')}</strong><small>${escapeHtml(rotuloTroca)}</small></span>`
+                :quadroDetalhes);
             const botaoDetalhes=detalhesDisponiveis
               ?`<button class="btn btn-sm public-details-toggle${metaAtingida?' is-achieved':''}" type="button" aria-label="Detalhes${resumoTroca?`. ${resumoTroca.quantidade} ${resumoTroca.unidade}.`:`. ${Math.round(item.percentualGeral??item.pontuacao)}% da meta, ${(item.totalMateriais||0).toLocaleString('pt-BR')} materiais.`} Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-details-window" aria-hidden="true"><span class="public-details-track">${quadrosDetalhes}</span></span></button>`
               :`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`;
             return `<tr><td><b>${item.posicao?`${item.posicao}º`:'—'}</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${detalhesDisponiveis?botaoDetalhes:'<span class="small-note">—</span>'}</td>`:''}</tr>`;
           }).join('')}</tbody>
         </table></div>
-        `:`<div class="empty-state">Ainda não há colaboradores com entregas neste período.</div>`}
+        `:`<div class="empty-state">Ainda não há colaboradores com movimentação neste período.</div>`}
         <p class="small-note" style="margin:12px 0 0;">Atualizado automaticamente em ${escapeHtml(new Date(ranking.atualizadoEm).toLocaleString('pt-BR'))}.</p>
       ` : `<div class="empty-state">${STATE.erroRankingPublico?'Não foi possível carregar o ranking público.':'A página pública será preenchida automaticamente após um administrador ou operador abrir o aplicativo.'}</div>`}
       <p class="small-note" style="margin:16px 0 0;">A página apresenta a classificação e os saldos mensais por material. Os registros são realizados somente por pessoal autorizado.</p>
@@ -1779,6 +1783,34 @@ function mostrarErroSincronizacaoRankingPublico(erro){
   console.error('Erro ao atualizar ranking público automaticamente',erro);
   alert('Os dados foram salvos no aplicativo, mas a página pública não foi atualizada. Verifique se as regras do Firestore foram atualizadas e abra o app novamente para sincronizar.');
 }
+function agendarSincronizacaoRankingPublicoNaViradaDoMes(){
+  clearTimeout(rankingPublicoSyncMesTimer);
+  if(!rankingPublicoSyncAtivo) return;
+  const agora=new Date();
+  const chaveAgendada=chaveMA(agora.getMonth()+1,agora.getFullYear());
+  const proximoMes=new Date(agora.getFullYear(),agora.getMonth()+1,1);
+  const espera=Math.min(Math.max(1000,proximoMes.getTime()-agora.getTime()+1000),2147483000);
+  rankingPublicoSyncMesTimer=setTimeout(()=>{
+    if(!rankingPublicoSyncAtivo) return;
+    const dataAtual=mesAnoAtual();
+    const chaveAtual=chaveMA(dataAtual.mes,dataAtual.ano);
+    if(chaveAtual!==chaveAgendada){
+      sincronizarRankingsPublicos().catch(mostrarErroSincronizacaoRankingPublico);
+    }
+    agendarSincronizacaoRankingPublicoNaViradaDoMes();
+  },espera);
+}
+function sincronizarRankingPublicoSeMesMudou(){
+  if(!rankingPublicoSyncAtivo) return;
+  const atual=mesAnoAtual();
+  if(rankingPublicoUltimoMesSincronizado!==chaveMA(atual.mes,atual.ano)){
+    sincronizarRankingsPublicos().catch(mostrarErroSincronizacaoRankingPublico);
+  }
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible') sincronizarRankingPublicoSeMesMudou();
+});
+window.addEventListener('focus',sincronizarRankingPublicoSeMesMudou);
 function chavePeriodoValida(chave){
   return typeof chave==='string' && /^[0-9]{4}-(0[1-9]|1[0-2])$/.test(chave);
 }
@@ -1847,27 +1879,30 @@ async function sincronizarRankingsPublicos(){
       }).sort();
       for(const chave of periodosValidos){
         const [ano,mes]=chave.split('-').map(Number);
+        const cfgTroca=campanha.trocaCartela&&campanha.trocaCartela.ativo
+          ?campanha.trocaCartela:null;
         const ranking=calcularResultadosMes(campanha.id,mes,ano)
-          .filter(resultado=>resultado.colaborador.status!=='desligado'
-            && ReciclarRankingLogic.deveIncluirNoRankingPublico(resultado))
           .map(resultado=>({
+            resultado,
+            itensTrocados:cfgTroca?ReciclarRankingLogic.somarItensTrocados(
+              STATE.trocas,campanha.id,mes,ano,resultado.colaborador.id,
+              Number(cfgTroca.cartelasPorKit)||1
+            ):0,
+          }))
+          .filter(({resultado,itensTrocados})=>resultado.colaborador.status!=='desligado'
+            && ReciclarRankingLogic.deveIncluirNoRankingPublico(resultado,itensTrocados))
+          .map(({resultado,itensTrocados})=>({
             posicao:resultado.posicao||null,
             nome:resultado.colaborador.nome,
             pontuacao:Math.round(resultado.pontuacao),
             percentualGeral:resultado.mediaReal,
             totalMateriais:resultado.totalMateriais,
-            ...(campanha.trocaCartela&&campanha.trocaCartela.ativo?{
+            ...(cfgTroca?{
               resumoTroca:(()=>{
-                const cfgTroca=campanha.trocaCartela;
-                const quantidade=trocasDoMes(campanha.id,mes,ano)
-                  .filter(t=>t.colaboradorId===resultado.colaborador.id)
-                  .reduce((total,t)=>total+(Number.isFinite(t.cartelasEmitidas)
-                    ? t.cartelasEmitidas
-                    : (Number(t.quantidadeKits)||0)*(Number(cfgTroca.cartelasPorKit)||1)),0);
                 const nomeItem=String(cfgTroca.nomeItem||'item').trim();
                 return {
-                  quantidade,
-                  unidade:quantidade===1||/s$/i.test(nomeItem)?nomeItem:nomeItem+'s',
+                  quantidade:itensTrocados,
+                  unidade:itensTrocados===1||/s$/i.test(nomeItem)?nomeItem:nomeItem+'s',
                 };
               })(),
             }:{ }),
@@ -1900,6 +1935,7 @@ async function sincronizarRankingsPublicos(){
         documentos.set(id,documento);
       }
     }
+    rankingPublicoUltimoMesSincronizado=chaveMA(atual.mes,atual.ano);
     if(STATE.authUser) renderApp();
   })();
   try{
@@ -4207,6 +4243,8 @@ async function processarSessaoFirebase(user){
   STATE.isAdmin=false;
   STATE.isOperator=false;
   rankingPublicoSyncAtivo=false;
+  clearTimeout(rankingPublicoSyncMesTimer);
+  rankingPublicoUltimoMesSincronizado='';
   await carregarRankingsPublicos();
   if(!user){
     STATE.loginCarregando=false;
@@ -4238,6 +4276,7 @@ async function processarSessaoFirebase(user){
   await carregarDados();
   STATE.loginCarregando=false;
   rankingPublicoSyncAtivo=true;
+  agendarSincronizacaoRankingPublicoNaViradaDoMes();
   sincronizarRankingsPublicos().catch(mostrarErroSincronizacaoRankingPublico);
   finalizarCarregamento();
 }
