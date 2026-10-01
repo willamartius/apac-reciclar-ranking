@@ -11,6 +11,7 @@ const {
   calcularSaldoMensal,
   deveIncluirNoRankingPublico,
   somarItensTrocados,
+  deveDestacarBotaoPublico,
 } = require('../ranking-logic.js');
 
 const normalizar = entrega => entrega.quantidade;
@@ -147,6 +148,13 @@ test('public exchange totals include only items exchanged by the person in the s
     pontuacao: 0,
     totalMateriais: 0,
   }, 7), true);
+});
+
+test('an item-exchange campaign highlights and rolls the button after the first exchange', () => {
+  assert.equal(deveDestacarBotaoPublico(false, {quantidade: 1}), true);
+  assert.equal(deveDestacarBotaoPublico(false, {quantidade: 0}), false);
+  assert.equal(deveDestacarBotaoPublico(true, {quantidade: 0}), false);
+  assert.equal(deveDestacarBotaoPublico(true, null), true);
 });
 
 test('equal scorers still receive sequential positions using the existing sorted order', () => {
