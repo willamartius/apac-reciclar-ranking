@@ -89,12 +89,32 @@
     };
   }
 
-  function deveIncluirNoRankingPublico(resultado){
+  function deveIncluirNoRankingPublico(resultado,itensTrocados){
     return !!resultado && (
       !!resultado.primeiraEntrega
       || (typeof resultado.pontuacao==='number' && resultado.pontuacao>0)
       || (typeof resultado.totalMateriais==='number' && resultado.totalMateriais>0)
+      || (typeof itensTrocados==='number' && Number.isFinite(itensTrocados) && itensTrocados>0)
     );
+  }
+
+  function somarItensTrocados(trocas,campanhaId,mes,ano,colaboradorId,itensPorKit){
+    if(!Array.isArray(trocas)) throw new TypeError('As trocas precisam ser uma lista.');
+    if(typeof itensPorKit!=='number' || !Number.isFinite(itensPorKit) || itensPorKit<=0){
+      throw new TypeError('A quantidade de itens por kit precisa ser um número válido.');
+    }
+    var chave=String(ano)+'-'+String(mes).padStart(2,'0');
+    return trocas.reduce(function(total,troca){
+      if(!troca || troca.campanhaId!==campanhaId || troca.colaboradorId!==colaboradorId
+        || !troca.data || troca.data.slice(0,7)!==chave) return total;
+      var quantidade=Number.isFinite(troca.cartelasEmitidas)
+        ?troca.cartelasEmitidas
+        :(Number(troca.quantidadeKits)||0)*itensPorKit;
+      if(!Number.isFinite(quantidade) || quantidade<0){
+        throw new TypeError('Uma troca do mês tem quantidade de itens inválida.');
+      }
+      return total+quantidade;
+    },0);
   }
 
   var api={
@@ -106,7 +126,8 @@
     todasMetasAtingidas:todasMetasAtingidas,
     resumirDetalhesCategorias:resumirDetalhesCategorias,
     calcularSaldoMensal:calcularSaldoMensal,
-    deveIncluirNoRankingPublico:deveIncluirNoRankingPublico
+    deveIncluirNoRankingPublico:deveIncluirNoRankingPublico,
+    somarItensTrocados:somarItensTrocados
   };
   root.ReciclarRankingLogic=api;
   if(typeof module==='object' && module.exports) module.exports=api;

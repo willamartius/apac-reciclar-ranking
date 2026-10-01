@@ -10,6 +10,7 @@ const {
   resumirDetalhesCategorias,
   calcularSaldoMensal,
   deveIncluirNoRankingPublico,
+  somarItensTrocados,
 } = require('../ranking-logic.js');
 
 const normalizar = entrega => entrega.quantidade;
@@ -131,6 +132,21 @@ test('surplus carries into the next month and remains available without a new de
     pontuacao: 0,
     totalMateriais: 0,
   }), false);
+});
+
+test('public exchange totals include only items exchanged by the person in the selected month', () => {
+  const trocas = [
+    {campanhaId: 'campanha-1', colaboradorId: 'josilene', data: '2026-10-02', cartelasEmitidas: 3},
+    {campanhaId: 'campanha-1', colaboradorId: 'josilene', data: '2026-10-08', quantidadeKits: 2},
+    {campanhaId: 'campanha-1', colaboradorId: 'josilene', data: '2026-09-30', cartelasEmitidas: 40},
+    {campanhaId: 'campanha-1', colaboradorId: 'roberth', data: '2026-10-02', cartelasEmitidas: 80},
+  ];
+  assert.equal(somarItensTrocados(trocas, 'campanha-1', 10, 2026, 'josilene', 2), 7);
+  assert.equal(deveIncluirNoRankingPublico({
+    primeiraEntrega: null,
+    pontuacao: 0,
+    totalMateriais: 0,
+  }, 7), true);
 });
 
 test('equal scorers still receive sequential positions using the existing sorted order', () => {
