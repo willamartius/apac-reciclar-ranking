@@ -261,22 +261,20 @@ select{text-overflow:ellipsis;}
 .public-ranking-table{width:100%;margin:0 auto;}
 .material-detail-table{width:100%;table-layout:fixed;}
 .material-detail-table th{white-space:normal;}
-.material-detail-table th:nth-child(1){width:25%;}
-.material-detail-table th:nth-child(2){width:26%;}
-.material-detail-table th:nth-child(3){width:24%;}
-.material-detail-table th:nth-child(4){width:25%;}
+.material-detail-table th:nth-child(1){width:24%;}
+.material-detail-table th:nth-child(2){width:14%;}
+.material-detail-table th:nth-child(3){width:19%;}
+.material-detail-table th:nth-child(4){width:22%;}
+.material-detail-table th:nth-child(5){width:21%;}
 .material-detail-table th:nth-child(n+2),
 .material-detail-table td:nth-child(n+2){text-align:center;}
+.material-detail-table .material-markers-column{padding-inline:0;}
 .material-detail-table td:first-child{overflow-wrap:anywhere;word-break:normal;}
-.material-detail-table tr.has-balance-markers td:first-child .material-category-label{display:block;padding-right:16px;white-space:normal;}
-.material-amount{display:grid;width:100%;grid-template-columns:minmax(0,1fr) max-content minmax(0,1fr);align-items:center;min-height:24px;white-space:nowrap;}
-.material-amount.is-no-markers .material-balance-markers{display:none;}
-.material-quantity-group{grid-column:2;justify-self:center;position:relative;width:max-content;}
-.material-quantity{display:grid;width:max-content;grid-template-columns:max-content auto;align-items:baseline;column-gap:3px;white-space:nowrap;font-size:11.5px;font-weight:400;}
+.material-quantity{display:grid;width:max-content;margin-inline:auto;grid-template-columns:max-content auto;align-items:baseline;column-gap:3px;white-space:nowrap;font-size:11.5px;font-weight:400;}
 .material-quantity>span:first-child{text-align:right;}
 .material-quantity>span:last-child{text-align:left;}
-.material-detail-table td:nth-child(4){font-size:11.5px;}
-.material-balance-markers{position:absolute;right:calc(100% + 8px);top:50%;transform:translateY(-50%);display:flex;width:36px;flex-direction:column;align-items:center;gap:1px;}
+.material-detail-table td:nth-child(5){font-size:11.5px;}
+.material-balance-markers{display:flex;width:36px;margin-inline:auto;flex-direction:column;align-items:center;gap:1px;}
 .material-balance-markers.is-single{height:29px;justify-content:center;}
 .material-balance-markers.is-single .is-empty{display:none;}
 .material-balance-marker{display:inline-flex;width:36px;height:14px;align-items:center;justify-content:center;padding:0;border-radius:20px;font-size:8px;font-weight:800;line-height:1;white-space:nowrap;}
@@ -1533,7 +1531,7 @@ function abrirDetalhesRankingPublico(indice){
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
 function renderTabelaDetalhesMateriais(categorias){
   const formatarQuantidade=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
-  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th>Disponível</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
+  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th class="material-markers-column" aria-hidden="true"></th><th>Disponível</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
     <tbody>${categorias.map(cat=>{
       const cumprimento=ReciclarRankingLogic.resumirCategoria(cat.quantidade,cat.meta);
       const excedente=Math.max(0,cumprimento.quantidade-cat.meta);
@@ -1542,10 +1540,11 @@ function renderTabelaDetalhesMateriais(categorias){
       const umaPilha=temSaldoAnterior!==temSaldoSeguinte;
       const metaAtingida=cumprimento.atingida;
       const percentualExibido=Math.floor(cumprimento.percentual).toFixed(0);
-      return `<tr class="${temSaldoAnterior||temSaldoSeguinte?'has-balance-markers':''}">
-        <td><span class="material-category-label">${escapeHtml(cat.nome)}</span></td>
-        <td><div class="material-amount${temSaldoAnterior||temSaldoSeguinte?'':' is-no-markers'}"><span class="material-quantity-group"><span class="material-balance-markers${umaPilha?' is-single':''}"><span class="badge badge-carryover material-balance-marker${temSaldoAnterior?'':' is-empty'}" title="Saldo mês anterior">${temSaldoAnterior?'+'+formatarQuantidade(cat.carryIn):'+'}</span><span class="badge badge-green badge-surplus material-balance-marker${temSaldoSeguinte?'':' is-empty'}" title="Saldo mês seguinte">${temSaldoSeguinte?'+'+formatarQuantidade(excedente):'+'}</span></span><span class="material-quantity"><span>${formatarQuantidade(cumprimento.quantidade)}</span><span>${escapeHtml(cat.unidade)}</span></span></span></div></td>
-        <td><div class="material-amount"><span class="material-quantity-group"><span class="material-quantity"><span>${cat.meta.toLocaleString('pt-BR')}</span><span>${escapeHtml(cat.unidade)}</span></span></span></div></td>
+      return `<tr>
+        <td>${escapeHtml(cat.nome)}</td>
+        <td class="material-markers-column">${temSaldoAnterior||temSaldoSeguinte?`<span class="material-balance-markers${umaPilha?' is-single':''}"><span class="badge badge-carryover material-balance-marker${temSaldoAnterior?'':' is-empty'}" title="Saldo mês anterior">${temSaldoAnterior?'+'+formatarQuantidade(cat.carryIn):'+'}</span><span class="badge badge-green badge-surplus material-balance-marker${temSaldoSeguinte?'':' is-empty'}" title="Saldo mês seguinte">${temSaldoSeguinte?'+'+formatarQuantidade(excedente):'+'}</span></span>`:''}</td>
+        <td><span class="material-quantity"><span>${formatarQuantidade(cumprimento.quantidade)}</span><span>${escapeHtml(cat.unidade)}</span></span></td>
+        <td><span class="material-quantity"><span>${cat.meta.toLocaleString('pt-BR')}</span><span>${escapeHtml(cat.unidade)}</span></span></td>
         <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
     }).join('')}</tbody></table>`;
