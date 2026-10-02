@@ -1521,10 +1521,10 @@ function abrirDetalhesRankingPublico(indice){
   const categorias=item.detalhes;
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(item.nome)} — ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note" style="margin-top:-6px;">A pontuação que define as posições é a média do cumprimento, limitada a 100% por categoria. O percentual exibido inclui os excedentes e pode passar de 100%.</p>
+    <p class="small-note" style="margin-top:-6px;">Como é calculada a pontuação: a posição no ranking é definida pela média do percentual de cumprimento das 6 categorias. Para o cálculo da média, cada categoria é limitada a 100%, evitando que resultados acima da meta compensem categorias abaixo dela.</p>
     <div class="table-wrap public-ranking-table">${renderTabelaDetalhesMateriais(categorias)}
     </div>
-    <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
+    <p class="small-note" style="margin-top:12px;">Sobre os valores: o percentual de cumprimento mostra o resultado real de cada categoria e pode ultrapassar 100% quando a meta é superada. Os indicadores ao lado das categorias representam saldos transferidos de meses anteriores ou para o mês seguinte.</p>
     <p class="small-note material-balance-legend"><span class="material-balance-legend-item"><span class="material-balance-swatch previous" aria-hidden="true"></span>Saldo mês anterior</span><span class="material-balance-legend-item"><span class="material-balance-swatch next" aria-hidden="true"></span>Saldo mês seguinte</span></p>
   `, true, 'public-details');
 }
