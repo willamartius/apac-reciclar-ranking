@@ -79,8 +79,8 @@
 
   function calcularSaldoMensal(creditos,carryIn,meta){
     if([creditos,carryIn,meta].some(function(valor){return typeof valor!=='number'||!Number.isFinite(valor);})
-      || creditos<0 || carryIn<0 || meta<0){
-      throw new TypeError('Créditos, saldo transportado e meta precisam ser números válidos e não negativos.');
+      || carryIn<0 || meta<0 || creditos+carryIn<0){
+      throw new TypeError('O saldo disponível, o saldo transportado e a meta precisam ser números válidos e não negativos.');
     }
     var totalDisponivel=creditos+carryIn;
     return {
