@@ -487,6 +487,7 @@ const GOOGLE_DRIVE_BACKUP_LIMIT = 10;
 const GOOGLE_DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_DRIVE_SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
 let GOOGLE_DRIVE_TOKEN_CACHE = null;
+const GOOGLE_DRIVE_TOKEN_SESSION_PREFIX = 'reciclar-apac-drive-token:';
 
 let FIREBASE_DB = null;
 let FIREBASE_AUTH = null;
@@ -3782,6 +3783,55 @@ function solicitarTokenGoogleDrive(prompt=''){
     cliente.requestAccessToken(prompt?{prompt}:{});
   });
 }
+function chaveTokenGoogleDrive(uid,googleSub){
+  return `${GOOGLE_DRIVE_TOKEN_SESSION_PREFIX}${encodeURIComponent(uid)}:${encodeURIComponent(googleSub)}`;
+}
+function lerTokenGoogleDriveSessao(uid,googleSub){
+  try{
+    const serializado=sessionStorage.getItem(chaveTokenGoogleDrive(uid,googleSub));
+    if(!serializado) return null;
+    const cache=JSON.parse(serializado);
+    if(!cache || typeof cache.accessToken!=='string' || !cache.accessToken
+      || cache.uid!==uid || cache.googleSub!==googleSub
+      || !Number.isFinite(cache.expiresAt) || cache.expiresAt<=Date.now()+60000){
+      sessionStorage.removeItem(chaveTokenGoogleDrive(uid,googleSub));
+      return null;
+    }
+    return cache;
+  }catch(erro){
+    console.warn('Não foi possível ler o token temporário do Google Drive desta sessão.',erro);
+    return null;
+  }
+}
+function guardarTokenGoogleDriveSessao(cache){
+  GOOGLE_DRIVE_TOKEN_CACHE=cache;
+  try{
+    sessionStorage.setItem(chaveTokenGoogleDrive(cache.uid,cache.googleSub),JSON.stringify(cache));
+  }catch(erro){
+    console.warn('Não foi possível guardar o token temporário do Google Drive nesta sessão.',erro);
+  }
+}
+function limparTokenGoogleDriveSessao(uid,googleSub){
+  if(!uid){
+    GOOGLE_DRIVE_TOKEN_CACHE=null;
+    return;
+  }
+  if(GOOGLE_DRIVE_TOKEN_CACHE && GOOGLE_DRIVE_TOKEN_CACHE.uid===uid
+    && (!googleSub || GOOGLE_DRIVE_TOKEN_CACHE.googleSub===googleSub)){
+    GOOGLE_DRIVE_TOKEN_CACHE=null;
+  }
+  if(googleSub){
+    try{ sessionStorage.removeItem(chaveTokenGoogleDrive(uid,googleSub)); }
+    catch(erro){ console.warn('Não foi possível remover o token temporário do Google Drive desta sessão.',erro); }
+    return;
+  }
+  try{
+    const prefixo=`${GOOGLE_DRIVE_TOKEN_SESSION_PREFIX}${encodeURIComponent(uid)}:`;
+    Object.keys(sessionStorage).filter(chave=>chave.startsWith(prefixo)).forEach(chave=>sessionStorage.removeItem(chave));
+  }catch(erro){
+    console.warn('Não foi possível limpar os tokens temporários do Google Drive desta sessão.',erro);
+  }
+}
 async function buscarIdentidadeGoogleDrive(token){
   const resposta=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{
     headers:{Authorization:`Bearer ${token}`},
@@ -3797,8 +3847,12 @@ async function obterTokenVinculadoGoogleDrive(){
   if(!STATE.googleDriveLink) throw new Error('Vincule uma conta Google Drive antes de continuar.');
   const uid=STATE.authUser&&STATE.authUser.uid;
   const vinculo=STATE.googleDriveLink;
-  const cache=GOOGLE_DRIVE_TOKEN_CACHE;
+  let cache=GOOGLE_DRIVE_TOKEN_CACHE;
+  if(!cache || cache.uid!==uid || cache.googleSub!==vinculo.googleSub || cache.expiresAt<=Date.now()+60000){
+    cache=lerTokenGoogleDriveSessao(uid,vinculo.googleSub);
+  }
   if(cache && cache.uid===uid && cache.googleSub===vinculo.googleSub && cache.expiresAt>Date.now()+60000){
+    GOOGLE_DRIVE_TOKEN_CACHE=cache;
     return cache.accessToken;
   }
   const token=await solicitarTokenGoogleDrive();
@@ -3810,12 +3864,16 @@ async function obterTokenVinculadoGoogleDrive(){
   if(identidade.googleSub!==vinculo.googleSub){
     throw new Error(`A conta autorizada (${identidade.email}) não é a vinculada (${vinculo.email}). Desvincule a conta atual e vincule a conta Google desejada.`);
   }
-  GOOGLE_DRIVE_TOKEN_CACHE=token.expiresAt?{
-    uid,
-    googleSub:identidade.googleSub,
-    accessToken:token.accessToken,
-    expiresAt:token.expiresAt,
-  }:null;
+  if(token.expiresAt){
+    guardarTokenGoogleDriveSessao({
+      uid,
+      googleSub:identidade.googleSub,
+      accessToken:token.accessToken,
+      expiresAt:token.expiresAt,
+    });
+  }else{
+    GOOGLE_DRIVE_TOKEN_CACHE=null;
+  }
   return token.accessToken;
 }
 async function requisicaoGoogleDrive(token,url,opcoes={}){
@@ -3827,7 +3885,7 @@ async function requisicaoGoogleDrive(token,url,opcoes={}){
   const resultado=await resposta.json().catch(()=>({}));
   if(!resposta.ok){
     if(resposta.status===401 && GOOGLE_DRIVE_TOKEN_CACHE && GOOGLE_DRIVE_TOKEN_CACHE.accessToken===token){
-      GOOGLE_DRIVE_TOKEN_CACHE=null;
+      limparTokenGoogleDriveSessao(GOOGLE_DRIVE_TOKEN_CACHE.uid,GOOGLE_DRIVE_TOKEN_CACHE.googleSub);
     }
     const mensagem=resultado.error && resultado.error.message;
     throw new Error(mensagem||`A solicitação ao Google Drive falhou (HTTP ${resposta.status}).`);
@@ -3902,12 +3960,14 @@ async function conectarGoogleDrive(){
     await FIREBASE_DB.collection(GOOGLE_DRIVE_LINK_COLLECTION).doc(firebaseUid).set(vinculo);
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
     STATE.googleDriveLink=vinculo;
-    GOOGLE_DRIVE_TOKEN_CACHE=token.expiresAt?{
-      uid:firebaseUid,
-      googleSub:identidade.googleSub,
-      accessToken:token.accessToken,
-      expiresAt:token.expiresAt,
-    }:null;
+    if(token.expiresAt){
+      guardarTokenGoogleDriveSessao({
+        uid:firebaseUid,
+        googleSub:identidade.googleSub,
+        accessToken:token.accessToken,
+        expiresAt:token.expiresAt,
+      });
+    }
     STATE.googleDriveBackups=[];
     STATE.googleDriveBackupSelecionadoId='';
     STATE.googleDriveBackupsVisiveis=false;
@@ -3927,10 +3987,11 @@ async function desvincularGoogleDrive(){
   definirEstadoGoogleDrive({ocupado:true,status:'Removendo vínculo...',erro:''});
   renderApp();
   try{
+    const googleSub=STATE.googleDriveLink.googleSub;
     await FIREBASE_DB.collection(GOOGLE_DRIVE_LINK_COLLECTION).doc(firebaseUid).delete();
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
     STATE.googleDriveLink=null;
-    GOOGLE_DRIVE_TOKEN_CACHE=null;
+    limparTokenGoogleDriveSessao(firebaseUid,googleSub);
     STATE.googleDriveBackups=[];
     STATE.googleDriveBackupSelecionadoId='';
     STATE.googleDriveBackupsVisiveis=false;
@@ -4075,7 +4136,7 @@ async function restaurarBackupGoogleDrive(){
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
     if(!resposta.ok){
       if(resposta.status===401 && GOOGLE_DRIVE_TOKEN_CACHE && GOOGLE_DRIVE_TOKEN_CACHE.accessToken===token){
-        GOOGLE_DRIVE_TOKEN_CACHE=null;
+        limparTokenGoogleDriveSessao(GOOGLE_DRIVE_TOKEN_CACHE.uid,GOOGLE_DRIVE_TOKEN_CACHE.googleSub);
       }
       const detalhe=await resposta.json().catch(()=>({}));
       throw new Error(detalhe.error&&detalhe.error.message||`Não foi possível baixar o backup (HTTP ${resposta.status}).`);
@@ -4295,11 +4356,15 @@ function finalizarCarregamento(){
   if(STATE.view==='config') renderTabelaCampanhas();
 }
 async function processarSessaoFirebase(user){
+  const uidAnterior=STATE.authUser&&STATE.authUser.uid;
+  if(uidAnterior && (!user || user.uid!==uidAnterior)) limparTokenGoogleDriveSessao(uidAnterior);
   STATE.authUser=user;
   STATE.authError='';
   STATE.authLoadFailed=false;
   STATE.erroRankingPublico='';
-  GOOGLE_DRIVE_TOKEN_CACHE=null;
+  if(GOOGLE_DRIVE_TOKEN_CACHE && (!user || GOOGLE_DRIVE_TOKEN_CACHE.uid!==user.uid)){
+    GOOGLE_DRIVE_TOKEN_CACHE=null;
+  }
   STATE.googleDriveLink=null;
   STATE.googleDriveLinkError='';
   STATE.googleDriveBusy=false;
