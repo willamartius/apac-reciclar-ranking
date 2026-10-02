@@ -265,10 +265,12 @@ select{text-overflow:ellipsis;}
 .material-detail-table th:nth-child(2){width:25%;}
 .material-detail-table th:nth-child(3){width:21%;}
 .material-detail-table th:nth-child(4){width:26%;}
-.material-amount{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap;}
+.material-amount{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;}
+.material-amount>span:first-child{font-size:14px;font-weight:800;}
+.material-carryover-badges{display:inline-flex;flex-direction:column;align-items:center;gap:2px;}
 .material-unit{display:block;margin-top:2px;font-size:10px;color:var(--text-muted);}
-.material-carryover{display:block;margin-top:3px;font-size:9px;color:#2876A8;font-weight:700;}
 .badge-surplus{padding:2px 5px;font-size:10px;white-space:nowrap;}
+.badge-carryover{background:#FFF1E5;color:#B45309;padding:2px 5px;font-size:10px;white-space:nowrap;}
 #tcInfoKits{align-items:flex-start;}
 #tcInfoKits>div{min-width:0;overflow-wrap:anywhere;}
 #tcInfoKits b{display:inline;margin-bottom:0;}
@@ -277,9 +279,12 @@ select{text-overflow:ellipsis;}
   .public-ranking-card{padding:14px;width:100%;}
   .public-ranking-filters{grid-template-columns:1fr;gap:0;}
   .public-ranking-card .table-wrap{width:100%;max-width:100%;margin-inline:auto;}
+  .podium-card{height:116px;box-sizing:border-box;}
+  .podium-1{height:130px;}
   .material-detail-table{font-size:11px;}
   .material-detail-table th{font-size:9px;letter-spacing:0;padding:7px 3px;}
   .material-detail-table td{padding:8px 3px;overflow-wrap:anywhere;}
+  .material-amount>span:first-child{font-size:13px;}
   .material-unit{font-size:9px;}
   .badge-surplus{font-size:9px;padding:2px 4px;}
   .modal-overlay-public-details{align-items:center;padding:10px;}
@@ -368,12 +373,12 @@ select{text-overflow:ellipsis;}
 
 /* ---------- CONSTANTES DO REGULAMENTO ---------- */
 const CATEGORIAS = [
-  { key:'latinhas',  label:'Latinhas (refrigerante, cerveja, energético)', metaDefault:150, unidade:'unidades', aceitaKg:true, unidadesPorKg:75 },
-  { key:'pet',       label:'Garrafas PET',                                  metaDefault:250, unidade:'unidades' },
-  { key:'embalagens',label:'Embalagens plásticas (arroz, açúcar, leite, sal, fardos)', metaDefault:100, unidade:'unidades' },
-  { key:'papelao',   label:'Caixas de papelão',                             metaDefault:100, unidade:'unidades' },
-  { key:'latas',     label:'Latas em geral (sardinha, leite, kitut, feijoada)', metaDefault:80, unidade:'unidades' },
-  { key:'ovos',      label:'Cartelas de ovos (30 unidades)',                metaDefault:25,  unidade:'cartelas' },
+  { key:'latinhas',  label:'Latinhas (refrigerante, cerveja, energético)', metaDefault:150, unidade:'Un.', aceitaKg:true, unidadesPorKg:75 },
+  { key:'pet',       label:'Garrafas PET',                                  metaDefault:250, unidade:'Un.' },
+  { key:'embalagens',label:'Embalagens plásticas (arroz, açúcar, leite, sal, fardos)', metaDefault:100, unidade:'Un.' },
+  { key:'papelao',   label:'Caixas de papelão',                             metaDefault:100, unidade:'Un.' },
+  { key:'latas',     label:'Latas em geral (sardinha, leite, kitut, feijoada)', metaDefault:80, unidade:'Un.' },
+  { key:'ovos',      label:'Cartelas de ovos (30 unidades)',                metaDefault:25,  unidade:'Un.' },
 ];
 const TIPO_OUTROS = 'outros';
 const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -1491,10 +1496,11 @@ function abrirDetalhesRankingPublico(indice){
   const categorias=item.detalhes;
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(item.nome)} — ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note" style="margin-top:-6px;">A pontuação é a média do cumprimento das categorias, limitada a 100% por categoria.</p>
+    <p class="small-note" style="margin-top:-6px;">A pontuação que define as posições é a média do cumprimento, limitada a 100% por categoria. O percentual exibido inclui os excedentes e pode passar de 100%.</p>
     <div class="table-wrap public-ranking-table">${renderTabelaDetalhesMateriais(categorias)}
     </div>
-    <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%).</p>
+    <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
+    <p class="small-note" style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">+ Un.</span> Mês anterior</span><span><span class="badge badge-green badge-surplus">+ Un.</span> Mês seguinte</span></p>
   `, true, 'public-details');
 }
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
@@ -1508,7 +1514,7 @@ function renderTabelaDetalhesMateriais(categorias){
       const percentualExibido=Math.floor(cumprimento.percentual).toFixed(0);
       return `<tr>
         <td>${escapeHtml(cat.nome)}</td>
-        <td><div class="material-amount"><span>${formatarQuantidade(cumprimento.quantidade)}</span>${excedente>0?`<span class="badge badge-green badge-surplus">+${formatarQuantidade(excedente)}</span>`:''}</div><span class="material-unit">${escapeHtml(cat.unidade)}</span>${cat.carryIn>0?`<span class="material-carryover">+${formatarQuantidade(cat.carryIn)} do mês anterior</span>`:''}</td>
+        <td><div class="material-amount"><span>${formatarQuantidade(cumprimento.quantidade)}</span>${cat.carryIn>0||excedente>0?`<span class="material-carryover-badges">${excedente>0?`<span class="badge badge-green badge-surplus" title="Excedente levado para o mês seguinte">+${formatarQuantidade(excedente)}</span>`:''}${cat.carryIn>0?`<span class="badge badge-carryover" title="Saldo vindo do mês anterior">+${formatarQuantidade(cat.carryIn)}</span>`:''}</span>`:''}</div><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
         <td><span>${cat.meta.toLocaleString('pt-BR')}</span><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
         <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
@@ -2940,7 +2946,8 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
       meta:getMetasDoMes(campanhaId, mes,ano)[cat.key]||cat.metaDefault,
       percentual:r.percentuais[cat.key]||0,
     })))}</div>
-    <p class="small-note" style="margin-top:12px;">Pontuação geral: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%).</p>
+    <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
+    <p class="small-note" style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">+ Un.</span> Mês anterior</span><span><span class="badge badge-green badge-surplus">+ Un.</span> Mês seguinte</span></p>
   `, true);
 }
 window.abrirDetalhesColaborador = abrirDetalhesColaborador;
