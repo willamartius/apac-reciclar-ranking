@@ -52,7 +52,7 @@ As regras do Firestore protegem as requisições do app; operações feitas pelo
 
 As credenciais e os papéis não fazem parte dos novos backups JSON. Arquivos de backup exportados por versões antigas podem conter a senha administrativa antiga; proteja-os ou apague-os após confirmar a migração. Senhas são redefinidas por e-mail pelo Firebase Authentication.
 
-Os administradores também podem vincular individualmente uma conta Google para criar e restaurar backups no Drive. Cada conta mantém uma pasta privada `Reciclar APAC Backups` no próprio Google Drive; após cada envio, o app remove arquivos excedentes e conserva os 10 mais recentes. O backup continua manual, e a exportação/importação local permanece disponível. O app não guarda tokens de acesso do Google; cada operação solicita uma autorização temporária e confere que a conta Google corresponde ao vínculo salvo para o UID do administrador.
+Os administradores também podem vincular individualmente uma conta Google para criar e restaurar backups no Drive. Cada conta mantém uma pasta privada `Reciclar APAC Backups` no próprio Google Drive; após cada envio, o app remove arquivos excedentes e conserva os 10 mais recentes. O backup continua manual, e a exportação/importação local permanece disponível. O app não persiste tokens do Google: reutiliza em memória o token temporário até perto de sua expiração, validando que a conta corresponde ao vínculo salvo para o UID do administrador. Ao recarregar a página, trocar a sessão ou expirar o token, o Google pode solicitar nova autorização.
 
 #### Configurar a integração com Google Drive
 

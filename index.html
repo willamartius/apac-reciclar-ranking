@@ -442,6 +442,7 @@ let STATE = {
   isOperator: false,
   authUser: null,
   authError: '',
+  authLoadFailed: false,
   authNotice: '',
   loginCarregando: false,
   authEmail: '',
@@ -485,6 +486,7 @@ const GOOGLE_DRIVE_BACKUP_FOLDER_NAME = 'Reciclar APAC Backups';
 const GOOGLE_DRIVE_BACKUP_LIMIT = 10;
 const GOOGLE_DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_DRIVE_SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
+let GOOGLE_DRIVE_TOKEN_CACHE = null;
 
 let FIREBASE_DB = null;
 let FIREBASE_AUTH = null;
@@ -1216,15 +1218,22 @@ function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
     const chaveAnterior = anterior? chaveMA(anterior.mes,anterior.ano) : null;
     STATE.colaboradores.forEach(c=>{
       categorias.forEach(cat=>{
-        let creditos = ReciclarRankingLogic.somarEntregasValidadas(
+        const creditosEntregas = ReciclarRankingLogic.somarEntregasValidadas(
           STATE.entregas,campanhaId,mes,ano,c.id,cat.key,normalizarQuantidadeUnidades
         );
-        transferencias.filter(t=>t.colaboradorDestinoId===c.id && t.categoriaDestino===cat.key).forEach(t=> creditos += t.quantidade);
-        transferencias.filter(t=>t.colaboradorOrigemId===c.id && t.categoriaOrigem===cat.key).forEach(t=> creditos -= t.quantidade);
-        trocas.filter(t=>t.colaboradorId===c.id && t.kitConsumido && t.kitConsumido[cat.key]).forEach(t=> creditos -= t.kitConsumido[cat.key]);
+        const recebidos = transferencias.filter(t=>t.colaboradorDestinoId===c.id && t.categoriaDestino===cat.key).reduce((total,t)=>total+t.quantidade,0);
+        const enviados = transferencias.filter(t=>t.colaboradorOrigemId===c.id && t.categoriaOrigem===cat.key).reduce((total,t)=>total+t.quantidade,0);
+        const consumidosEmTrocas = trocas.filter(t=>t.colaboradorId===c.id && t.kitConsumido && t.kitConsumido[cat.key]).reduce((total,t)=>total+t.kitConsumido[cat.key],0);
+        const creditos = creditosEntregas+recebidos-enviados-consumidosEmTrocas;
         const carryIn = chaveAnterior && saldos[c.id][cat.key][chaveAnterior] ? saldos[c.id][cat.key][chaveAnterior].leftover : 0;
         const meta = metas[cat.key] || cat.metaDefault;
-        const {totalDisponivel,leftover} = ReciclarRankingLogic.calcularSaldoMensal(creditos,carryIn,meta);
+        let saldoMensal;
+        try{
+          saldoMensal=ReciclarRankingLogic.calcularSaldoMensal(creditos,carryIn,meta);
+        }catch(erro){
+          throw new Error(`Saldo inválido para ${c.nome} / ${cat.label||cat.key} em ${String(mes).padStart(2,'0')}/${ano}. Entregas: ${creditosEntregas}; transferências recebidas: ${recebidos}; transferências enviadas: ${enviados}; consumo em trocas: ${consumidosEmTrocas}; saldo anterior: ${carryIn}; meta: ${meta}. ${erro.message}`);
+        }
+        const {totalDisponivel,leftover}=saldoMensal;
         saldos[c.id][cat.key][chave] = { creditos, carryIn, totalDisponivel, leftover, meta };
       });
     });
@@ -1382,9 +1391,11 @@ function renderTelaAutenticacao(){
   }
   if(STATE.authUser){
     return `<main class="auth-screen"><section class="card auth-card">
-      <h1>Acesso não autorizado</h1>
-      <p>Esta conta (${escapeHtml(STATE.authUser.email||'sem e-mail')}) ainda não tem um perfil de acesso.</p>
-      <p class="small-note">Peça ao administrador para atribuir o perfil no Firebase e entre novamente.</p>
+      <h1>${STATE.authLoadFailed?'Falha ao carregar o acesso':'Acesso não autorizado'}</h1>
+      <p>${STATE.authLoadFailed
+        ?`Não foi possível carregar os dados desta sessão (${escapeHtml(STATE.authUser.email||'sem e-mail')}).`
+        :`Esta conta (${escapeHtml(STATE.authUser.email||'sem e-mail')}) ainda não tem um perfil de acesso.`}</p>
+      ${STATE.authLoadFailed?'':`<p class="small-note">Peça ao administrador para atribuir o perfil no Firebase e entre novamente.</p>`}
       ${STATE.authError? `<p class="auth-error">${escapeHtml(STATE.authError)}</p>`:''}
       <button class="btn btn-outline btn-block" onclick="sairAdmin()">Sair</button>
       <button class="btn btn-ghost btn-block" onclick="voltarAoRankingPublico()">Ver ranking público</button>
@@ -3760,7 +3771,11 @@ function solicitarTokenGoogleDrive(prompt=''){
           reject(new Error(resposta.error_description||resposta.error||'Não foi possível autorizar o acesso ao Google Drive.'));
           return;
         }
-        resolve(resposta.access_token);
+        const expiresIn=Number(resposta.expires_in);
+        resolve({
+          accessToken:resposta.access_token,
+          expiresAt:Number.isFinite(expiresIn)&&expiresIn>0?Date.now()+expiresIn*1000:0,
+        });
       },
       error_callback:erro=>reject(new Error(erro.message||'A janela de autorização Google não pôde ser aberta.')),
     });
@@ -3782,8 +3797,12 @@ async function obterTokenVinculadoGoogleDrive(){
   if(!STATE.googleDriveLink) throw new Error('Vincule uma conta Google Drive antes de continuar.');
   const uid=STATE.authUser&&STATE.authUser.uid;
   const vinculo=STATE.googleDriveLink;
+  const cache=GOOGLE_DRIVE_TOKEN_CACHE;
+  if(cache && cache.uid===uid && cache.googleSub===vinculo.googleSub && cache.expiresAt>Date.now()+60000){
+    return cache.accessToken;
+  }
   const token=await solicitarTokenGoogleDrive();
-  const identidade=await buscarIdentidadeGoogleDrive(token);
+  const identidade=await buscarIdentidadeGoogleDrive(token.accessToken);
   if(!STATE.isAdmin || !STATE.authUser || STATE.authUser.uid!==uid
     || !STATE.googleDriveLink || STATE.googleDriveLink.googleSub!==vinculo.googleSub){
     throw new Error('A sessão administrativa ou o vínculo Google mudou durante a autorização. Tente novamente.');
@@ -3791,7 +3810,13 @@ async function obterTokenVinculadoGoogleDrive(){
   if(identidade.googleSub!==vinculo.googleSub){
     throw new Error(`A conta autorizada (${identidade.email}) não é a vinculada (${vinculo.email}). Desvincule a conta atual e vincule a conta Google desejada.`);
   }
-  return token;
+  GOOGLE_DRIVE_TOKEN_CACHE=token.expiresAt?{
+    uid,
+    googleSub:identidade.googleSub,
+    accessToken:token.accessToken,
+    expiresAt:token.expiresAt,
+  }:null;
+  return token.accessToken;
 }
 async function requisicaoGoogleDrive(token,url,opcoes={}){
   const resposta=await fetch(url,{
@@ -3801,6 +3826,9 @@ async function requisicaoGoogleDrive(token,url,opcoes={}){
   if(resposta.status===204) return null;
   const resultado=await resposta.json().catch(()=>({}));
   if(!resposta.ok){
+    if(resposta.status===401 && GOOGLE_DRIVE_TOKEN_CACHE && GOOGLE_DRIVE_TOKEN_CACHE.accessToken===token){
+      GOOGLE_DRIVE_TOKEN_CACHE=null;
+    }
     const mensagem=resultado.error && resultado.error.message;
     throw new Error(mensagem||`A solicitação ao Google Drive falhou (HTTP ${resposta.status}).`);
   }
@@ -3866,7 +3894,7 @@ async function conectarGoogleDrive(){
   renderApp();
   try{
     const token=await tokenPromise;
-    const identidade=await buscarIdentidadeGoogleDrive(token);
+    const identidade=await buscarIdentidadeGoogleDrive(token.accessToken);
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)){
       throw new Error('A sessão administrativa mudou durante a autorização. Entre novamente e tente vincular a conta.');
     }
@@ -3874,6 +3902,12 @@ async function conectarGoogleDrive(){
     await FIREBASE_DB.collection(GOOGLE_DRIVE_LINK_COLLECTION).doc(firebaseUid).set(vinculo);
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
     STATE.googleDriveLink=vinculo;
+    GOOGLE_DRIVE_TOKEN_CACHE=token.expiresAt?{
+      uid:firebaseUid,
+      googleSub:identidade.googleSub,
+      accessToken:token.accessToken,
+      expiresAt:token.expiresAt,
+    }:null;
     STATE.googleDriveBackups=[];
     STATE.googleDriveBackupSelecionadoId='';
     STATE.googleDriveBackupsVisiveis=false;
@@ -3896,6 +3930,7 @@ async function desvincularGoogleDrive(){
     await FIREBASE_DB.collection(GOOGLE_DRIVE_LINK_COLLECTION).doc(firebaseUid).delete();
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
     STATE.googleDriveLink=null;
+    GOOGLE_DRIVE_TOKEN_CACHE=null;
     STATE.googleDriveBackups=[];
     STATE.googleDriveBackupSelecionadoId='';
     STATE.googleDriveBackupsVisiveis=false;
@@ -4039,6 +4074,9 @@ async function restaurarBackupGoogleDrive(){
     });
     if(!sessaoAdminGoogleDriveAtiva(firebaseUid)) return;
     if(!resposta.ok){
+      if(resposta.status===401 && GOOGLE_DRIVE_TOKEN_CACHE && GOOGLE_DRIVE_TOKEN_CACHE.accessToken===token){
+        GOOGLE_DRIVE_TOKEN_CACHE=null;
+      }
       const detalhe=await resposta.json().catch(()=>({}));
       throw new Error(detalhe.error&&detalhe.error.message||`Não foi possível baixar o backup (HTTP ${resposta.status}).`);
     }
@@ -4236,6 +4274,7 @@ async function iniciar(){
         console.error('Erro ao carregar o acesso do usuário',erro);
         STATE.loginCarregando=false;
         STATE.isAdmin=false; STATE.isOperator=false;
+        STATE.authLoadFailed=true;
         STATE.authError=erro && erro.message ? erro.message : 'Não foi possível validar o acesso.';
         finalizarCarregamento();
       });
@@ -4258,7 +4297,9 @@ function finalizarCarregamento(){
 async function processarSessaoFirebase(user){
   STATE.authUser=user;
   STATE.authError='';
+  STATE.authLoadFailed=false;
   STATE.erroRankingPublico='';
+  GOOGLE_DRIVE_TOKEN_CACHE=null;
   STATE.googleDriveLink=null;
   STATE.googleDriveLinkError='';
   STATE.googleDriveBusy=false;
