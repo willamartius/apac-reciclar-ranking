@@ -269,6 +269,9 @@ select{text-overflow:ellipsis;}
 .material-detail-table td:nth-child(n+2){text-align:center;}
 .material-detail-table td:first-child{overflow-wrap:anywhere;word-break:normal;}
 .material-amount{display:flex;width:100%;justify-content:center;min-height:24px;align-items:center;gap:4px;white-space:nowrap;}
+.material-amount.is-no-markers .material-balance-markers{display:none;}
+.material-detail-table td:nth-child(2) .material-amount.is-no-markers .material-quantity,
+.material-detail-table td:nth-child(3) .material-quantity{width:auto;grid-template-columns:auto auto;justify-content:center;}
 .material-detail-table td:nth-child(3) .material-amount{gap:3px;}
 .material-quantity{display:grid;width:78px;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:3px;white-space:nowrap;font-size:11.5px;font-weight:400;}
 .material-quantity>span:first-child{text-align:right;}
@@ -1530,7 +1533,7 @@ function renderTabelaDetalhesMateriais(categorias){
       const percentualExibido=Math.floor(cumprimento.percentual).toFixed(0);
       return `<tr>
         <td>${escapeHtml(cat.nome)}</td>
-        <td><div class="material-amount"><span class="material-balance-markers${umaPilha?' is-single':''}"><span class="badge badge-carryover material-balance-marker${temSaldoAnterior?'':' is-empty'}" title="Saldo mês anterior">${temSaldoAnterior?'+'+formatarQuantidade(cat.carryIn):'+'}</span><span class="badge badge-green badge-surplus material-balance-marker${temSaldoSeguinte?'':' is-empty'}" title="Saldo mês seguinte">${temSaldoSeguinte?'+'+formatarQuantidade(excedente):'+'}</span></span><span class="material-quantity"><span>${formatarQuantidade(cumprimento.quantidade)}</span><span>${escapeHtml(cat.unidade)}</span></span></div></td>
+        <td><div class="material-amount${temSaldoAnterior||temSaldoSeguinte?'':' is-no-markers'}"><span class="material-balance-markers${umaPilha?' is-single':''}"><span class="badge badge-carryover material-balance-marker${temSaldoAnterior?'':' is-empty'}" title="Saldo mês anterior">${temSaldoAnterior?'+'+formatarQuantidade(cat.carryIn):'+'}</span><span class="badge badge-green badge-surplus material-balance-marker${temSaldoSeguinte?'':' is-empty'}" title="Saldo mês seguinte">${temSaldoSeguinte?'+'+formatarQuantidade(excedente):'+'}</span></span><span class="material-quantity"><span>${formatarQuantidade(cumprimento.quantidade)}</span><span>${escapeHtml(cat.unidade)}</span></span></div></td>
         <td><div class="material-amount"><span class="material-quantity"><span>${cat.meta.toLocaleString('pt-BR')}</span><span>${escapeHtml(cat.unidade)}</span></span></div></td>
         <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
