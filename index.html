@@ -1499,7 +1499,6 @@ function abrirDetalhesRankingPublico(indice){
     <div class="table-wrap public-ranking-table">${renderTabelaDetalhesMateriais(categorias)}
     </div>
     <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
-    <p class="small-note" style="display:flex;justify-content:flex-start;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">Un. +1</span> Saldo anterior</span><span><span class="badge badge-green badge-surplus">Un. +1</span> Saldo seguinte</span></p>
   `, true, 'public-details');
 }
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
@@ -1513,8 +1512,8 @@ function renderTabelaDetalhesMateriais(categorias){
       const percentualExibido=Math.floor(cumprimento.percentual).toFixed(0);
       return `<tr>
         <td>${escapeHtml(cat.nome)}</td>
-        <td><div class="material-amount"><span class="material-quantity"><span>${escapeHtml(cat.unidade)}</span><span>${formatarQuantidade(cumprimento.quantidade)}</span></span>${cat.carryIn>0||excedente>0?`<span class="material-carryover-badges">${excedente>0?`<span class="badge badge-green badge-surplus" title="Saldo seguinte">${escapeHtml(cat.unidade)} +${formatarQuantidade(excedente)}</span>`:''}${cat.carryIn>0?`<span class="badge badge-carryover" title="Saldo anterior">${escapeHtml(cat.unidade)} +${formatarQuantidade(cat.carryIn)}</span>`:''}</span>`:''}</div></td>
-        <td><div class="material-amount"><span class="material-quantity"><span>${escapeHtml(cat.unidade)}</span><span>${cat.meta.toLocaleString('pt-BR')}</span></span></div></td>
+        <td><div class="material-amount"><span class="material-quantity"><span>${formatarQuantidade(cumprimento.quantidade)}</span><span>${escapeHtml(cat.unidade)}</span></span>${cat.carryIn>0||excedente>0?`<span class="material-carryover-badges">${excedente>0?`<span class="badge badge-green badge-surplus" title="Saldo seguinte">+${formatarQuantidade(excedente)}</span>`:''}${cat.carryIn>0?`<span class="badge badge-carryover" title="Saldo anterior">+${formatarQuantidade(cat.carryIn)}</span>`:''}</span>`:''}</div></td>
+        <td><div class="material-amount"><span class="material-quantity"><span>${cat.meta.toLocaleString('pt-BR')}</span><span>${escapeHtml(cat.unidade)}</span></span></div></td>
         <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
     }).join('')}</tbody></table>`;
@@ -2946,7 +2945,6 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
       percentual:r.percentuais[cat.key]||0,
     })))}</div>
     <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
-    <p class="small-note" style="display:flex;justify-content:flex-start;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">Un. +1</span> Saldo anterior</span><span><span class="badge badge-green badge-surplus">Un. +1</span> Saldo seguinte</span></p>
   `, true);
 }
 window.abrirDetalhesColaborador = abrirDetalhesColaborador;
