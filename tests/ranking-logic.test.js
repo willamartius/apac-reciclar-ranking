@@ -121,8 +121,14 @@ test('public summary uses available category quantities including surplus', () =
 test('surplus carries into the next month and remains available without a new delivery', () => {
   const setembro = calcularSaldoMensal(100, 0, 80);
   const outubro = calcularSaldoMensal(15, setembro.leftover, 80);
+  const outubroComTransferenciaMaiorQueEntregas = calcularSaldoMensal(6 - 144, 280, 150);
   assert.deepEqual(setembro, {totalDisponivel: 100, leftover: 20});
   assert.deepEqual(outubro, {totalDisponivel: 35, leftover: 0});
+  assert.deepEqual(outubroComTransferenciaMaiorQueEntregas, {totalDisponivel: 142, leftover: 0});
+  assert.throws(
+    () => calcularSaldoMensal(6 - 300, 280, 150),
+    /saldo disponível.*não negativos/
+  );
   assert.equal(deveIncluirNoRankingPublico({
     primeiraEntrega: null,
     pontuacao: 43.75,
