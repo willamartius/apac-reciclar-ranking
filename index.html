@@ -265,13 +265,18 @@ select{text-overflow:ellipsis;}
 .material-detail-table th:nth-child(2){width:25%;}
 .material-detail-table th:nth-child(3){width:21%;}
 .material-detail-table th:nth-child(4){width:26%;}
-.material-amount{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:nowrap;min-height:24px;}
+.material-amount{display:flex;min-height:24px;flex-direction:column;align-items:center;justify-content:center;gap:2px;}
 .material-quantity{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap;font-size:11.5px;font-weight:400;}
 .material-detail-table td:nth-child(4){font-size:11.5px;}
-.material-carryover-badges{display:inline-flex;width:58px;flex:0 0 58px;flex-direction:column;align-items:center;gap:2px;}
-.material-carryover-badges .badge{display:inline-flex;width:100%;justify-content:center;}
+.material-carryover-badges{display:flex;min-height:15px;align-items:center;justify-content:center;gap:3px;}
+.material-carryover-badges .badge{display:inline-flex;width:30px;height:15px;align-items:center;justify-content:center;padding:0;font-size:9px;line-height:1;white-space:nowrap;}
 .badge-surplus{padding:2px 5px;font-size:10px;white-space:nowrap;}
 .badge-carryover{background:#FFF1E5;color:#B45309;padding:2px 5px;font-size:10px;white-space:nowrap;}
+.material-balance-legend{display:flex;justify-content:flex-start;gap:14px;flex-wrap:wrap;margin-top:8px;}
+.material-balance-legend-item{display:inline-flex;align-items:center;gap:5px;}
+.material-balance-swatch{display:inline-block;width:30px;height:15px;border-radius:20px;}
+.material-balance-swatch.previous{background:#FFF1E5;}
+.material-balance-swatch.next{background:var(--verde-100);}
 #tcInfoKits{align-items:flex-start;}
 #tcInfoKits>div{min-width:0;overflow-wrap:anywhere;}
 #tcInfoKits b{display:inline;margin-bottom:0;}
@@ -1499,6 +1504,7 @@ function abrirDetalhesRankingPublico(indice){
     <div class="table-wrap public-ranking-table">${renderTabelaDetalhesMateriais(categorias)}
     </div>
     <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
+    <p class="small-note material-balance-legend"><span class="material-balance-legend-item"><span class="material-balance-swatch previous" aria-hidden="true"></span>Saldo mês anterior</span><span class="material-balance-legend-item"><span class="material-balance-swatch next" aria-hidden="true"></span>Saldo mês seguinte</span></p>
   `, true, 'public-details');
 }
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
@@ -1512,7 +1518,7 @@ function renderTabelaDetalhesMateriais(categorias){
       const percentualExibido=Math.floor(cumprimento.percentual).toFixed(0);
       return `<tr>
         <td>${escapeHtml(cat.nome)}</td>
-        <td><div class="material-amount"><span class="material-quantity"><span>${formatarQuantidade(cumprimento.quantidade)}</span><span>${escapeHtml(cat.unidade)}</span></span>${cat.carryIn>0||excedente>0?`<span class="material-carryover-badges">${excedente>0?`<span class="badge badge-green badge-surplus" title="Saldo seguinte">+${formatarQuantidade(excedente)}</span>`:''}${cat.carryIn>0?`<span class="badge badge-carryover" title="Saldo anterior">+${formatarQuantidade(cat.carryIn)}</span>`:''}</span>`:''}</div></td>
+        <td><div class="material-amount"><span class="material-quantity"><span>${formatarQuantidade(cumprimento.quantidade)}</span><span>${escapeHtml(cat.unidade)}</span></span><span class="material-carryover-badges">${excedente>0?`<span class="badge badge-green badge-surplus" title="Saldo mês seguinte">+${formatarQuantidade(excedente)}</span>`:''}${cat.carryIn>0?`<span class="badge badge-carryover" title="Saldo mês anterior">+${formatarQuantidade(cat.carryIn)}</span>`:''}</span></div></td>
         <td><div class="material-amount"><span class="material-quantity"><span>${cat.meta.toLocaleString('pt-BR')}</span><span>${escapeHtml(cat.unidade)}</span></span></div></td>
         <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
@@ -2945,6 +2951,7 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
       percentual:r.percentuais[cat.key]||0,
     })))}</div>
     <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
+    <p class="small-note material-balance-legend"><span class="material-balance-legend-item"><span class="material-balance-swatch previous" aria-hidden="true"></span>Saldo mês anterior</span><span class="material-balance-legend-item"><span class="material-balance-swatch next" aria-hidden="true"></span>Saldo mês seguinte</span></p>
   `, true);
 }
 window.abrirDetalhesColaborador = abrirDetalhesColaborador;
