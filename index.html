@@ -265,10 +265,11 @@ select{text-overflow:ellipsis;}
 .material-detail-table th:nth-child(2){width:25%;}
 .material-detail-table th:nth-child(3){width:21%;}
 .material-detail-table th:nth-child(4){width:26%;}
-.material-amount{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:wrap;}
-.material-amount>span:first-child{font-size:14px;font-weight:800;}
-.material-carryover-badges{display:inline-flex;flex-direction:column;align-items:center;gap:2px;}
-.material-unit{display:block;margin-top:2px;font-size:10px;color:var(--text-muted);}
+.material-amount{display:flex;align-items:center;justify-content:center;gap:4px;flex-wrap:nowrap;min-height:24px;}
+.material-quantity{display:inline-flex;align-items:baseline;gap:3px;white-space:nowrap;font-size:11.5px;font-weight:400;}
+.material-detail-table td:nth-child(4){font-size:11.5px;}
+.material-carryover-badges{display:inline-flex;width:58px;flex:0 0 58px;flex-direction:column;align-items:center;gap:2px;}
+.material-carryover-badges .badge{display:inline-flex;width:100%;justify-content:center;}
 .badge-surplus{padding:2px 5px;font-size:10px;white-space:nowrap;}
 .badge-carryover{background:#FFF1E5;color:#B45309;padding:2px 5px;font-size:10px;white-space:nowrap;}
 #tcInfoKits{align-items:flex-start;}
@@ -284,8 +285,6 @@ select{text-overflow:ellipsis;}
   .material-detail-table{font-size:11px;}
   .material-detail-table th{font-size:9px;letter-spacing:0;padding:7px 3px;}
   .material-detail-table td{padding:8px 3px;overflow-wrap:anywhere;}
-  .material-amount>span:first-child{font-size:13px;}
-  .material-unit{font-size:9px;}
   .badge-surplus{font-size:9px;padding:2px 4px;}
   .modal-overlay-public-details{align-items:center;padding:10px;}
   .modal-public-details{padding:16px 12px calc(16px + env(safe-area-inset-bottom));border-radius:18px;}
@@ -1500,7 +1499,7 @@ function abrirDetalhesRankingPublico(indice){
     <div class="table-wrap public-ranking-table">${renderTabelaDetalhesMateriais(categorias)}
     </div>
     <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${item.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
-    <p class="small-note" style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">+ Un.</span> Mês anterior</span><span><span class="badge badge-green badge-surplus">+ Un.</span> Mês seguinte</span></p>
+    <p class="small-note" style="display:flex;justify-content:flex-start;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">Un. +1</span> Saldo anterior</span><span><span class="badge badge-green badge-surplus">Un. +1</span> Saldo seguinte</span></p>
   `, true, 'public-details');
 }
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
@@ -1514,8 +1513,8 @@ function renderTabelaDetalhesMateriais(categorias){
       const percentualExibido=Math.floor(cumprimento.percentual).toFixed(0);
       return `<tr>
         <td>${escapeHtml(cat.nome)}</td>
-        <td><div class="material-amount"><span>${formatarQuantidade(cumprimento.quantidade)}</span>${cat.carryIn>0||excedente>0?`<span class="material-carryover-badges">${excedente>0?`<span class="badge badge-green badge-surplus" title="Excedente levado para o mês seguinte">+${formatarQuantidade(excedente)}</span>`:''}${cat.carryIn>0?`<span class="badge badge-carryover" title="Saldo vindo do mês anterior">+${formatarQuantidade(cat.carryIn)}</span>`:''}</span>`:''}</div><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
-        <td><span>${cat.meta.toLocaleString('pt-BR')}</span><span class="material-unit">${escapeHtml(cat.unidade)}</span></td>
+        <td><div class="material-amount"><span class="material-quantity"><span>${escapeHtml(cat.unidade)}</span><span>${formatarQuantidade(cumprimento.quantidade)}</span></span>${cat.carryIn>0||excedente>0?`<span class="material-carryover-badges">${excedente>0?`<span class="badge badge-green badge-surplus" title="Saldo seguinte">${escapeHtml(cat.unidade)} +${formatarQuantidade(excedente)}</span>`:''}${cat.carryIn>0?`<span class="badge badge-carryover" title="Saldo anterior">${escapeHtml(cat.unidade)} +${formatarQuantidade(cat.carryIn)}</span>`:''}</span>`:''}</div></td>
+        <td><div class="material-amount"><span class="material-quantity"><span>${escapeHtml(cat.unidade)}</span><span>${cat.meta.toLocaleString('pt-BR')}</span></span></div></td>
         <td>${metaAtingida?'<span class="badge badge-green">'+percentualExibido+'%</span>':percentualExibido+'%'}</td>
       </tr>`;
     }).join('')}</tbody></table>`;
@@ -2947,7 +2946,7 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
       percentual:r.percentuais[cat.key]||0,
     })))}</div>
     <p class="small-note" style="margin-top:12px;">Pontuação do ranking: <b>${r.pontuacao.toFixed(0)} pontos</b> (média das ${categorias.length} categorias, cada uma limitada a 100%). O percentual de cumprimento pode incluir excedentes acima da meta.</p>
-    <p class="small-note" style="display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">+ Un.</span> Mês anterior</span><span><span class="badge badge-green badge-surplus">+ Un.</span> Mês seguinte</span></p>
+    <p class="small-note" style="display:flex;justify-content:flex-start;gap:14px;flex-wrap:wrap;margin-top:8px;"><span><span class="badge badge-carryover">Un. +1</span> Saldo anterior</span><span><span class="badge badge-green badge-surplus">Un. +1</span> Saldo seguinte</span></p>
   `, true);
 }
 window.abrirDetalhesColaborador = abrirDetalhesColaborador;
