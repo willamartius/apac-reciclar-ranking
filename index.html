@@ -268,10 +268,8 @@ select{text-overflow:ellipsis;}
 .material-detail-table th:nth-child(n+2),
 .material-detail-table td:nth-child(n+2){text-align:center;}
 .material-detail-table td:first-child{overflow-wrap:anywhere;word-break:normal;}
-.material-amount{display:grid;width:100%;grid-template-columns:36px 78px;justify-content:center;min-height:24px;align-items:center;column-gap:5px;white-space:nowrap;}
-.material-amount>.material-quantity{grid-column:2;justify-self:stretch;}
-.material-amount>.material-balance-markers{grid-column:1;grid-row:1;justify-self:center;}
-.material-detail-table td:nth-child(3) .material-amount{display:flex;justify-content:center;}
+.material-amount{display:flex;width:100%;justify-content:center;min-height:24px;align-items:center;gap:4px;white-space:nowrap;}
+.material-detail-table td:nth-child(3) .material-amount{gap:3px;}
 .material-quantity{display:grid;width:78px;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;column-gap:3px;white-space:nowrap;font-size:11.5px;font-weight:400;}
 .material-quantity>span:first-child{text-align:right;}
 .material-quantity>span:last-child{text-align:left;}
