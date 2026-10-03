@@ -222,6 +222,7 @@ tr:last-child td{border-bottom:none;}
 .trash-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:260px;}
 .trash-actions .btn{width:100%;min-width:0;min-height:40px;justify-content:center;padding:6px 8px;white-space:normal;text-align:center;line-height:1.2;}
 .trash-actions .btn svg{width:18px;height:18px;flex:none;}
+.trash-actions .btn{gap:5px;}
 .drive-backup-card{min-width:0;}
 .drive-backup-card>*{min-width:0;}
 .drive-backup-restore{width:100%;min-width:0;}
@@ -451,7 +452,15 @@ select{text-overflow:ellipsis;}
   .content .card{min-width:0;}
   .content .card b{overflow-wrap:anywhere;}
   .drive-backup-actions{grid-template-columns:minmax(0,1fr);}
-  .trash-actions{width:220px;}
+  .trash-table,.trash-table tbody{display:block;width:100%;}
+  .trash-table thead{display:none;}
+  .trash-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px;padding:14px 0;border-bottom:1px solid var(--border);}
+  .trash-table tr:last-child{border-bottom:0;}
+  .trash-table td{display:flex;min-width:0;flex-direction:column;gap:3px;padding:0;border:0;overflow-wrap:anywhere;}
+  .trash-table td::before{content:attr(data-label);color:var(--text-muted);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;}
+  .trash-table .trash-item-cell,.trash-table .trash-actions-cell{grid-column:1/-1;}
+  .trash-table .trash-actions-cell{display:block;}
+  .trash-actions{width:100%;}
   .backup-actions>*{min-width:0;width:100%;}
   .backup-actions .btn{white-space:normal;overflow-wrap:anywhere;}
   .notification-button{width:42px;height:42px;min-width:42px;min-height:42px;border-radius:50%;}
@@ -4269,15 +4278,15 @@ function renderLixeira(){
   const rotulos={colaboradores:'Colaborador',entregas:'Entrega',transferencias:'Transferência',trocas:'Resgate',campanhas:'Campanha'};
   return `<div class="card">
     <p class="small-note">Os itens são removidos definitivamente após 30 dias. Restaure um item para devolvê-lo à coleção original.</p>
-    <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Item</th><th>Apagado em</th><th>Prazo</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="trash-table"><thead><tr><th>Tipo</th><th>Item</th><th>Apagado em</th><th>Prazo</th><th></th></tr></thead>
       <tbody>${itens.map(item=>{
         const diasRestantes=Math.max(0,Math.ceil((Date.parse(item.excluidoEm)+PRAZO_LIXEIRA_MS-Date.now())/86400000));
         return `<tr>
-          <td>${rotulos[item.colecao]||'Registro'}</td>
-          <td>${escapeHtml(resumoItemLixeira(item))}</td>
-          <td>${escapeHtml(new Date(item.excluidoEm).toLocaleString('pt-BR'))}</td>
-          <td>${diasRestantes} dia${diasRestantes===1?'':'s'}</td>
-          <td><div class="trash-actions">
+          <td data-label="Tipo">${rotulos[item.colecao]||'Registro'}</td>
+          <td class="trash-item-cell" data-label="Item">${escapeHtml(resumoItemLixeira(item))}</td>
+          <td data-label="Apagado em">${escapeHtml(new Date(item.excluidoEm).toLocaleString('pt-BR'))}</td>
+          <td data-label="Prazo">${diasRestantes} dia${diasRestantes===1?'':'s'}</td>
+          <td class="trash-actions-cell"><div class="trash-actions">
             <button class="btn btn-outline btn-sm" type="button" onclick="restaurarRegistroLixeira('${escapeHtml(item.id)}')">${icon('upload',15)}Restaurar item</button>
             <button class="btn btn-danger btn-sm" type="button" onclick="excluirDefinitivamenteLixeira('${escapeHtml(item.id)}')">${icon('trash',15)}Excluir definitivamente</button>
           </div></td>
