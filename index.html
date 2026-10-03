@@ -405,14 +405,14 @@ select{text-overflow:ellipsis;}
 @media(max-width:920px){
   .sidebar{display:none;}
   .content{padding:16px 14px 96px 14px;}
-  .topbar{padding:12px 14px;align-items:flex-start;}
-  .topbar-tools{gap:6px;}
-  .topbar-tools{flex:0 1 72%;justify-content:flex-end;}
+  .topbar{padding:12px 14px;align-items:center;flex-wrap:wrap;}
+  .topbar>div:first-child{flex:1 1 100%;min-width:0;}
+  .topbar-tools{flex:1 1 100%;width:100%;justify-content:space-between;gap:8px;}
+  .topbar-campaign-selector{flex:1 1 auto;min-width:0;}
+  .topbar-campaign-label{display:none;}
   .topbar-icon-actions{flex:0 0 auto;gap:6px;}
-  .topbar .app-select{flex:1 1 0;width:0;min-width:0!important;max-width:calc(100% - 48px);}
-  .topbar-tools > div:first-child{min-width:0;max-width:calc(100% - 48px);}
+  .topbar .app-select{flex:1 1 auto;width:100%;min-width:0!important;max-width:none;}
   .topbar select{min-width:0 !important;max-width:100%;padding:8px 30px 8px 9px;}
-  .topbar-icon-actions{gap:6px;}
   .bottomnav{display:block;}
   .bottomnav-row{max-width:520px;margin:0 auto;}
   .bottomnav button{min-width:0;min-height:48px;padding:5px 2px;}
@@ -426,12 +426,8 @@ select{text-overflow:ellipsis;}
   .topbar{gap:8px;}
   .topbar h1{font-size:17px;}
   .topbar .desc{font-size:11.5px;}
-  .topbar > div:first-child{flex:1;min-width:0;}
-  .topbar > div:last-child{max-width:72%;justify-content:flex-end;flex-shrink:0;}
-  .topbar-tools > div:first-child{max-width:calc(100% - 48px);}
-  .topbar-tools > div:first-child .small-note{display:none;}
-  .topbar select{max-width:100%;font-size:11px;}
-  .help-btn{width:42px;height:42px;}
+  .topbar-tools{gap:8px;}
+  .topbar .app-select-trigger{font-size:14px;}
   .notification-button{width:42px;height:42px;min-width:42px;min-height:42px;border-radius:50%;}
   .content{padding:14px 10px calc(82px + env(safe-area-inset-bottom));}
   .card{padding:14px;border-radius:12px;}
@@ -464,8 +460,6 @@ select{text-overflow:ellipsis;}
 }
 @media(max-width:360px){
   .grid-4,.grid-3{grid-template-columns:1fr;}
-  .topbar > div:last-child{max-width:74%;}
-  .topbar-tools > div:first-child{max-width:calc(100% - 48px);}
   .bottomnav button{font-size:9px;}
 }
 </style>
@@ -2147,8 +2141,8 @@ function renderSeletorCampanhaTopo(){
   if(campanhas.length===0) return '';
   const atualId = STATE.campanhaSelecionadaId || (campanhaAtiva()||{}).id || '';
   return `
-    <div style="display:flex;align-items:center;gap:6px;">
-      <span class="small-note" style="white-space:nowrap;">Campanha:</span>
+    <div class="topbar-campaign-selector" style="display:flex;align-items:center;gap:6px;">
+      <span class="small-note topbar-campaign-label" style="white-space:nowrap;">Campanha:</span>
       <select onchange="mudarCampanhaSelecionada(this.value)" style="min-width:170px;">
         ${campanhas.map(c=>`<option value="${c.id}" ${c.id===atualId?'selected':''}>${escapeHtml(c.nome)}${c.status==='ativa'?' (ativa)':c.status==='encerrada'?' (encerrada)':' (planejada)'}</option>`).join('')}
       </select>
@@ -3496,20 +3490,11 @@ async function decidirSolicitacaoTroca(id,decisao){
     const decididoEm=new Date().toISOString();
     let transferenciasAprovadas=[];
     if(decisao==='rejeitada'){
-      await FIREBASE_DB.runTransaction(async transacao=>{
-        const documento=await transacao.get(referencia);
-        if(!documento.exists || documento.data().status!=='pendente'){
-          throw new Error('Esta solicitação já foi decidida por outro administrador. Atualize a lista.');
-        }
-        if(serializarEstavel(documento.data())!==serializarEstavel(pedido)){
-          throw new Error('A solicitação mudou desde que foi carregada. Atualize a página e tente novamente.');
-        }
-        transacao.update(referencia,{
-          status:'rejeitada',
-          decididoEm,
-          decididoPor:STATE.authUser.uid,
-          transferenciaIds:[],
-        });
+      await referencia.update({
+        status:'rejeitada',
+        decididoEm,
+        decididoPor:STATE.authUser.uid,
+        transferenciaIds:[],
       });
     }else{
       const campanha=campanhaPorId(pedido.campanhaId);
