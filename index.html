@@ -3040,7 +3040,7 @@ function renderEntregas(){
     <div class="section-tabs" role="tablist" aria-label="Seção de registros">
       <button type="button" role="tab" aria-selected="${STATE.entregasSecao==='entregas'}" class="${STATE.entregasSecao==='entregas'?'active':''}" onclick="mudarSecaoEntregas('entregas')">Entregas</button>
       <button type="button" role="tab" aria-selected="${STATE.entregasSecao==='transferencias'}" class="${STATE.entregasSecao==='transferencias'?'active':''}" onclick="mudarSecaoEntregas('transferencias')">Transferências</button>
-      ${cfgTroca? `<button type="button" role="tab" aria-selected="${STATE.entregasSecao==='trocas'}" class="${STATE.entregasSecao==='trocas'?'active':''}" onclick="mudarSecaoEntregas('trocas')">Trocas</button>` : ''}
+      ${cfgTroca? `<button type="button" role="tab" aria-selected="${STATE.entregasSecao==='trocas'}" class="${STATE.entregasSecao==='trocas'?'active':''}" onclick="mudarSecaoEntregas('trocas')">Resgates</button>` : ''}
     </div>
     ${STATE.entregasSecao==='entregas'? `
       <div class="card" id="saldoTransportadoWrap" style="display:none;"></div>
@@ -3055,8 +3055,8 @@ function renderEntregas(){
     ` : ''}
     ${cfgTroca && STATE.entregasSecao==='trocas'? `
       <div class="toolbar">
-        <div><div class="section-title" style="margin:0;">Troca de material por ${escapeHtml(cfgTroca.nomeItem)}</div><p class="small-note" style="margin:5px 0 0;">Cada kit fechado dá direito a ${cfgTroca.cartelasPorKit} ${escapeHtml(cfgTroca.nomeItem)}(s).</p></div>
-        ${STATE.isAdmin? `<button class="btn btn-primary" onclick="abrirFormTrocaCartela()">${icon('plus')}Trocar por ${escapeHtml(cfgTroca.nomeItem)}</button>` : ''}
+        <div><div class="section-title" style="margin:0;">Resgate por itens</div><p class="small-note" style="margin:5px 0 0;">Cada kit fechado dá direito a ${cfgTroca.cartelasPorKit} ${escapeHtml(cfgTroca.nomeItem)}(s).</p></div>
+        ${STATE.isAdmin? `<button class="btn btn-primary" onclick="abrirFormTrocaCartela()">${icon('plus')}Resgatar ${escapeHtml(cfgTroca.nomeItem)}</button>` : ''}
       </div>
       <div class="card" style="padding:0;"><div class="table-wrap" id="tabelaTrocasWrap"></div></div>
     ` : ''}
@@ -3697,9 +3697,9 @@ function renderTabelaTrocas(){
   const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
   if(!cfgTroca) return;
   const lista = STATE.trocas.filter(t=>t.campanhaId===campanhaId).sort((a,b)=>b.data.localeCompare(a.data));
-  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma troca emitida ainda.</div>`; return; }
+  if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhum resgate registrado ainda.</div>`; return; }
   wrap.innerHTML = `
-    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Kits</th><th>${escapeHtml(cfgTroca.nomeItem)}s emitidas</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Kits</th><th>${escapeHtml(cfgTroca.nomeItem)}s resgatados</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
     <tbody>
       ${lista.map(t=>{
         const c = STATE.colaboradores.find(x=>x.id===t.colaboradorId);
@@ -3720,20 +3720,20 @@ function abrirFormTrocaCartela(){
   const campanhaId = STATE.campanhaSelecionadaId;
   const campanha = campanhaPorId(campanhaId);
   const cfgTroca = campanha && campanha.trocaCartela;
-  if(!cfgTroca || !cfgTroca.ativo){ alert('Esta campanha não tem troca de material por item ativada.'); return; }
-  if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de emitir uma troca.'); return; }
+  if(!cfgTroca || !cfgTroca.ativo){ alert('Esta campanha não tem resgate por itens ativado.'); return; }
+  if(STATE.colaboradores.length===0){ alert('Cadastre ao menos um colaborador antes de registrar um resgate.'); return; }
   const opcoesColab = STATE.colaboradores.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
   abrirModal(`
-    <div class="modal-head"><h3>Trocar por ${escapeHtml(cfgTroca.nomeItem)}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <div class="modal-head"><h3>Resgatar ${escapeHtml(cfgTroca.nomeItem)}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <div class="field"><label>Colaborador</label><select id="tcColab" onchange="atualizarKitsDisponiveisForm()">${opcoesColab}</select></div>
     <div class="field"><label>Data</label><input type="date" id="tcData" value="${new Date().toISOString().slice(0,10)}"></div>
     <div class="banner" id="tcInfoKits" style="margin-bottom:14px;"><span>${icon('ranking')}</span><div>—</div></div>
-    <div class="field"><label>Quantidade de kits a trocar</label><input type="number" min="1" id="tcQuantidadeKits" value="1" oninput="atualizarPreviaTroca()"></div>
+    <div class="field"><label>Quantidade de kits para resgatar</label><input type="number" min="1" id="tcQuantidadeKits" value="1" oninput="atualizarPreviaTroca()"></div>
     <p class="small-note" id="tcPrevia"></p>
     <div id="trocaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin-bottom:8px;"></div>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
-      <button class="btn btn-primary btn-block" onclick="salvarTroca()">${icon('check',16)}Confirmar troca</button>
+      <button class="btn btn-primary btn-block" onclick="salvarTroca()">${icon('check',16)}Confirmar resgate</button>
     </div>
   `);
   setTimeout(atualizarKitsDisponiveisForm, 30);
@@ -3746,7 +3746,7 @@ function atualizarKitsDisponiveisForm(){
   const totais = totaisAcumuladosColaborador(campanhaId, colaboradorId);
   const kits = kitsDisponiveis(campanha, totais);
   const itens= kits*cfgTroca.cartelasPorKit;
-  document.getElementById('tcInfoKits').innerHTML = `<span>${icon('ranking')}</span><div>Disponível para troca agora: <b>${kits} kit${kits===1?'':'s'}</b>, equivalente${kits===1?'':'s'} a <b>${itens} ${escapeHtml(cfgTroca.nomeItem)}${itens===1?'':'s'}</b>.</div>`;
+  document.getElementById('tcInfoKits').innerHTML = `<span>${icon('ranking')}</span><div>Disponível para resgate: <b>${kits} kit${kits===1?'':'s'}</b>, equivalente${kits===1?'':'s'} a <b>${itens} ${escapeHtml(cfgTroca.nomeItem)}${itens===1?'':'s'}</b>.</div>`;
   document.getElementById('tcQuantidadeKits').max = kits || 1;
   atualizarPreviaTroca();
 }
@@ -3755,7 +3755,7 @@ function atualizarPreviaTroca(){
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const qtd = parseInt(document.getElementById('tcQuantidadeKits').value,10) || 0;
   const itens=qtd*campanha.trocaCartela.cartelasPorKit;
-  document.getElementById('tcPrevia').textContent = qtd>0 ? `A troca emitirá ${itens} ${campanha.trocaCartela.nomeItem}${itens===1?'':'s'} e descontará os materiais correspondentes do saldo do colaborador.` : '';
+  document.getElementById('tcPrevia').textContent = qtd>0 ? `O resgate dará direito a ${itens} ${campanha.trocaCartela.nomeItem}${itens===1?'':'s'} e descontará os materiais correspondentes do saldo do colaborador.` : '';
 }
 window.atualizarPreviaTroca = atualizarPreviaTroca;
 async function salvarTroca(){
@@ -3773,7 +3773,7 @@ async function salvarTroca(){
   if(!validacaoData.ok){ erroEl.textContent = validacaoData.motivo; erroEl.style.display='block'; return; }
   const totais = totaisAcumuladosColaborador(campanhaId, colaboradorId);
   const kitsMax = kitsDisponiveis(campanha, totais);
-  if(quantidadeKits > kitsMax){ erroEl.textContent = `Este colaborador só pode trocar ${kitsMax} kit${kitsMax===1?'':'s'} no momento.`; erroEl.style.display='block'; return; }
+  if(quantidadeKits > kitsMax){ erroEl.textContent = `Este colaborador só pode resgatar ${kitsMax} kit${kitsMax===1?'':'s'} no momento.`; erroEl.style.display='block'; return; }
   const kitConsumido = {};
   Object.keys(cfgTroca.kit).forEach(catKey=>{ kitConsumido[catKey] = cfgTroca.kit[catKey] * quantidadeKits; });
   STATE.trocas.push({
@@ -3788,8 +3788,8 @@ window.abrirFormTrocaCartela=abrirFormTrocaCartela; window.salvarTroca=salvarTro
 function confirmarExcluirTroca(id){
   if(!exigirAdmin()) return;
   abrirModal(`
-    <div class="modal-head"><h3>Excluir troca</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p>Tem certeza que deseja excluir este registro de troca? O material consumido volta a contar no saldo do colaborador. A troca poderá ser restaurada por até 30 dias.</p>
+    <div class="modal-head"><h3>Excluir resgate</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p>Tem certeza que deseja excluir este registro de resgate? O material consumido volta a contar no saldo do colaborador. O resgate poderá ser restaurado por até 30 dias.</p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-danger btn-block" onclick="excluirTroca('${id}')">${icon('trash',16)}Excluir</button>
@@ -3798,7 +3798,7 @@ function confirmarExcluirTroca(id){
 }
 async function excluirTroca(id){
   if(!exigirAdmin()) return;
-  if(!await moverRegistroParaLixeira('trocas',id)){ alert('Não foi possível mover a troca para Itens apagados. Atualize a página e tente novamente.'); return; }
+  if(!await moverRegistroParaLixeira('trocas',id)){ alert('Não foi possível mover o resgate para Itens apagados. Atualize a página e tente novamente.'); return; }
   fecharModal(); renderApp();
 }
 window.confirmarExcluirTroca=confirmarExcluirTroca; window.excluirTroca=excluirTroca;
@@ -4157,9 +4157,9 @@ function renderRelatorios(){
       </div>
       ${cfgTroca? `
       <div class="card">
-        <div class="stat-label">Trocas por ${escapeHtml(cfgTroca.nomeItem)} (CSV)</div>
-        <p class="small-note">Exporta todas as trocas emitidas nesta campanha, com data, colaborador e quantidade.</p>
-        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvTrocas()">${icon('download')}Exportar trocas</button>
+        <div class="stat-label">Resgates de ${escapeHtml(cfgTroca.nomeItem)} (CSV)</div>
+        <p class="small-note">Exporta todos os resgates registrados nesta campanha, com data, colaborador e quantidade.</p>
+        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvTrocas()">${icon('download')}Exportar resgates</button>
       </div>` : ''}
     </div>
     <div class="section-title">Mês de referência para os relatórios</div>
@@ -4394,11 +4394,11 @@ function abrirFormCampanha(id){
     <button type="button" class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="adicionarMaterialExtra()">${icon('plus',14)}Adicionar material</button>
     <p class="small-note" id="avisoSemMateriais" style="display:none;color:var(--vermelho);margin-top:8px;">Pelo menos um material precisa ficar ativo.</p>
 
-    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Troca de material por item</div>
-    <p class="small-note" style="margin-top:-4px;">Permite trocar um "kit" de materiais por um item, como uma cartela de bingo. O saldo do colaborador é descontado assim que a troca é emitida. Deixe desativado se esta campanha não usa esse recurso.</p>
+    <div class="section-title" style="margin:16px 0 8px 0;font-size:13.5px;">Resgate por itens</div>
+    <p class="small-note" style="margin-top:-4px;">Permite resgatar um item, como uma cartela de bingo, usando um kit de materiais. O saldo do colaborador é descontado quando o resgate é registrado. Deixe desativado se esta campanha não usa esse recurso.</p>
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:8px;">
       <input type="checkbox" id="tcAtivo" ${trocaCartela.ativo?'checked':''} onchange="atualizarSecaoTrocaCartela()" style="width:auto;">
-      Ativar troca de material por item nesta campanha
+      Ativar resgate por itens nesta campanha
     </label>
     <div id="trocaCartelaWrap" style="display:${trocaCartela.ativo?'block':'none'};margin-top:10px;">
       <div class="grid grid-2">
