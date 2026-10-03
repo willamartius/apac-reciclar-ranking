@@ -109,6 +109,38 @@ select:hover{border-color:#B9CCBE;}
 select:focus{outline:none;border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(94,157,113,.16);}
 select:disabled{background-color:#F1F4F1;color:#87958B;cursor:not-allowed;opacity:.8;}
 .topbar select{padding:10px 38px 10px 13px;border-radius:13px;}
+.app-select{position:relative;display:block;width:100%;min-width:0;}
+.topbar .app-select{display:inline-flex;width:auto;min-width:0;flex:1 1 auto;}
+.app-select-native{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;opacity:0!important;pointer-events:none!important;}
+.app-select-trigger{display:flex;width:100%;min-width:0;min-height:40px;align-items:center;justify-content:space-between;gap:12px;padding:9px 38px 9px 11px;border:1.5px solid #D8E3DA;border-radius:11px;background:#fff;color:var(--text);box-shadow:0 2px 8px rgba(24,68,45,.05);text-align:left;font-size:14px;line-height:1.35;transition:border-color .18s ease,box-shadow .18s ease;}
+.app-select-trigger:hover,.app-select-trigger[aria-expanded=true]{border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(94,157,113,.12);}
+.app-select-trigger:focus-visible{outline:2px solid var(--verde-500);outline-offset:2px;}
+.app-select-trigger:disabled{background:#F1F4F1;color:#87958B;cursor:not-allowed;opacity:.8;}
+.app-select-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.app-select-chevron{width:16px;height:16px;flex:none;color:var(--verde-700);}
+.topbar .app-select-trigger{min-height:42px;padding:10px 38px 10px 13px;border-radius:13px;font:inherit;}
+.app-select-overlay{position:fixed;inset:0;z-index:160;pointer-events:none;}
+.app-select-overlay[hidden]{display:none;}
+.app-select-menu{position:fixed;width:min(360px,calc(100vw - 24px));max-height:min(55vh,420px);overflow-y:auto;border:1px solid var(--border);border-radius:15px;background:#fff;box-shadow:0 16px 42px rgba(18,48,31,.2);pointer-events:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;}
+.app-select-option{display:flex;width:100%;min-height:64px;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border:0;border-bottom:1px solid #E8EEE9;background:#fff;color:var(--text);text-align:left;font:500 16px/1.4 'Manrope',sans-serif;}
+.app-select-option:first-child{border-radius:21px 21px 0 0;}
+.app-select-option:last-child{border-bottom:0;border-radius:0 0 21px 21px;}
+.app-select-option:only-child{border-radius:21px;}
+.app-select-option:hover,.app-select-option[aria-selected=true]{background:#F0F7F1;color:var(--verde-800);}
+.app-select-option:focus-visible{position:relative;outline:2px solid var(--verde-500);outline-offset:-3px;}
+.app-select-option:disabled{color:#87958B;cursor:not-allowed;}
+.app-select-option-indicator{width:22px;height:22px;flex:none;display:grid;place-items:center;border:2px solid #AAB8AE;border-radius:50%;color:transparent;}
+.app-select-option[aria-selected=true] .app-select-option-indicator{border-color:var(--verde-600);background:var(--verde-600);color:#fff;}
+.app-select-option-indicator svg{width:13px;height:13px;}
+@media(max-width:600px){
+  .app-select-overlay{display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(18,30,22,.48);pointer-events:auto;overscroll-behavior:contain;touch-action:none;}
+  .app-select-menu{position:relative;width:min(560px,100%);max-height:min(76vh,660px);max-height:min(76dvh,660px);border-radius:20px;box-shadow:0 24px 70px rgba(18,48,31,.28);}
+  .app-select-option{min-height:62px;padding:13px 17px;font-size:15px;}
+  .app-select-option:first-child{border-radius:19px 19px 0 0;}
+  .app-select-option:last-child{border-radius:0 0 19px 19px;}
+  .app-select-option:only-child{border-radius:19px;}
+  .topbar .app-select-trigger{min-height:38px;padding:8px 30px 8px 9px;font-size:inherit;}
+}
 .content{padding:22px 26px 90px 26px;max-width:1180px;width:100%;}
 
 /* Mobile bottom nav */
@@ -1686,6 +1718,206 @@ function selecionarOpcaoSolicitacao(id,valor){
     atualizarFormularioSolicitacaoTroca();
   }
 }
+let appSelectOverlay=null;
+let appSelectAtivo=null;
+let appSelectOverflowAnterior='';
+function sincronizarSeletorNativo(select){
+  if(!select || !select.dataset.customSelect) return;
+  const trigger=document.getElementById(select.dataset.customSelectTrigger);
+  const value=trigger&&trigger.querySelector('.app-select-value');
+  if(!trigger || !value) return;
+  const opcao=select.options[select.selectedIndex];
+  value.textContent=opcao?opcao.textContent.trim():'Selecione uma opção';
+  trigger.disabled=select.disabled;
+  trigger.setAttribute('aria-label',select.labels&&select.labels.length
+    ?select.labels[0].textContent.trim()
+    :value.textContent);
+}
+function fecharSeletorNativo(restaurarFoco=false){
+  if(!appSelectOverlay || !appSelectAtivo) return;
+  const trigger=appSelectAtivo.trigger;
+  appSelectOverlay.hidden=true;
+  appSelectOverlay.replaceChildren();
+  appSelectOverlay.remove();
+  appSelectOverlay=null;
+  appSelectAtivo=null;
+  document.body.style.overflow=appSelectOverflowAnterior;
+  appSelectOverflowAnterior='';
+  if(trigger && trigger.isConnected){
+    trigger.setAttribute('aria-expanded','false');
+    if(restaurarFoco) trigger.focus();
+  }
+}
+function abrirSeletorNativo(select){
+  if(!select || !select.dataset.customSelect || select.disabled) return;
+  if(appSelectAtivo && appSelectAtivo.select===select){
+    fecharSeletorNativo();
+    return;
+  }
+  fecharSeletorNativo();
+  sincronizarSeletorNativo(select);
+  const trigger=document.getElementById(select.dataset.customSelectTrigger);
+  if(!trigger) return;
+  const rotulo=trigger.getAttribute('aria-label')||'Selecione uma opção';
+  const overlay=document.createElement('div');
+  overlay.className='app-select-overlay';
+  overlay.setAttribute('role','presentation');
+  const menu=document.createElement('div');
+  menu.id=`${trigger.id}Menu`;
+  menu.className='app-select-menu';
+  menu.setAttribute('role','dialog');
+  menu.setAttribute('aria-modal','true');
+  menu.setAttribute('aria-label',rotulo);
+  const opcoes=[...select.options].filter(opcao=>!opcao.hidden);
+  if(!opcoes.length){
+    const vazio=document.createElement('p');
+    vazio.className='table-empty';
+    vazio.textContent='Nenhuma opção disponível.';
+    menu.appendChild(vazio);
+  }
+  for(const opcao of opcoes){
+    const item=document.createElement('button');
+    item.type='button';
+    item.className='app-select-option';
+    item.setAttribute('role','option');
+    item.setAttribute('aria-selected',String(opcao===select.options[select.selectedIndex]));
+    item.disabled=opcao.disabled;
+    const texto=document.createElement('span');
+    texto.textContent=opcao.textContent.trim();
+    const indicador=document.createElement('span');
+    indicador.className='app-select-option-indicator';
+    indicador.setAttribute('aria-hidden','true');
+    if(opcao===select.options[select.selectedIndex]) indicador.innerHTML=icon('check',13);
+    item.append(texto,indicador);
+    item.addEventListener('click',()=>{
+      const mudou=select.value!==opcao.value;
+      select.value=opcao.value;
+      sincronizarSeletorNativo(select);
+      fecharSeletorNativo(true);
+      if(mudou){
+        select.dispatchEvent(new Event('input',{bubbles:true}));
+        select.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+    });
+    menu.appendChild(item);
+  }
+  overlay.appendChild(menu);
+  overlay.addEventListener('click',evento=>{
+    if(evento.target===overlay) fecharSeletorNativo(true);
+  });
+  appSelectOverflowAnterior=document.body.style.overflow;
+  document.body.style.overflow='hidden';
+  appSelectOverlay=overlay;
+  appSelectAtivo={select,trigger};
+  trigger.setAttribute('aria-expanded','true');
+  document.body.appendChild(overlay);
+  if(window.innerWidth>600){
+    const bounds=trigger.getBoundingClientRect();
+    const largura=Math.min(Math.max(bounds.width,260),window.innerWidth-24);
+    const esquerda=Math.max(12,Math.min(bounds.left,window.innerWidth-largura-12));
+    const altura=menu.getBoundingClientRect().height;
+    const abaixo=bounds.bottom+8;
+    const topo=abaixo+altura<=window.innerHeight-12
+      ?abaixo
+      :Math.max(12,bounds.top-altura-8);
+    menu.style.left=`${esquerda}px`;
+    menu.style.top=`${topo}px`;
+    menu.style.width=`${largura}px`;
+  }
+  const selecionada=menu.querySelector('[aria-selected=true]:not(:disabled)')
+    ||menu.querySelector('.app-select-option:not(:disabled)');
+  if(selecionada){
+    selecionada.focus({preventScroll:true});
+    const limitesMenu=menu.getBoundingClientRect();
+    const limitesOpcao=selecionada.getBoundingClientRect();
+    if(limitesOpcao.top<limitesMenu.top) menu.scrollTop-=limitesMenu.top-limitesOpcao.top;
+    else if(limitesOpcao.bottom>limitesMenu.bottom) menu.scrollTop+=limitesOpcao.bottom-limitesMenu.bottom;
+  }
+}
+function aprimorarSeletorNativo(select){
+  if(!(select instanceof HTMLSelectElement) || select.dataset.customSelect) return;
+  const parent=select.parentNode;
+  if(!parent) return;
+  const wrapper=document.createElement('div');
+  wrapper.className='app-select';
+  if(select.style.minWidth) wrapper.style.minWidth=select.style.minWidth;
+  if(select.closest('.topbar')) wrapper.classList.add('app-select-topbar');
+  const trigger=document.createElement('button');
+  const triggerId=`appSelectTrigger${++aprimoramentoSeletorId}`;
+  trigger.id=triggerId;
+  trigger.type='button';
+  trigger.className='app-select-trigger';
+  trigger.setAttribute('aria-haspopup','dialog');
+  trigger.setAttribute('aria-expanded','false');
+  trigger.setAttribute('aria-controls',`${triggerId}Menu`);
+  trigger.innerHTML='<span class="app-select-value"></span><span class="app-select-chevron" aria-hidden="true">'+icon('chevron',16)+'</span>';
+  const labels=select.labels;
+  if(labels&&labels.length){
+    labels[0].htmlFor=triggerId;
+    trigger.setAttribute('aria-label',labels[0].textContent.trim());
+  }
+  select.dataset.customSelect='true';
+  select.dataset.customSelectTrigger=triggerId;
+  select.classList.add('app-select-native');
+  select.tabIndex=-1;
+  select.setAttribute('aria-hidden','true');
+  parent.insertBefore(wrapper,select);
+  wrapper.append(select,trigger);
+  trigger.addEventListener('click',()=>abrirSeletorNativo(select));
+  trigger.addEventListener('keydown',evento=>{
+    if(evento.key==='ArrowDown'||evento.key==='ArrowUp'||evento.key==='Enter'||evento.key===' '){
+      evento.preventDefault();
+      abrirSeletorNativo(select);
+    }
+  });
+  sincronizarSeletorNativo(select);
+}
+let aprimoramentoSeletorId=0;
+function aprimorarSeletoresNativos(raiz=document){
+  if(raiz instanceof HTMLSelectElement) aprimorarSeletorNativo(raiz);
+  if(raiz.querySelectorAll) raiz.querySelectorAll('select').forEach(aprimorarSeletorNativo);
+}
+document.addEventListener('keydown',evento=>{
+  if(!appSelectOverlay) return;
+  if(evento.key==='Escape'){
+    evento.preventDefault();
+    fecharSeletorNativo(true);
+    return;
+  }
+  const opcoes=[...appSelectOverlay.querySelectorAll('.app-select-option:not(:disabled)')];
+  const atual=opcoes.indexOf(document.activeElement);
+  let proximo=-1;
+  if(evento.key==='ArrowDown') proximo=Math.min(atual+1,opcoes.length-1);
+  else if(evento.key==='ArrowUp') proximo=Math.max(atual-1,0);
+  else if(evento.key==='Home') proximo=0;
+  else if(evento.key==='End') proximo=opcoes.length-1;
+  if(proximo>=0 && opcoes[proximo]){
+    evento.preventDefault();
+    opcoes[proximo].focus();
+  }
+});
+document.addEventListener('pointerdown',evento=>{
+  if(appSelectOverlay && !appSelectOverlay.contains(evento.target)
+    && !appSelectAtivo.trigger.contains(evento.target)){
+    fecharSeletorNativo();
+  }
+},true);
+const observadorSeletoresNativos=new MutationObserver(mudancas=>{
+  for(const mudanca of mudancas){
+    if(mudanca.type==='childList'){
+      mudanca.addedNodes.forEach(no=>{
+        if(no.nodeType===Node.ELEMENT_NODE) aprimorarSeletoresNativos(no);
+      });
+    }
+    const select=mudanca.target instanceof HTMLSelectElement
+      ?mudanca.target
+      :mudanca.target.closest&&mudanca.target.closest('select');
+    if(select) sincronizarSeletorNativo(select);
+  }
+  if(appSelectAtivo && !appSelectAtivo.select.isConnected) fecharSeletorNativo();
+});
+observadorSeletoresNativos.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['selected','disabled']});
+aprimorarSeletoresNativos();
 function abrirSolicitacaoTrocaPublica(){
   if(!FIREBASE_DB){
     alert('As solicitações públicas exigem conexão com o Firebase. Tente novamente mais tarde.');
