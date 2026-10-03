@@ -2123,7 +2123,6 @@ function renderApp(){
   const app = document.getElementById('app');
   if(STORAGE_MODE==='firestore' && (!STATE.authUser || (!STATE.isAdmin && !STATE.isOperator))){
     app.innerHTML=STATE.authUser && !STATE.mostrarLogin ? renderTelaAutenticacao() : renderRankingPublico();
-    aprimorarSeletoresNativos(app);
     return;
   }
   const navItems = navItemsVisiveis();
@@ -2182,7 +2181,6 @@ function renderApp(){
     ranking: renderRanking, historico: renderHistorico, relatorios: renderRelatorios, lixeira: renderLixeira, config: renderConfig,
   };
   content.innerHTML = renderers[STATE.view] ? renderers[STATE.view]() : '';
-  aprimorarSeletoresNativos(app);
 }
 
 function abrirMaisSheet(){
