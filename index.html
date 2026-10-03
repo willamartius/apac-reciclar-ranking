@@ -4404,7 +4404,7 @@ function abrirFormCampanha(id){
             <input type="checkbox" id="cpUsar_${cat.key}" ${ativo?'checked':''} onchange="atualizarCampoMaterialOficial('${cat.key}')" style="width:auto;">
             Usar este material nesta campanha
           </label>
-          <input type="text" id="cpNomeCat_${cat.key}" value="${escapeHtml(nomesPersonalizados[cat.key]||cat.label)}" style="margin-top:6px;" ${ativo?'':'disabled'}>
+          <input type="text" id="cpNomeCat_${cat.key}" value="${escapeHtml(nomesPersonalizados[cat.key]||cat.label)}" style="margin-top:6px;" oninput="atualizarNomeMaterialCampanha('${cat.key}','cpNomeCat')" ${ativo?'':'disabled'}>
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
             <input type="number" min="0" id="cpMeta_${cat.key}" value="${metas[cat.key]}" ${ativo?'':'disabled'}>
             <span class="small-note" style="white-space:nowrap;">${cat.unidade}</span>
@@ -4430,15 +4430,7 @@ function abrirFormCampanha(id){
         <div class="field"><label>Itens por kit fechado</label><input type="number" min="1" id="tcCartelasPorKit" value="${trocaCartela.cartelasPorKit||2}"></div>
       </div>
       <p class="small-note">Quantidade exigida de cada material para fechar 1 kit. Deixe em branco ou 0 para um material que não entra no kit.</p>
-      <div class="grid grid-2" id="tcKitWrap">
-        ${todasCategoriasMateriaisFormulario(c).map(cat=>`
-          <div class="field"><label>${escapeHtml(cat.label)}</label>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <input type="number" min="0" step="1" id="tcKit_${cat.key}" value="${(trocaCartela.kit&&trocaCartela.kit[cat.key])||''}" placeholder="0">
-              <span class="small-note" style="white-space:nowrap;">${cat.unidade}</span>
-            </div>
-          </div>`).join('')}
-      </div>
+      <div class="grid grid-2" id="tcKitWrap"></div>
     </div>
 
     <div id="campanhaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin:8px 0;"></div>
@@ -4448,22 +4440,57 @@ function abrirFormCampanha(id){
     </div>
   `);
   renderMateriaisExtrasForm();
+  renderKitTrocaForm(trocaCartela);
 }
 function renderMateriaisExtrasForm(){
   const wrap = document.getElementById('extrasWrap');
   if(!wrap) return;
   const lista = window._materiaisExtrasForm || [];
-  if(lista.length===0){ wrap.innerHTML = `<p class="small-note">Nenhum material extra cadastrado ainda.</p>`; return; }
-  wrap.innerHTML = lista.map(item => `
-    <div class="grid grid-3" style="align-items:flex-end;margin-bottom:8px;" data-extra-key="${item.key}">
-      <div class="field" style="margin-bottom:0;"><label>Nome do material</label><input type="text" id="extraNome_${item.key}" value="${escapeHtml(item.label||'')}" placeholder="Ex: Cobre"></div>
-      <div class="field" style="margin-bottom:0;"><label>Meta mensal</label><input type="number" min="0" id="extraMeta_${item.key}" value="${item.metaDefault||0}"></div>
-      <div class="field" style="margin-bottom:0;display:flex;gap:8px;align-items:center;">
-        <input type="text" id="extraUnidade_${item.key}" value="${escapeHtml(item.unidade||'unidades')}" placeholder="unidade" style="flex:1;">
-        <button type="button" class="btn btn-ghost btn-sm" onclick="removerMaterialExtra('${item.key}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
+  if(lista.length===0){
+    wrap.innerHTML = `<p class="small-note">Nenhum material extra cadastrado ainda.</p>`;
+    return;
+  }
+  wrap.innerHTML = lista.map(item => {
+    const nome=document.getElementById(`extraNome_${item.key}`)?.value??item.label??'';
+    const meta=document.getElementById(`extraMeta_${item.key}`)?.value??item.metaDefault??0;
+    const unidade=document.getElementById(`extraUnidade_${item.key}`)?.value??item.unidade??'unidades';
+    return `
+      <div class="grid grid-3" style="align-items:flex-end;margin-bottom:8px;" data-extra-key="${item.key}">
+        <div class="field" style="margin-bottom:0;"><label>Nome do material</label><input type="text" id="extraNome_${item.key}" value="${escapeHtml(nome)}" placeholder="Ex: Cobre" oninput="atualizarNomeMaterialCampanha('${item.key}','extraNome')"></div>
+        <div class="field" style="margin-bottom:0;"><label>Meta mensal</label><input type="number" min="0" id="extraMeta_${item.key}" value="${escapeHtml(meta)}"></div>
+        <div class="field" style="margin-bottom:0;display:flex;gap:8px;align-items:center;">
+          <input type="text" id="extraUnidade_${item.key}" value="${escapeHtml(unidade)}" placeholder="unidade" style="flex:1;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="removerMaterialExtra('${item.key}')" style="color:var(--vermelho);">${icon('trash',16)}</button>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+}
+function renderKitTrocaForm(trocaCartela){
+  const wrap=document.getElementById('tcKitWrap');
+  if(!wrap) return;
+  wrap.innerHTML=todasCategoriasMateriaisFormulario().map(cat=>{
+    const nomeInput=document.getElementById(`tcNomeMaterial_${cat.key}`);
+    const campoNome=nomeInput
+      ? nomeInput.value
+      : (document.getElementById(`cpNomeCat_${cat.key}`)?.value
+        || document.getElementById(`extraNome_${cat.key}`)?.value
+        || cat.label);
+    const campoQuantidade=document.getElementById(`tcKit_${cat.key}`);
+    const quantidade=campoQuantidade
+      ? campoQuantidade.value
+      : (trocaCartela&&trocaCartela.kit&&trocaCartela.kit[cat.key])||'';
+    return `
+      <div class="field">
+        <label for="tcNomeMaterial_${cat.key}">Nome do material</label>
+        <input type="text" id="tcNomeMaterial_${cat.key}" value="${escapeHtml(campoNome)}" oninput="atualizarNomeMaterialCampanha('${cat.key}','tcNomeMaterial')">
+        <label for="tcKit_${cat.key}" style="margin-top:8px;">Quantidade para fechar o kit</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="number" min="0" step="1" id="tcKit_${cat.key}" value="${escapeHtml(quantidade)}" placeholder="0">
+          <span class="small-note" style="white-space:nowrap;">${escapeHtml(cat.unidade)}</span>
+        </div>
+      </div>`;
+  }).join('');
 }
 function todasCategoriasMateriaisFormulario(c){
   return [...CATEGORIAS, ...((window._materiaisExtrasForm)||(c&&c.materiaisExtras)||[])];
@@ -4478,16 +4505,27 @@ function atualizarCampoMaterialOficial(key){
   document.getElementById('cpMeta_'+key).disabled = !ativo;
 }
 window.atualizarCampoMaterialOficial = atualizarCampoMaterialOficial;
+function atualizarNomeMaterialCampanha(key, origem){
+  const origemEl=document.getElementById(`${origem}_${key}`);
+  if(!origemEl) return;
+  ['cpNomeCat','extraNome','tcNomeMaterial'].forEach(prefixo=>{
+    const campo=document.getElementById(`${prefixo}_${key}`);
+    if(campo&&campo!==origemEl) campo.value=origemEl.value;
+  });
+}
+window.atualizarNomeMaterialCampanha=atualizarNomeMaterialCampanha;
 window.renderMateriaisExtrasForm = renderMateriaisExtrasForm;
 function adicionarMaterialExtra(){
   window._materiaisExtrasForm = window._materiaisExtrasForm || [];
   window._materiaisExtrasForm.push({ key: 'extra_'+uid(), label:'', metaDefault:0, unidade:'unidades' });
   renderMateriaisExtrasForm();
+  renderKitTrocaForm();
 }
 window.adicionarMaterialExtra = adicionarMaterialExtra;
 function removerMaterialExtra(key){
   window._materiaisExtrasForm = (window._materiaisExtrasForm||[]).filter(x=>x.key!==key);
   renderMateriaisExtrasForm();
+  renderKitTrocaForm();
 }
 window.removerMaterialExtra = removerMaterialExtra;
 async function salvarCampanha(id){
