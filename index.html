@@ -126,12 +126,10 @@ select:disabled{background-color:#F1F4F1;color:#87958B;cursor:not-allowed;opacit
 .app-select-option:first-child{border-radius:21px 21px 0 0;}
 .app-select-option:last-child{border-bottom:0;border-radius:0 0 21px 21px;}
 .app-select-option:only-child{border-radius:21px;}
-.app-select-option:hover,.app-select-option[aria-selected=true]{background:#F0F7F1;color:var(--verde-800);}
+.app-select-option:hover{background:#F6FAF6;}
+.app-select-option[aria-selected=true]{background:#E4F1E6;color:var(--text);box-shadow:inset 0 0 0 1px rgba(62,142,90,.12);}
 .app-select-option:focus-visible{position:relative;outline:2px solid var(--verde-500);outline-offset:-3px;}
 .app-select-option:disabled{color:#87958B;cursor:not-allowed;}
-.app-select-option-indicator{width:22px;height:22px;flex:none;display:grid;place-items:center;border:2px solid #AAB8AE;border-radius:50%;color:transparent;}
-.app-select-option[aria-selected=true] .app-select-option-indicator{border-color:var(--verde-600);background:var(--verde-600);color:#fff;}
-.app-select-option-indicator svg{width:13px;height:13px;}
 @media(max-width:600px){
   .app-select-overlay{display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(18,30,22,.48);pointer-events:auto;overscroll-behavior:contain;touch-action:none;}
   .app-select-menu{position:relative;width:min(560px,100%);max-height:min(76vh,660px);max-height:min(76dvh,660px);border-radius:20px;box-shadow:0 24px 70px rgba(18,48,31,.28);}
@@ -296,8 +294,8 @@ select{text-overflow:ellipsis;}
 .login-loading-spinner{width:44px;height:44px;border:4px solid rgba(143,203,158,.3);border-top-color:#8FCB9E;border-radius:50%;animation:login-spin .8s linear infinite;}
 @keyframes login-spin{to{transform:rotate(360deg);}}
 @media(prefers-reduced-motion:reduce){.login-loading-spinner{animation-duration:1.8s;}}
-.public-ranking-screen{align-items:start;padding:clamp(24px,8vh,72px) 16px;}
-.public-ranking-card{width:min(100%,760px);margin:0 auto;padding:20px;}
+.public-ranking-screen{align-items:start;min-width:0;width:100%;padding:clamp(24px,8vh,72px) 16px;}
+.public-ranking-card{width:min(100%,760px);min-width:0;margin:0 auto;padding:20px;}
 .public-details-toggle{min-width:92px;min-height:54px;padding:5px 8px;background:transparent;color:var(--text-muted);justify-content:center;overflow:hidden;}
 .public-details-toggle:hover{background:rgba(94,110,100,.08);}
 .public-details-toggle.is-achieved{background:var(--verde-100);color:var(--verde-700);}
@@ -326,14 +324,16 @@ select{text-overflow:ellipsis;}
 .maintenance-message{max-width:440px;margin:0 auto 20px;color:var(--text-muted);line-height:1.6;}
 .public-ranking-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end;}
 .public-ranking-filters .field{min-width:0;margin-bottom:10px;}
-.public-ranking-table{width:100%;margin:0 auto;}
+.public-ranking-filters .app-select{width:100%;}
+.public-ranking-table{width:100%;min-width:0;max-width:100%;margin:0 auto;overflow-x:auto;}
 .material-detail-table{width:100%;table-layout:fixed;}
 .material-detail-table th{white-space:normal;}
 .material-detail-table th:nth-child(1){width:24%;}
-.material-detail-table th:nth-child(2){width:14%;}
-.material-detail-table th:nth-child(3){width:19%;}
-.material-detail-table th:nth-child(4){width:22%;}
-.material-detail-table th:nth-child(5){width:21%;}
+.material-detail-table th:nth-child(2){width:17%;}
+.material-detail-table th:nth-child(3){width:17%;}
+.material-detail-table th:nth-child(4){width:18%;}
+.material-detail-table th:nth-child(5){width:24%;}
+.material-detail-table th:last-child{white-space:nowrap;}
 .material-detail-table th:nth-child(n+2),
 .material-detail-table td:nth-child(n+2){text-align:center;}
 .material-detail-table .material-markers-column{padding-inline:0;}
@@ -358,14 +358,15 @@ select{text-overflow:ellipsis;}
 #tcInfoKits>div{min-width:0;overflow-wrap:anywhere;}
 #tcInfoKits b{display:inline;margin-bottom:0;}
 @media(max-width:600px){
-  .public-ranking-screen{padding:20px 10px;}
-  .public-ranking-card{padding:14px;width:100%;}
+  .public-ranking-screen{min-width:0;padding:20px 10px;}
+  .public-ranking-card{min-width:0;padding:14px;width:100%;}
   .public-ranking-filters{grid-template-columns:1fr;gap:0;}
   .public-ranking-card .table-wrap{width:100%;max-width:100%;margin-inline:auto;}
   .podium-card{height:116px;box-sizing:border-box;}
   .podium-1{height:130px;}
   .material-detail-table{font-size:11px;}
   .material-detail-table th{font-size:9px;letter-spacing:0;padding:7px 3px;}
+  .material-detail-table th:last-child{font-size:clamp(7px,2.1vw,8.5px);letter-spacing:-.25px;}
   .material-detail-table td{padding:8px 3px;overflow-wrap:anywhere;}
   .badge-surplus{font-size:9px;padding:2px 4px;}
   .modal-overlay-public-details{align-items:center;padding:10px;}
@@ -1784,11 +1785,7 @@ function abrirSeletorNativo(select){
     item.disabled=opcao.disabled;
     const texto=document.createElement('span');
     texto.textContent=opcao.textContent.trim();
-    const indicador=document.createElement('span');
-    indicador.className='app-select-option-indicator';
-    indicador.setAttribute('aria-hidden','true');
-    if(opcao===select.options[select.selectedIndex]) indicador.innerHTML=icon('check',13);
-    item.append(texto,indicador);
+    item.append(texto);
     item.addEventListener('click',()=>{
       const mudou=select.value!==opcao.value;
       select.value=opcao.value;
@@ -2077,7 +2074,7 @@ function abrirDetalhesRankingPublico(indice){
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
 function renderTabelaDetalhesMateriais(categorias){
   const formatarQuantidade=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
-  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th class="material-markers-column" aria-hidden="true"></th><th>Disponível</th><th>Meta do mês</th><th>% cumprimento</th></tr></thead>
+  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th class="material-markers-column">Excedentes</th><th>Disponível</th><th>Meta do mês</th><th>Cumprimento %</th></tr></thead>
     <tbody>${categorias.map(cat=>{
       const cumprimento=ReciclarRankingLogic.resumirCategoria(cat.quantidade,cat.meta);
       const excedente=Math.max(0,cumprimento.quantidade-cat.meta);
@@ -2126,6 +2123,7 @@ function renderApp(){
   const app = document.getElementById('app');
   if(STORAGE_MODE==='firestore' && (!STATE.authUser || (!STATE.isAdmin && !STATE.isOperator))){
     app.innerHTML=STATE.authUser && !STATE.mostrarLogin ? renderTelaAutenticacao() : renderRankingPublico();
+    aprimorarSeletoresNativos(app);
     return;
   }
   const navItems = navItemsVisiveis();
@@ -2184,6 +2182,7 @@ function renderApp(){
     ranking: renderRanking, historico: renderHistorico, relatorios: renderRelatorios, lixeira: renderLixeira, config: renderConfig,
   };
   content.innerHTML = renderers[STATE.view] ? renderers[STATE.view]() : '';
+  aprimorarSeletoresNativos(app);
 }
 
 function abrirMaisSheet(){
