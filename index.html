@@ -188,6 +188,12 @@ tr:last-child td{border-bottom:none;}
 .modal-head h3{margin:0;font-size:17px;}
 .modal-close{background:none;border:none;font-size:20px;color:var(--text-muted);line-height:1;padding:2px 6px;}
 .modal-actions{display:flex;gap:10px;margin-top:18px;}
+.notification-button{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:42px;min-height:42px;padding:8px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--verde-800);}
+.notification-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;display:grid;place-items:center;padding:0 5px;border-radius:20px;background:var(--vermelho);color:#fff;font-size:10px;font-weight:800;line-height:1;}
+.swap-request-list{display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow-y:auto;}
+.swap-request-card{border:1px solid var(--border);border-radius:12px;padding:12px;}
+.swap-request-card p{margin:0 0 8px;line-height:1.5;}
+.swap-request-actions{display:flex;gap:8px;margin-top:12px;}
 
 .empty-state{text-align:center;padding:50px 20px;color:var(--text-muted);}
 .empty-state .icon{width:44px;height:44px;color:var(--verde-300);margin-bottom:10px;}
@@ -446,6 +452,10 @@ let STATE = {
   authEmail: '',
   mostrarLogin: false,
   rankingsPublicos: [],
+  solicitacoesTrocaPublicas: [],
+  solicitacoesTrocaError: '',
+  solicitacaoTrocaBusyId: '',
+  erroSolicitacaoTroca: '',
   manutencaoPublica: false,
   manutencaoPublicaCarregada: false,
   salvandoManutencaoPublica: false,
@@ -486,10 +496,13 @@ const GOOGLE_DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const GOOGLE_DRIVE_SCOPE = 'openid email profile https://www.googleapis.com/auth/drive.file';
 let GOOGLE_DRIVE_TOKEN_CACHE = null;
 const GOOGLE_DRIVE_TOKEN_SESSION_PREFIX = 'reciclar-apac-drive-token:';
+const SOLICITACAO_TROCA_COLLECTION = 'reciclar-apac-transfer-requests';
 
 let FIREBASE_DB = null;
 let FIREBASE_AUTH = null;
 let STORAGE_MODE = 'none';
+let solicitacoesTrocaUnsubscribe = null;
+let solicitacoesTrocaListenerUid = '';
 const FIRESTORE_RECORD_COLLECTIONS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas','lixeira']);
 const FIRESTORE_MIGRATION_COLLECTIONS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas','metas']);
 const COLECOES_RESTAURAVEIS = new Set(['colaboradores','entregas','transferencias','trocas','campanhas']);
@@ -1315,6 +1328,7 @@ const ICONS = {
   x:'<path d="M18 6L6 18M6 6l12 12"/>',
   upload:'<path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 18v2h16v-2"/>',
   download:'<path d="M12 4v12M6 12l6 6 6-6"/><path d="M4 20h16"/>',
+  bell:'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/>',
   image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.7"/><path d="M21 16l-5.5-5.5L4 21"/>',
   filter:'<path d="M4 5h16M7 12h10M10 19h4"/>',
   users:'<circle cx="9" cy="8" r="3"/><path d="M2.5 19.5c0-3.3 2.9-5.5 6.5-5.5s6.5 2.2 6.5 5.5"/><circle cx="17.5" cy="9" r="2"/><path d="M15.2 14.3c2-.3 3.8 1.2 3.8 5.2"/>',
@@ -1338,6 +1352,50 @@ function navItemsVisiveis(){
     : NAV_ITEMS_BASE.filter(n=>n.key!=='relatorios');
   return itens;
 }
+function renderBotaoNotificacoesTroca(){
+  const quantidade=STATE.solicitacoesTrocaPublicas.length;
+  return `<button class="notification-button" type="button" aria-label="Notificações de troca${quantidade?`: ${quantidade} pendentes`:''}" title="Solicitações de troca" onclick="abrirNotificacoesTroca()">
+    ${icon('bell',20)}${quantidade?`<span class="notification-count">${quantidade>99?'99+':quantidade}</span>`:''}
+  </button>`;
+}
+function conteudoNotificacoesTroca(){
+  const pedidos=STATE.solicitacoesTrocaPublicas;
+  return `<div class="modal-head"><h3>Solicitações de troca${pedidos.length?` (${pedidos.length})`:''}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    ${STATE.solicitacoesTrocaError?`<p class="auth-error" role="alert">${escapeHtml(STATE.solicitacoesTrocaError)}</p>`:''}
+    ${pedidos.length?`<div class="swap-request-list">${pedidos.map(pedido=>{
+      const data=pedido.solicitadoEm && typeof pedido.solicitadoEm.toDate==='function'
+        ?pedido.solicitadoEm.toDate().toLocaleString('pt-BR')
+        :'data desconhecida';
+      const origem=STATE.colaboradores.find(colaborador=>colaborador.id===pedido.colaboradorOrigemId);
+      const destino=STATE.colaboradores.find(colaborador=>colaborador.id===pedido.colaboradorDestinoId);
+      const campanha=campanhaPorId(pedido.campanhaId);
+      const materialOrigem=campanha&&categoriasDaCampanha(campanha).find(categoria=>categoria.key===pedido.categoriaOrigem);
+      const materialDestino=campanha&&categoriasDaCampanha(campanha).find(categoria=>categoria.key===pedido.categoriaDestino);
+      const nomeOrigem=origem?origem.nome:`${pedido.colaboradorOrigemNome} (não cadastrado)`;
+      const nomeDestino=destino?destino.nome:`${pedido.colaboradorDestinoNome} (não cadastrado)`;
+      const nomeMaterialOrigem=materialOrigem?materialOrigem.label.split(' (')[0]:pedido.materialOrigemNome;
+      const nomeMaterialDestino=materialDestino?materialDestino.label.split(' (')[0]:pedido.materialDestinoNome;
+      const ocupado=STATE.solicitacaoTrocaBusyId===pedido.id;
+      return `<article class="swap-request-card">
+        <p><b>${escapeHtml(nomeOrigem)}</b> oferece <b>${pedido.quantidadeOrigem.toLocaleString('pt-BR')} ${escapeHtml(nomeMaterialOrigem)}</b> para <b>${escapeHtml(nomeDestino)}</b> em troca de <b>${pedido.quantidadeDestino.toLocaleString('pt-BR')} ${escapeHtml(nomeMaterialDestino)}</b>.</p>
+        <p class="small-note">${escapeHtml(pedido.campanhaNome)} · Pedido enviado ${escapeHtml(data)}</p>
+        <p class="small-note">Os nomes foram selecionados sem autenticação. Confirme a troca com os colaboradores antes de aprovar.</p>
+        <div class="swap-request-actions">
+          <button class="btn btn-primary btn-block" type="button" onclick="decidirSolicitacaoTroca('${escapeHtml(pedido.id)}','aprovada')" ${ocupado?'disabled':''}>${icon('check',16)}Aceitar</button>
+          <button class="btn btn-outline btn-block" type="button" onclick="decidirSolicitacaoTroca('${escapeHtml(pedido.id)}','rejeitada')" ${ocupado?'disabled':''}>Rejeitar</button>
+        </div>
+      </article>`;
+    }).join('')}</div>`:'<p class="small-note">Não há solicitações pendentes.</p>'}`;
+}
+function abrirNotificacoesTroca(){
+  if(!exigirAdmin()) return;
+  abrirModal(conteudoNotificacoesTroca(),false,'swap-notifications');
+}
+function atualizarModalNotificacoesTroca(){
+  const modal=document.querySelector('#modalOverlay .modal-swap-notifications');
+  if(modal) modal.innerHTML=conteudoNotificacoesTroca();
+}
+window.abrirNotificacoesTroca=abrirNotificacoesTroca;
 async function alterarManutencaoPublica(ativada){
   if(!exigirAdmin()) return;
   if(STATE.salvandoManutencaoPublica) return;
@@ -1429,7 +1487,10 @@ function renderAvisoManutencaoPublica(){
       </div>
       <h1 class="maintenance-title">Estamos em manutenção</h1>
       <span class="badge badge-amber maintenance-badge">Voltaremos em breve</span>
-      <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Painel administrativo</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+        <button class="btn btn-primary" type="button" onclick="abrirSolicitacaoTrocaPublica()">Solicitar troca</button>
+        <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Painel administrativo</button>
+      </div>
     </section>
   </main>`;
 }
@@ -1462,7 +1523,10 @@ function renderRankingPublico(){
     <section class="card public-ranking-card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
         <div><h1 style="margin:0 0 6px;color:var(--verde-900);">Ranking Reciclapac</h1><p class="small-note" style="margin:0;">Acompanhe suas entregas e as dos demais colaboradores.</p></div>
-        <button class="btn btn-outline" onclick="abrirLoginAdmin()">Painel administrativo</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+          <button class="btn btn-primary" type="button" onclick="abrirSolicitacaoTrocaPublica()">Solicitar troca</button>
+          <button class="btn btn-outline" type="button" onclick="abrirLoginAdmin()">Painel administrativo</button>
+        </div>
       </div>
       ${STATE.erroRankingPublico? `<p class="auth-error" role="alert">${escapeHtml(STATE.erroRankingPublico)}</p>`:''}
       ${STATE.rankingsPublicos.length? `
@@ -1497,7 +1561,7 @@ function renderRankingPublico(){
         `:`<div class="empty-state">Ainda não há colaboradores com movimentação neste período.</div>`}
         <p class="small-note" style="margin:12px 0 0;">Atualizado automaticamente em ${escapeHtml(new Date(ranking.atualizadoEm).toLocaleString('pt-BR'))}.</p>
       ` : `<div class="empty-state">${STATE.erroRankingPublico?'Não foi possível carregar o ranking público.':'A página pública será preenchida automaticamente após um administrador ou operador abrir o aplicativo.'}</div>`}
-      <p class="small-note" style="margin:16px 0 0;">A página apresenta a classificação e os saldos mensais por material. Os registros são realizados somente por pessoal autorizado.</p>
+      <p class="small-note" style="margin:16px 0 0;">A página apresenta a classificação e os saldos mensais por material. Solicitações de troca só alteram os saldos depois da conferência e aprovação de um administrador.</p>
     </section>
   </main>`;
 }
@@ -1514,6 +1578,150 @@ function selecionarRankingPublico(id){
   renderApp();
 }
 window.selecionarCampanhaRankingPublico=selecionarCampanhaRankingPublico;
+function campanhasComSolicitacaoPublica(){
+  const maisRecentes=new Map();
+  [...STATE.rankingsPublicos]
+    .sort((a,b)=>(b.ano*12+b.mes)-(a.ano*12+a.mes))
+    .forEach(ranking=>{
+      if(!maisRecentes.has(ranking.campanhaId)) maisRecentes.set(ranking.campanhaId,ranking);
+    });
+  return [...maisRecentes.values()]
+    .filter(ranking=>ranking.solicitacoesPermitidas && ranking.participantes.length>1 && ranking.materiais.length>1);
+}
+function rankingCampanhaParaSolicitacao(campanhaId){
+  return campanhasComSolicitacaoPublica().find(ranking=>ranking.campanhaId===campanhaId)||null;
+}
+function abrirSolicitacaoTrocaPublica(){
+  if(!FIREBASE_DB){
+    alert('As solicitações públicas exigem conexão com o Firebase. Tente novamente mais tarde.');
+    return;
+  }
+  const campanhas=campanhasComSolicitacaoPublica();
+  if(!campanhas.length){
+    alert('Não há campanha ativa disponível para solicitar uma troca.');
+    return;
+  }
+  const preferida=campanhas.find(ranking=>ranking.campanhaId===STATE.rankingPublicoCampanhaId)||campanhas[0];
+  abrirModal(`
+    <div class="modal-head"><h3>Solicitar troca de materiais</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p class="small-note">O pedido ficará pendente até um administrador conferir e aprovar. A seleção de nomes não confirma a identidade de quem solicita; selecione os nomes corretos e as quantidades combinadas.</p>
+    <div class="field"><label for="solicitacaoCampanha">Campanha</label><select id="solicitacaoCampanha" onchange="atualizarFormularioSolicitacaoTroca()">${campanhas.map(ranking=>`<option value="${escapeHtml(ranking.campanhaId)}" ${ranking.campanhaId===preferida.campanhaId?'selected':''}>${escapeHtml(ranking.campanhaNome)}</option>`).join('')}</select></div>
+    <div class="section-title" style="margin:14px 0 8px;font-size:13.5px;">Você oferece</div>
+    <div class="grid grid-2">
+      <div class="field"><label for="solicitacaoOrigem">Seu nome</label><select id="solicitacaoOrigem" onchange="atualizarFormularioSolicitacaoTroca()"></select></div>
+      <div class="field"><label for="solicitacaoMaterialOrigem">Material</label><select id="solicitacaoMaterialOrigem"></select></div>
+    </div>
+    <div class="field"><label for="solicitacaoQuantidadeOrigem">Quantidade que você oferece</label><input id="solicitacaoQuantidadeOrigem" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric"></div>
+    <div class="section-title" style="margin:14px 0 8px;font-size:13.5px;">Você receberá</div>
+    <div class="grid grid-2">
+      <div class="field"><label for="solicitacaoDestino">Outro colaborador</label><select id="solicitacaoDestino"></select></div>
+      <div class="field"><label for="solicitacaoMaterialDestino">Material</label><select id="solicitacaoMaterialDestino"></select></div>
+    </div>
+    <div class="field"><label for="solicitacaoQuantidadeDestino">Quantidade que o outro colaborador oferece</label><input id="solicitacaoQuantidadeDestino" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric"></div>
+    <p id="solicitacaoTrocaErro" class="auth-error" role="alert" style="display:none;"></p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" type="button" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary btn-block" type="button" onclick="enviarSolicitacaoTrocaPublica()">${icon('check',16)}Solicitar troca</button>
+    </div>
+  `);
+  atualizarFormularioSolicitacaoTroca();
+}
+function atualizarFormularioSolicitacaoTroca(){
+  const campanhaEl=document.getElementById('solicitacaoCampanha');
+  const origemEl=document.getElementById('solicitacaoOrigem');
+  const destinoEl=document.getElementById('solicitacaoDestino');
+  const materialOrigemEl=document.getElementById('solicitacaoMaterialOrigem');
+  const materialDestinoEl=document.getElementById('solicitacaoMaterialDestino');
+  if(!campanhaEl || !origemEl || !destinoEl || !materialOrigemEl || !materialDestinoEl) return;
+  const ranking=rankingCampanhaParaSolicitacao(campanhaEl.value);
+  if(!ranking) return;
+  const origemAnterior=origemEl.value;
+  const destinoAnterior=destinoEl.value;
+  const materialOrigemAnterior=materialOrigemEl.value;
+  const materialDestinoAnterior=materialDestinoEl.value;
+  const participantes=ranking.participantes.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const materiais=ranking.materiais;
+  const opcoesParticipantes=participantes.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.nome)}</option>`).join('');
+  const opcoesMateriais=materiais.map(m=>`<option value="${escapeHtml(m.key)}">${escapeHtml(m.nome)} (${escapeHtml(m.unidade)})</option>`).join('');
+  origemEl.innerHTML=opcoesParticipantes;
+  destinoEl.innerHTML=opcoesParticipantes;
+  materialOrigemEl.innerHTML=opcoesMateriais;
+  materialDestinoEl.innerHTML=opcoesMateriais;
+  if(participantes.some(p=>p.id===origemAnterior)) origemEl.value=origemAnterior;
+  if(participantes.some(p=>p.id===destinoAnterior)) destinoEl.value=destinoAnterior;
+  else if(participantes.length>1) destinoEl.value=participantes.find(p=>p.id!==origemEl.value).id;
+  if(materiais.some(m=>m.key===materialOrigemAnterior)) materialOrigemEl.value=materialOrigemAnterior;
+  if(materiais.some(m=>m.key===materialDestinoAnterior)) materialDestinoEl.value=materialDestinoAnterior;
+}
+async function enviarSolicitacaoTrocaPublica(){
+  const erroEl=document.getElementById('solicitacaoTrocaErro');
+  const mostrarErro=mensagem=>{
+    if(erroEl){ erroEl.textContent=mensagem; erroEl.style.display='block'; }
+  };
+  if(!FIREBASE_DB){ mostrarErro('A conexão com o Firebase não está disponível.'); return; }
+  const campanhaId=document.getElementById('solicitacaoCampanha')?.value||'';
+  const origemId=document.getElementById('solicitacaoOrigem')?.value||'';
+  const destinoId=document.getElementById('solicitacaoDestino')?.value||'';
+  const categoriaOrigem=document.getElementById('solicitacaoMaterialOrigem')?.value||'';
+  const categoriaDestino=document.getElementById('solicitacaoMaterialDestino')?.value||'';
+  const quantidadeOrigem=Number(document.getElementById('solicitacaoQuantidadeOrigem')?.value);
+  const quantidadeDestino=Number(document.getElementById('solicitacaoQuantidadeDestino')?.value);
+  const ranking=rankingCampanhaParaSolicitacao(campanhaId);
+  const origem=ranking&&ranking.participantes.find(p=>p.id===origemId);
+  const destino=ranking&&ranking.participantes.find(p=>p.id===destinoId);
+  const materialOferecido=ranking&&ranking.materiais.find(m=>m.key===categoriaOrigem);
+  const materialRecebido=ranking&&ranking.materiais.find(m=>m.key===categoriaDestino);
+  if(!ranking || !origem || !destino || !materialOferecido || !materialRecebido){
+    mostrarErro('Atualize a página e selecione novamente os colaboradores e materiais.');
+    return;
+  }
+  if(origemId===destinoId){
+    mostrarErro('Escolha dois colaboradores diferentes para realizar a troca.');
+    return;
+  }
+  if(categoriaOrigem===categoriaDestino){
+    mostrarErro('Escolha materiais diferentes para a troca.');
+    return;
+  }
+  if(!Number.isSafeInteger(quantidadeOrigem) || quantidadeOrigem<=0 || quantidadeOrigem>9007199254740991
+    || !Number.isSafeInteger(quantidadeDestino) || quantidadeDestino<=0 || quantidadeDestino>9007199254740991){
+    mostrarErro('Informe quantidades inteiras maiores que zero para os dois materiais.');
+    return;
+  }
+  if(erroEl) erroEl.style.display='none';
+  const referencia=FIREBASE_DB.collection(SOLICITACAO_TROCA_COLLECTION).doc();
+  const pedido={
+    id:referencia.id,
+    campanhaId,
+    campanhaNome:ranking.campanhaNome,
+    colaboradorOrigemId:origem.id,
+    colaboradorOrigemNome:origem.nome,
+    categoriaOrigem:materialOferecido.key,
+    materialOrigemNome:materialOferecido.nome,
+    quantidadeOrigem,
+    colaboradorDestinoId:destino.id,
+    colaboradorDestinoNome:destino.nome,
+    categoriaDestino:materialRecebido.key,
+    materialDestinoNome:materialRecebido.nome,
+    quantidadeDestino,
+    solicitadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+    status:'pendente',
+  };
+  const botao=document.querySelector('#modalOverlay .modal-actions .btn-primary');
+  if(botao) botao.disabled=true;
+  try{
+    await referencia.set(pedido);
+    fecharModal();
+    alert('Solicitação enviada. Um administrador precisa aprovar a troca antes que os saldos sejam alterados.');
+  }catch(erro){
+    console.error('Erro ao enviar solicitação pública de troca',erro);
+    mostrarErro(erro.message||'Não foi possível enviar a solicitação. Tente novamente.');
+    if(botao) botao.disabled=false;
+  }
+}
+window.abrirSolicitacaoTrocaPublica=abrirSolicitacaoTrocaPublica;
+window.atualizarFormularioSolicitacaoTroca=atualizarFormularioSolicitacaoTroca;
+window.enviarSolicitacaoTrocaPublica=enviarSolicitacaoTrocaPublica;
 function abrirDetalhesRankingPublico(indice){
   const ranking=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
   const item=ranking&&ranking.ranking[indice];
@@ -1618,6 +1826,7 @@ function renderApp(){
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
           ${renderSeletorCampanhaTopo()}
           <button class="help-btn" onclick="abrirAjuda()" title="Como usar">?</button>
+          ${STATE.isAdmin?renderBotaoNotificacoesTroca():''}
         </div>
       </div>
       <div class="content" id="viewContent"></div>
@@ -1955,8 +2164,21 @@ async function sincronizarRankingsPublicos(){
         const mesAtual=chave===chaveMA(atual.mes,atual.ano);
         const temDados=mesAtual||ranking.length>0;
         if(!temDados && !anterior) continue;
+        const participantes=STATE.colaboradores
+          .filter(colaborador=>colaborador.status!=='desligado')
+          .map(colaborador=>({id:colaborador.id,nome:colaborador.nome}));
+        const materiais= categorias.map(categoria=>({
+          key:categoria.key,
+          nome:categoria.label.split(' (')[0],
+          unidade:categoria.unidade,
+        }));
+        const solicitacoesPermitidas=campanha.status==='ativa'
+          && dataDentroDaCampanha(campanha.id,new Date().toISOString().slice(0,10)).ok;
         if(anterior && anterior.campanhaNome===campanha.nome
           && anterior.temDados===temDados
+          && serializarEstavel(anterior.participantes)===serializarEstavel(participantes)
+          && serializarEstavel(anterior.materiais)===serializarEstavel(materiais)
+          && anterior.solicitacoesPermitidas===solicitacoesPermitidas
           && serializarEstavel(anterior.ranking)===serializarEstavel(ranking)) continue;
         const documento={
           campanhaId:campanha.id,
@@ -1965,6 +2187,9 @@ async function sincronizarRankingsPublicos(){
           ano,
           atualizadoEm:new Date().toISOString(),
           temDados,
+          participantes,
+          materiais,
+          solicitacoesPermitidas,
           ranking,
         };
         await colecao.doc(id).set(documento);
@@ -2734,6 +2959,261 @@ async function salvarTransferencia(){
   }
   fecharModal(); renderApp();
 }
+function obterSolicitacoesTroca(){
+  if(!STATE.isAdmin || !FIREBASE_DB || !STATE.authUser) return;
+  if(solicitacoesTrocaUnsubscribe && solicitacoesTrocaListenerUid===STATE.authUser.uid) return;
+  if(solicitacoesTrocaUnsubscribe) solicitacoesTrocaUnsubscribe();
+  solicitacoesTrocaListenerUid=STATE.authUser.uid;
+  const uidObservado=STATE.authUser.uid;
+  STATE.solicitacoesTrocaPublicas=[];
+  STATE.solicitacoesTrocaError='';
+  solicitacoesTrocaUnsubscribe=FIREBASE_DB.collection(SOLICITACAO_TROCA_COLLECTION)
+    .where('status','==','pendente')
+    .onSnapshot(snapshot=>{
+      if(!STATE.isAdmin || !STATE.authUser || STATE.authUser.uid!==uidObservado) return;
+      try{
+        STATE.solicitacoesTrocaPublicas=snapshot.docs.map(documento=>{
+          const pedido=documento.data();
+          const textos=['id','campanhaId','campanhaNome','colaboradorOrigemId','colaboradorOrigemNome',
+            'categoriaOrigem','materialOrigemNome','colaboradorDestinoId','colaboradorDestinoNome',
+            'categoriaDestino','materialDestinoNome','solicitadoEm','status'];
+          if(!pedido || textos.some(campo=>typeof pedido[campo]!=='string' || !pedido[campo].trim())
+            || pedido.id!==documento.id || pedido.status!=='pendente'
+            || pedido.colaboradorOrigemId===pedido.colaboradorDestinoId
+            || pedido.categoriaOrigem===pedido.categoriaDestino
+            || !Number.isSafeInteger(pedido.quantidadeOrigem) || pedido.quantidadeOrigem<=0
+            || !Number.isSafeInteger(pedido.quantidadeDestino) || pedido.quantidadeDestino<=0
+            || !pedido.solicitadoEm || typeof pedido.solicitadoEm.toDate!=='function'
+            || !Number.isFinite(pedido.solicitadoEm.toMillis())){
+            throw new Error('Uma solicitação de troca salva tem formato inválido. Verifique o documento no Firestore.');
+          }
+          return pedido;
+        }).sort((a,b)=>b.solicitadoEm.toMillis()-a.solicitadoEm.toMillis());
+        STATE.solicitacoesTrocaError='';
+      }catch(erro){
+        console.error('Erro ao interpretar solicitações de troca',erro);
+        STATE.solicitacoesTrocaError=erro.message||'Não foi possível interpretar as solicitações de troca.';
+      }
+      renderApp();
+      atualizarModalNotificacoesTroca();
+    },erro=>{
+      if(!STATE.isAdmin || !STATE.authUser || STATE.authUser.uid!==uidObservado) return;
+      console.error('Erro ao observar solicitações de troca',erro);
+      STATE.solicitacoesTrocaError='Não foi possível carregar as solicitações de troca. Verifique as regras do Firestore.';
+      renderApp();
+      atualizarModalNotificacoesTroca();
+    });
+}
+function pararObservacaoSolicitacoesTroca(){
+  if(solicitacoesTrocaUnsubscribe) solicitacoesTrocaUnsubscribe();
+  solicitacoesTrocaUnsubscribe=null;
+  solicitacoesTrocaListenerUid='';
+  STATE.solicitacoesTrocaPublicas=[];
+  STATE.solicitacoesTrocaError='';
+  STATE.solicitacaoTrocaBusyId='';
+}
+function verificarRegistrosTransacionais(key,remotos,filtro){
+  let locais;
+  if(key==='colaboradores') locais=STATE.colaboradores;
+  else if(key==='entregas') locais=STATE.entregas;
+  else if(key==='transferencias') locais=STATE.transferencias;
+  else if(key==='trocas') locais=STATE.trocas;
+  else if(key==='campanhas') locais=STATE.campanhas;
+  else if(key==='metas') locais=STATE.metasSnapshots;
+  else throw new Error(`Coleção inesperada na validação da troca: ${key}.`);
+  const locaisRelevantes=new Map(locais.filter(filtro).map(registro=>[registro.id,serializarEstavel(registro)]));
+  const remotosRelevantes=new Map(remotos.filter(filtro).map(registro=>[registro.id,serializarEstavel(registro)]));
+  if(locaisRelevantes.size!==remotosRelevantes.size
+    || [...locaisRelevantes].some(([id,valor])=>remotosRelevantes.get(id)!==valor)){
+    throw new Error('Os dados envolvidos nesta troca mudaram desde que o painel foi carregado. Atualize a página e revise o pedido.');
+  }
+}
+async function carregarEstadoTrocaTransacional(transacao,campanhaId,participanteIds){
+  const raiz=FIREBASE_DB.collection('reciclar-apac');
+  const registros=key=>raiz.doc(key).collection('records');
+  const campanhaRef=registros('campanhas').doc(campanhaId);
+  const [origemDoc,destinoDoc,entregasSnapshot,transferenciasOrigemSnapshot,transferenciasDestinoSnapshot,trocasSnapshot,campanhaDoc,metasSnapshot]=await Promise.all([
+    transacao.get(registros('colaboradores').doc(participanteIds[0])),
+    transacao.get(registros('colaboradores').doc(participanteIds[1])),
+    transacao.get(registros('entregas').where('colaboradorId','in',participanteIds)),
+    transacao.get(registros('transferencias').where('colaboradorOrigemId','in',participanteIds)),
+    transacao.get(registros('transferencias').where('colaboradorDestinoId','in',participanteIds)),
+    transacao.get(registros('trocas').where('colaboradorId','in',participanteIds)),
+    transacao.get(campanhaRef),
+    transacao.get(registros('metas').where('campanhaId','==',campanhaId)),
+  ]);
+  if(!origemDoc.exists || !destinoDoc.exists || !campanhaDoc.exists){
+    throw new Error('A campanha ou um dos colaboradores não está mais cadastrado. Atualize o painel.');
+  }
+  const colaboradores=[origemDoc.data(),destinoDoc.data()];
+  const entregas=entregasSnapshot.docs.map(documento=>documento.data());
+  const transferencias=[...new Map(
+    [...transferenciasOrigemSnapshot.docs,...transferenciasDestinoSnapshot.docs]
+      .map(documento=>[documento.id,documento.data()])
+  ).values()];
+  const trocas=trocasSnapshot.docs.map(documento=>documento.data());
+  const campanhas=[campanhaDoc.data()];
+  const metas=metasSnapshot.docs.map(documento=>documento.data());
+  const participanteEnvolvido=registro=>participanteIds.includes(registro.colaboradorId)
+    || participanteIds.includes(registro.colaboradorOrigemId)
+    || participanteIds.includes(registro.colaboradorDestinoId);
+  verificarRegistrosTransacionais('colaboradores',colaboradores,registro=>participanteIds.includes(registro.id));
+  verificarRegistrosTransacionais('entregas',entregas,participanteEnvolvido);
+  verificarRegistrosTransacionais('transferencias',transferencias,participanteEnvolvido);
+  verificarRegistrosTransacionais('trocas',trocas,participanteEnvolvido);
+  verificarRegistrosTransacionais('campanhas',campanhas,registro=>registro.id===campanhaId);
+  verificarRegistrosTransacionais('metas',metas,registro=>registro.campanhaId===campanhaId);
+  return {colaboradores,entregas,transferencias,trocas,campanhas,metas};
+}
+async function decidirSolicitacaoTroca(id,decisao){
+  if(!exigirAdmin() || !['aprovada','rejeitada'].includes(decisao)) return;
+  if(STATE.solicitacaoTrocaBusyId) return;
+  const pedido=STATE.solicitacoesTrocaPublicas.find(item=>item.id===id);
+  if(!pedido) return;
+  STATE.solicitacaoTrocaBusyId=id;
+  STATE.solicitacoesTrocaError='';
+  atualizarModalNotificacoesTroca();
+  try{
+    const referencia=FIREBASE_DB.collection(SOLICITACAO_TROCA_COLLECTION).doc(id);
+    const decididoEm=new Date().toISOString();
+    let transferenciasAprovadas=[];
+    if(decisao==='rejeitada'){
+      await FIREBASE_DB.runTransaction(async transacao=>{
+        const documento=await transacao.get(referencia);
+        if(!documento.exists || documento.data().status!=='pendente'){
+          throw new Error('Esta solicitação já foi decidida por outro administrador. Atualize a lista.');
+        }
+        if(serializarEstavel(documento.data())!==serializarEstavel(pedido)){
+          throw new Error('A solicitação mudou desde que foi carregada. Atualize a página e tente novamente.');
+        }
+        transacao.update(referencia,{
+          status:'rejeitada',
+          decididoEm,
+          decididoPor:STATE.authUser.uid,
+          transferenciaIds:[],
+        });
+      });
+    }else{
+      const campanha=campanhaPorId(pedido.campanhaId);
+      const origem=STATE.colaboradores.find(colaborador=>colaborador.id===pedido.colaboradorOrigemId);
+      const destino=STATE.colaboradores.find(colaborador=>colaborador.id===pedido.colaboradorDestinoId);
+      const materialOrigem=campanha&&categoriasDaCampanha(campanha).find(categoria=>categoria.key===pedido.categoriaOrigem);
+      const materialDestino=campanha&&categoriasDaCampanha(campanha).find(categoria=>categoria.key===pedido.categoriaDestino);
+      if(!campanha || campanha.status!=='ativa' || !origem || origem.status==='desligado'
+        || !destino || destino.status==='desligado' || origem.id===destino.id
+        || !materialOrigem || !materialDestino || materialOrigem.key===materialDestino.key){
+        throw new Error('A campanha, os colaboradores ou os materiais já não estão disponíveis. Rejeite a solicitação ou revise os cadastros.');
+      }
+      const data=new Date().toISOString().slice(0,10);
+      const validacaoData=dataDentroDaCampanha(campanha.id,data);
+      if(!validacaoData.ok) throw new Error(validacaoData.motivo);
+      if(!Number.isSafeInteger(pedido.quantidadeOrigem) || pedido.quantidadeOrigem<=0
+        || !Number.isSafeInteger(pedido.quantidadeDestino) || pedido.quantidadeDestino<=0){
+        throw new Error('As quantidades desta solicitação são inválidas.');
+      }
+      const mes=Number(data.slice(5,7));
+      const ano=Number(data.slice(0,4));
+      const metaOriginal=[...STATE.metasSnapshots];
+      try{
+        await garantirSnapshotMetas(campanha.id,mes,ano);
+      }catch(erro){
+        STATE.metasSnapshots=metaOriginal;
+        throw erro;
+      }
+      const transferenciasRef=FIREBASE_DB.collection('reciclar-apac').doc('transferencias').collection('records');
+      const origemParaDestinoRef=transferenciasRef.doc();
+      const destinoParaOrigemRef=transferenciasRef.doc();
+      const motivo=`Troca aprovada a partir da solicitação pública ${pedido.id}`;
+      const transferenciaOrigemParaDestino={
+        id:origemParaDestinoRef.id,
+        campanhaId:campanha.id,
+        data,
+        colaboradorOrigemId:origem.id,
+        categoriaOrigem:materialOrigem.key,
+        colaboradorDestinoId:destino.id,
+        categoriaDestino:materialDestino.key,
+        quantidade:pedido.quantidadeOrigem,
+        motivo,
+        criadoEm:Date.now(),
+      };
+      const transferenciaDestinoParaOrigem={
+        id:destinoParaOrigemRef.id,
+        campanhaId:campanha.id,
+        data,
+        colaboradorOrigemId:destino.id,
+        categoriaOrigem:materialDestino.key,
+        colaboradorDestinoId:origem.id,
+        categoriaDestino:materialOrigem.key,
+        quantidade:pedido.quantidadeDestino,
+        motivo,
+        criadoEm:Date.now(),
+      };
+      await FIREBASE_DB.runTransaction(async transacao=>{
+        const documento=await transacao.get(referencia);
+        if(!documento.exists || documento.data().status!=='pendente'){
+          throw new Error('Esta solicitação já foi decidida por outro administrador. Atualize a lista.');
+        }
+        if(serializarEstavel(documento.data())!==serializarEstavel(pedido)){
+          throw new Error('A solicitação mudou desde que foi carregada. Atualize a página e tente novamente.');
+        }
+        const dadosAtuais=await carregarEstadoTrocaTransacional(transacao,campanha.id,[origem.id,destino.id]);
+        const estadoAnterior={
+          colaboradores:STATE.colaboradores,
+          entregas:STATE.entregas,
+          transferencias:STATE.transferencias,
+          trocas:STATE.trocas,
+          campanhas:STATE.campanhas,
+          metasSnapshots:STATE.metasSnapshots,
+        };
+        try{
+          STATE.colaboradores=dadosAtuais.colaboradores;
+          STATE.entregas=dadosAtuais.entregas;
+          STATE.transferencias=dadosAtuais.transferencias;
+          STATE.trocas=dadosAtuais.trocas;
+          STATE.campanhas=dadosAtuais.campanhas;
+          STATE.metasSnapshots=dadosAtuais.metas;
+          if(saldoDisponivelAntes(campanha.id,origem.id,materialOrigem.key,mes,ano)<pedido.quantidadeOrigem){
+            throw new Error(`${origem.nome} não tem saldo suficiente de ${materialOrigem.label.split(' (')[0]} para concluir a troca.`);
+          }
+          if(saldoDisponivelAntes(campanha.id,destino.id,materialDestino.key,mes,ano)<pedido.quantidadeDestino){
+            throw new Error(`${destino.nome} não tem saldo suficiente de ${materialDestino.label.split(' (')[0]} para concluir a troca.`);
+          }
+        }finally{
+          Object.assign(STATE,estadoAnterior);
+        }
+        const transferenciaAtual=await transacao.get(origemParaDestinoRef);
+        const transferenciaReversaAtual=await transacao.get(destinoParaOrigemRef);
+        if(transferenciaAtual.exists || transferenciaReversaAtual.exists){
+          throw new Error('Não foi possível reservar registros únicos para a troca. Tente novamente.');
+        }
+        transacao.set(origemParaDestinoRef,transferenciaOrigemParaDestino);
+        transacao.set(destinoParaOrigemRef,transferenciaDestinoParaOrigem);
+        transacao.update(referencia,{
+          status:'aprovada',
+          decididoEm,
+          decididoPor:STATE.authUser.uid,
+          transferenciaIds:[origemParaDestinoRef.id,destinoParaOrigemRef.id],
+        });
+      });
+      transferenciasAprovadas=[transferenciaOrigemParaDestino,transferenciaDestinoParaOrigem];
+      STATE.transferencias.push(...transferenciasAprovadas);
+      const baseline=FIRESTORE_BASELINES.get('transferencias')||new Map();
+      transferenciasAprovadas.forEach(transferencia=>baseline.set(transferencia.id,serializarEstavel(transferencia)));
+      FIRESTORE_BASELINES.set('transferencias',baseline);
+      agendarSincronizacaoRankingsPublicos('transferencias');
+    }
+    STATE.solicitacoesTrocaPublicas=STATE.solicitacoesTrocaPublicas.filter(item=>item.id!==id);
+    renderApp();
+  }catch(erro){
+    console.error(`Erro ao ${decisao==='aprovada'?'aprovar':'rejeitar'} solicitação pública de troca`,erro);
+    STATE.solicitacoesTrocaError=erro.message||'Não foi possível processar a solicitação de troca.';
+  }finally{
+    STATE.solicitacaoTrocaBusyId='';
+    atualizarModalNotificacoesTroca();
+    renderApp();
+  }
+}
+window.decidirSolicitacaoTroca=decidirSolicitacaoTroca;
 function confirmarExcluirTransferencia(id){
   if(!exigirAdmin()) return;
   abrirModal(`
@@ -4355,6 +4835,7 @@ function finalizarCarregamento(){
   if(STATE.view==='config') renderTabelaCampanhas();
 }
 async function processarSessaoFirebase(user){
+  pararObservacaoSolicitacoesTroca();
   const uidAnterior=STATE.authUser&&STATE.authUser.uid;
   if(uidAnterior && (!user || user.uid!==uidAnterior)) limparTokenGoogleDriveSessao(uidAnterior);
   STATE.authUser=user;
@@ -4373,6 +4854,8 @@ async function processarSessaoFirebase(user){
   STATE.googleDriveBackupsVisiveis=false;
   STATE.isAdmin=false;
   STATE.isOperator=false;
+  STATE.solicitacoesTrocaPublicas=[];
+  STATE.solicitacoesTrocaError='';
   rankingPublicoSyncAtivo=false;
   clearTimeout(rankingPublicoSyncMesTimer);
   rankingPublicoUltimoMesSincronizado='';
@@ -4405,6 +4888,7 @@ async function processarSessaoFirebase(user){
     await verificarInstalacaoFirestore();
   }
   await carregarDados();
+  if(STATE.isAdmin) obterSolicitacoesTroca();
   STATE.loginCarregando=false;
   rankingPublicoSyncAtivo=true;
   agendarSincronizacaoRankingPublicoNaViradaDoMes();
@@ -4463,9 +4947,27 @@ function carregarRankingsPublicos(){
         || !Number.isInteger(data.mes) || data.mes<1 || data.mes>12
         || !Number.isInteger(data.ano) || data.ano<2000 || data.ano>9999
         || typeof data.atualizadoEm!=='string' || !Number.isFinite(Date.parse(data.atualizadoEm))
-        || !Array.isArray(data.ranking)){
+        || !Array.isArray(data.ranking)
+        || (data.participantes!==undefined && !Array.isArray(data.participantes))
+        || (data.materiais!==undefined && !Array.isArray(data.materiais))
+        || (data.solicitacoesPermitidas!==undefined && typeof data.solicitacoesPermitidas!=='boolean')){
         throw new Error('Um dos rankings públicos salvos tem formato inválido.');
       }
+      const participantes=(data.participantes||[]).map(participante=>{
+        if(!participante || typeof participante.id!=='string' || !participante.id.trim()
+          || typeof participante.nome!=='string' || !participante.nome.trim()){
+          throw new Error('A lista de participantes do ranking público tem formato inválido.');
+        }
+        return {id:participante.id,nome:participante.nome};
+      });
+      const materiais=(data.materiais||[]).map(material=>{
+        if(!material || typeof material.key!=='string' || !material.key.trim()
+          || typeof material.nome!=='string' || !material.nome.trim()
+          || typeof material.unidade!=='string' || !material.unidade.trim()){
+          throw new Error('A lista de materiais do ranking público tem formato inválido.');
+        }
+        return {key:material.key,nome:material.nome,unidade:material.unidade};
+      });
       const entradas=data.ranking.map(item=>{
         if(!item || (item.posicao!==null && (!Number.isInteger(item.posicao) || item.posicao<1))
           || typeof item.nome!=='string' || !item.nome.trim()
@@ -4536,6 +5038,9 @@ function carregarRankingsPublicos(){
         ano:data.ano,
         atualizadoEm:data.atualizadoEm,
         temDados,
+        participantes,
+        materiais,
+        solicitacoesPermitidas:data.solicitacoesPermitidas===true,
         ranking:entradasComPosicoes,
       };
     }).filter(ranking=>ranking.temDados);

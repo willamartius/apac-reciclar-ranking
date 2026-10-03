@@ -36,6 +36,71 @@ service cloud.firestore {
         && data.metas == get(campaignPath).data.metasDefault;
     }
 
+    function isValidPublicTransferRequest(requestId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'id', 'campanhaId', 'campanhaNome',
+          'colaboradorOrigemId', 'colaboradorOrigemNome', 'categoriaOrigem',
+          'materialOrigemNome', 'quantidadeOrigem',
+          'colaboradorDestinoId', 'colaboradorDestinoNome', 'categoriaDestino',
+          'materialDestinoNome', 'quantidadeDestino', 'solicitadoEm', 'status'
+        ])
+        && data.keys().hasAll([
+          'id', 'campanhaId', 'campanhaNome',
+          'colaboradorOrigemId', 'colaboradorOrigemNome', 'categoriaOrigem',
+          'materialOrigemNome', 'quantidadeOrigem',
+          'colaboradorDestinoId', 'colaboradorDestinoNome', 'categoriaDestino',
+          'materialDestinoNome', 'quantidadeDestino', 'solicitadoEm', 'status'
+        ])
+        && data.id == requestId
+        && data.campanhaId is string && data.campanhaId.size() > 0 && data.campanhaId.size() <= 200
+        && data.campanhaNome is string && data.campanhaNome.size() > 0 && data.campanhaNome.size() <= 200
+        && data.colaboradorOrigemId is string && data.colaboradorOrigemId.size() > 0 && data.colaboradorOrigemId.size() <= 200
+        && data.colaboradorOrigemNome is string && data.colaboradorOrigemNome.size() > 0 && data.colaboradorOrigemNome.size() <= 120
+        && data.categoriaOrigem is string && data.categoriaOrigem.size() > 0 && data.categoriaOrigem.size() <= 120
+        && data.materialOrigemNome is string && data.materialOrigemNome.size() > 0 && data.materialOrigemNome.size() <= 120
+        && data.quantidadeOrigem is int && data.quantidadeOrigem > 0 && data.quantidadeOrigem <= 9007199254740991
+        && data.colaboradorDestinoId is string && data.colaboradorDestinoId.size() > 0 && data.colaboradorDestinoId.size() <= 200
+        && data.colaboradorDestinoNome is string && data.colaboradorDestinoNome.size() > 0 && data.colaboradorDestinoNome.size() <= 120
+        && data.categoriaDestino is string && data.categoriaDestino.size() > 0 && data.categoriaDestino.size() <= 120
+        && data.materialDestinoNome is string && data.materialDestinoNome.size() > 0 && data.materialDestinoNome.size() <= 120
+        && data.quantidadeDestino is int && data.quantidadeDestino > 0 && data.quantidadeDestino <= 9007199254740991
+        && data.colaboradorOrigemId != data.colaboradorDestinoId
+        && data.categoriaOrigem != data.categoriaDestino
+        && data.solicitadoEm is timestamp && data.solicitadoEm == request.time
+        && data.status == 'pendente';
+    }
+
+    function isApprovedTransferPair(requestId) {
+      let data = request.resource.data;
+      let transferIds = data.transferenciaIds;
+      let firstPath = /databases/$(database)/documents/reciclar-apac/transferencias/records/$(transferIds[0]);
+      let secondPath = /databases/$(database)/documents/reciclar-apac/transferencias/records/$(transferIds[1]);
+      let first = getAfter(firstPath).data;
+      let second = getAfter(secondPath).data;
+      return transferIds is list
+        && transferIds.size() == 2
+        && existsAfter(firstPath)
+        && existsAfter(secondPath)
+        && first.id == transferIds[0]
+        && second.id == transferIds[1]
+        && first.campanhaId == resource.data.campanhaId
+        && second.campanhaId == resource.data.campanhaId
+        && first.colaboradorOrigemId == resource.data.colaboradorOrigemId
+        && first.categoriaOrigem == resource.data.categoriaOrigem
+        && first.quantidade == resource.data.quantidadeOrigem
+        && first.colaboradorDestinoId == resource.data.colaboradorDestinoId
+        && first.categoriaDestino == resource.data.categoriaDestino
+        && second.colaboradorOrigemId == resource.data.colaboradorDestinoId
+        && second.categoriaOrigem == resource.data.categoriaDestino
+        && second.quantidade == resource.data.quantidadeDestino
+        && second.colaboradorDestinoId == resource.data.colaboradorOrigemId
+        && second.categoriaDestino == resource.data.categoriaOrigem
+        && first.data == second.data
+        && first.motivo == 'Troca aprovada a partir da solicitação pública ' + requestId
+        && second.motivo == first.motivo;
+    }
+
     match /reciclar-apac-roles/{userId} {
       allow get: if signedIn() && (request.auth.uid == userId || isAdmin());
       allow list: if isAdmin();
@@ -75,7 +140,8 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if canUseApp()
         && request.resource.data.keys().hasOnly([
-          'campanhaId', 'campanhaNome', 'mes', 'ano', 'atualizadoEm', 'temDados', 'ranking'
+          'campanhaId', 'campanhaNome', 'mes', 'ano', 'atualizadoEm', 'temDados',
+          'participantes', 'materiais', 'solicitacoesPermitidas', 'ranking'
         ])
         && request.resource.data.keys().hasAll([
           'campanhaId', 'campanhaNome', 'mes', 'ano', 'atualizadoEm', 'temDados', 'ranking'
@@ -90,8 +156,33 @@ service cloud.firestore {
         && request.resource.data.ano <= 9999
         && request.resource.data.atualizadoEm is string
         && request.resource.data.temDados is bool
+        && (!('participantes' in request.resource.data) || request.resource.data.participantes is list)
+        && (!('materiais' in request.resource.data) || request.resource.data.materiais is list)
+        && (!('solicitacoesPermitidas' in request.resource.data) || request.resource.data.solicitacoesPermitidas is bool)
         && request.resource.data.ranking is list;
       allow delete: if isAdmin();
+    }
+
+    match /reciclar-apac-transfer-requests/{requestId} {
+      allow get, list: if isAdmin();
+      allow create: if request.auth == null && isValidPublicTransferRequest(requestId);
+      allow update: if isAdmin()
+        && resource.data.status == 'pendente'
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'decididoEm', 'decididoPor', 'transferenciaIds'
+        ])
+        && request.resource.data.keys().hasAll([
+          'decididoEm', 'decididoPor', 'transferenciaIds'
+        ])
+        && request.resource.data.status in ['aprovada', 'rejeitada']
+        && request.resource.data.decididoEm is string
+        && request.resource.data.decididoPor == request.auth.uid
+        && request.resource.data.transferenciaIds is list
+        && (request.resource.data.status == 'rejeitada'
+          ? request.resource.data.transferenciaIds.size() == 0
+          : isApprovedTransferPair(requestId));
+      allow delete: if false;
     }
 
     match /reciclar-apac/{key} {
