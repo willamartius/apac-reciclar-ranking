@@ -4488,7 +4488,7 @@ function renderKitTrocaFormMarkup(trocaCartela,campanha,nomesPersonalizados={},p
         <input type="text" id="tcNomeMaterial_${cat.key}" value="${escapeHtml(campoNome)}" oninput="atualizarNomeMaterialCampanha('${cat.key}','tcNomeMaterial')">
         <label for="tcKit_${cat.key}" style="margin-top:8px;">Quantidade para fechar o kit</label>
         <div style="display:flex;gap:8px;align-items:center;">
-          <input type="number" min="0" step="1" id="tcKit_${cat.key}" value="${escapeHtml(quantidade)}" placeholder="0">
+          <input type="number" min="0" step="1" id="tcKit_${cat.key}" value="${escapeHtml(String(quantidade))}" placeholder="0">
           <span class="small-note" style="white-space:nowrap;">${escapeHtml(cat.unidade)}</span>
         </div>
       </div>`;
