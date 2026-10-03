@@ -239,12 +239,12 @@ tr:last-child td{border-bottom:none;}
 .modal-public-details{border-radius:18px;}
 .modal-overlay-swap-request{align-items:center;padding:12px;overflow:hidden;}
 .modal-swap-request{width:100%;max-width:560px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);border-radius:20px;}
-.modal-overlay-swap-success{align-items:center;padding:16px;}
-.modal-swap-success{width:100%;max-width:420px;border-radius:22px;text-align:center;}
-.swap-success-icon{display:grid;width:58px;height:58px;place-items:center;margin:4px auto 14px;border-radius:50%;background:var(--verde-100);color:var(--verde-700);}
-.swap-success-icon svg{width:28px;height:28px;stroke-width:2.5;}
-.swap-success-title{margin:0 0 8px;color:var(--verde-900);font-family:'Fraunces',serif;font-size:23px;}
-.swap-success-message{margin:0;color:var(--text-muted);font-size:14px;line-height:1.55;}
+.modal-overlay-success{align-items:center;padding:16px;}
+.modal-success{width:100%;max-width:420px;border-radius:22px;text-align:center;}
+.success-icon{display:grid;width:58px;height:58px;place-items:center;margin:4px auto 14px;border-radius:50%;background:var(--verde-100);color:var(--verde-700);}
+.success-icon svg{width:28px;height:28px;stroke-width:2.5;}
+.success-title{margin:0 0 8px;color:var(--verde-900);font-family:'Fraunces',serif;font-size:23px;}
+.success-message{margin:0;color:var(--text-muted);font-size:14px;line-height:1.55;}
 .swap-picker{position:relative;}
 .swap-picker-trigger{display:flex;width:100%;min-height:50px;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1.5px solid #D8E3DA;border-radius:13px;background:linear-gradient(180deg,#fff 0%,#FBFDFC 100%);color:var(--text);text-align:left;font-size:14px;box-shadow:0 2px 8px rgba(24,68,45,.05);transition:border-color .18s ease,box-shadow .18s ease;}
 .swap-picker-trigger:hover,.swap-picker.is-open .swap-picker-trigger{border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(94,157,113,.12);}
@@ -877,7 +877,19 @@ async function excluirDefinitivamenteLixeira(id){
   if(!exigirAdmin()) return;
   const item=STATE.lixeira.find(registro=>registro.id===id);
   if(!item) return;
-  if(!confirm(`Excluir definitivamente "${resumoItemLixeira(item)}"? Esta ação não pode ser desfeita.`)) return;
+  abrirModal(`
+    <div class="modal-head"><h3>Excluir definitivamente?</h3><button class="modal-close" type="button" onclick="fecharModal()">${icon('x')}</button></div>
+    <p>O item <b>${escapeHtml(resumoItemLixeira(item))}</b> será apagado permanentemente. Esta ação não pode ser desfeita.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" type="button" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-danger btn-block" type="button" onclick="confirmarExcluirDefinitivamenteLixeira('${escapeHtml(id)}')">${icon('trash',16)}Excluir definitivamente</button>
+    </div>
+  `);
+}
+async function confirmarExcluirDefinitivamenteLixeira(id){
+  if(!exigirAdmin()) return;
+  const item=STATE.lixeira.find(registro=>registro.id===id);
+  if(!item) return;
   try{
     if(STORAGE_MODE==='firestore'){
       const baseline=FIRESTORE_BASELINES.get('lixeira')||new Map();
@@ -907,6 +919,7 @@ async function excluirDefinitivamenteLixeira(id){
   }
 }
 window.excluirDefinitivamenteLixeira=excluirDefinitivamenteLixeira;
+window.confirmarExcluirDefinitivamenteLixeira=confirmarExcluirDefinitivamenteLixeira;
 async function limparLixeiraExpirada(){
   if(!STATE.isAdmin || !Array.isArray(STATE.lixeira)) return;
   const limite=Date.now()-PRAZO_LIXEIRA_MS;
@@ -2091,11 +2104,11 @@ async function enviarSolicitacaoTrocaPublica(){
     await referencia.set(pedido);
     fecharModal();
     abrirModal(`
-      <div class="swap-success-icon" aria-hidden="true">${icon('check',28)}</div>
-      <h3 class="swap-success-title">Pedido enviado!</h3>
-      <p class="swap-success-message">Sua solicitação ficará pendente até um administrador conferir e aprovar. Os saldos só serão atualizados depois da aprovação.</p>
+      <div class="success-icon" aria-hidden="true">${icon('check',28)}</div>
+      <h3 class="success-title">Pedido enviado!</h3>
+      <p class="success-message">Sua solicitação ficará pendente até um administrador conferir e aprovar. Os saldos só serão atualizados depois da aprovação.</p>
       <div class="modal-actions"><button class="btn btn-primary btn-block" type="button" onclick="fecharModal()">Entendi</button></div>
-    `,false,'swap-success');
+    `,false,'success');
   }catch(erro){
     console.error('Erro ao enviar solicitação pública de troca',erro);
     mostrarErro(erro.message||'Não foi possível enviar a solicitação. Tente novamente.');
@@ -4228,7 +4241,7 @@ function resumoItemLixeira(item){
   }
   if(item.colecao==='trocas'){
     const colaborador=STATE.colaboradores.find(colab=>colab.id===registro.colaboradorId);
-    return `Troca · ${colaborador?colaborador.nome:'colaborador removido'} · ${registro.nomeItem||'item'} · ${formatarData(registro.data)}`;
+    return `Resgate · ${colaborador?colaborador.nome:'colaborador removido'} · ${registro.nomeItem||'item'} · ${formatarData(registro.data)}`;
   }
   return 'Registro';
 }
@@ -4238,7 +4251,7 @@ function renderLixeira(){
     .filter(item=>Date.now()-Date.parse(item.excluidoEm)<PRAZO_LIXEIRA_MS)
     .sort((a,b)=>Date.parse(b.excluidoEm)-Date.parse(a.excluidoEm));
   if(!itens.length) return `<div class="card"><div class="empty-state">A lixeira está vazia.<p class="small-note">Itens apagados ficam disponíveis para restauração por até 30 dias.</p></div></div>`;
-  const rotulos={colaboradores:'Colaborador',entregas:'Entrega',transferencias:'Transferência',trocas:'Troca',campanhas:'Campanha'};
+  const rotulos={colaboradores:'Colaborador',entregas:'Entrega',transferencias:'Transferência',trocas:'Resgate',campanhas:'Campanha'};
   return `<div class="card">
     <p class="small-note">Os itens são removidos definitivamente após 30 dias. Restaure um item para devolvê-lo à coleção original.</p>
     <div class="table-wrap"><table><thead><tr><th>Tipo</th><th>Item</th><th>Apagado em</th><th>Prazo</th><th></th></tr></thead>
@@ -4906,8 +4919,19 @@ async function conectarGoogleDrive(){
 window.conectarGoogleDrive=conectarGoogleDrive;
 async function desvincularGoogleDrive(){
   if(!exigirAdmin() || !STATE.authUser || !STATE.googleDriveLink) return;
+  abrirModal(`
+    <div class="modal-head"><h3>Desvincular Google Drive?</h3><button class="modal-close" type="button" onclick="fecharModal()">${icon('x')}</button></div>
+    <p>Deseja remover o vínculo da conta <b>${escapeHtml(STATE.googleDriveLink.email)}</b> deste usuário administrador? Os arquivos no Google Drive serão mantidos.</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" type="button" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-danger btn-block" type="button" onclick="confirmarDesvincularGoogleDrive()">${icon('x',16)}Desvincular</button>
+    </div>
+  `);
+}
+async function confirmarDesvincularGoogleDrive(){
+  if(!exigirAdmin() || !STATE.authUser || !STATE.googleDriveLink) return;
+  fecharModal();
   const firebaseUid=STATE.authUser.uid;
-  if(!confirm(`Desvincular ${STATE.googleDriveLink.email} deste usuário administrador? Os arquivos no Google Drive não serão apagados.`)) return;
   definirEstadoGoogleDrive({ocupado:true,status:'Removendo vínculo...',erro:''});
   renderApp();
   try{
@@ -4928,6 +4952,7 @@ async function desvincularGoogleDrive(){
   renderApp();
 }
 window.desvincularGoogleDrive=desvincularGoogleDrive;
+window.confirmarDesvincularGoogleDrive=confirmarDesvincularGoogleDrive;
 async function listarBackupsGoogleDrive(){
   if(!exigirAdmin()) return;
   const firebaseUid=STATE.authUser&&STATE.authUser.uid;
@@ -5170,6 +5195,7 @@ function validarBackupJSON(obj){
   }
   return { ok:true };
 }
+let backupLocalPendente=null;
 async function importarBackupLocal(file){
   if(!exigirAdmin()) return;
   if(!file) return;
@@ -5183,61 +5209,24 @@ async function importarBackupLocal(file){
       `${dados.colaboradores.length} colaboradores`,
       `${dados.entregas.length} entregas`,
       `${dados.transferencias.length} transferências`,
-      `${dados.trocas.length} trocas`,
+      `${dados.trocas.length} resgates`,
       `${dados.campanhas.length} campanhas`,
       `${Object.keys(dados.config).length} configurações`
     ].join(' · ');
-    const confirmar = confirm(`Importar backup de ${backup.criadoEm || 'data desconhecida'}?\n\nResumo: ${resumo}\n\nAntes da restauração, você pode criar um backup dos dados atuais. Deseja continuar?`);
-    if(!confirmar) return;
-    const criarBackupAntes = confirm('Deseja criar um backup dos dados atuais antes de restaurar?');
-    if(criarBackupAntes){
-      baixarBackupJSON(gerarBackupJSON(), `backup-reciclar-antes-restauracao-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.json`);
-    }
-    const anterior = gerarBackupJSON().dados;
-    const gravações = [
-      ['colaboradores', dados.colaboradores, anterior.colaboradores],
-      ['entregas', dados.entregas, anterior.entregas],
-      ['transferencias', dados.transferencias, anterior.transferencias],
-      ['trocas', dados.trocas, anterior.trocas],
-      ['campanhas', dados.campanhas, anterior.campanhas],
-      ['metas', dados.metas || [], anterior.metas],
-      ['config', dados.config, anterior.config],
-    ];
-    let tentativas = 0;
-    try {
-      for(const [chave, valor] of gravações){
-        tentativas++;
-        const salvo=FIRESTORE_RECORD_COLLECTIONS.has(chave)
-          ? await storageReplaceCollection(chave,valor)
-          : await storageSet(chave,valor);
-        if(!salvo) throw new Error(`Não foi possível salvar "${chave}".`);
-      }
-    } catch (erro) {
-      const falhasRollback = [];
-      for(let i=tentativas-1;i>=0;i--){
-        const [chave, , valorAnterior] = gravações[i];
-        const restaurado=FIRESTORE_RECORD_COLLECTIONS.has(chave)
-          ? await storageReplaceCollection(chave,valorAnterior)
-          : await storageSet(chave,valorAnterior);
-        if(!restaurado) falhasRollback.push(chave);
-      }
-      const avisoRollback = falhasRollback.length
-        ? ` A restauração parcial não pôde ser revertida para: ${falhasRollback.join(', ')}. Faça uma nova conferência dos dados e use um backup caso necessário.`
-        : ' Os dados anteriores foram mantidos.';
-      throw new Error(`${erro.message}${avisoRollback}`);
-    }
-    STATE.colaboradores = dados.colaboradores;
-    STATE.entregas = dados.entregas;
-    STATE.transferencias = dados.transferencias;
-    STATE.trocas = dados.trocas;
-    STATE.campanhas = dados.campanhas;
-    STATE.metasSnapshots = dados.metas || [];
-    STATE.config = dados.config;
-    const campanhaDoBackup = dados.metadata && dados.metadata.campanhaSelecionadaId;
-    STATE.campanhaSelecionadaId = campanhaDoBackup || (campanhaPadrao()||{}).id || null;
-    salvarCampanhaSelecionadaPersistida(STATE.campanhaSelecionadaId);
-    alert('Backup restaurado com sucesso.');
-    renderApp();
+    backupLocalPendente={dados,criadoEm:backup.criadoEm};
+    abrirModal(`
+      <div class="modal-head"><h3>Restaurar backup?</h3><button class="modal-close" type="button" onclick="cancelarImportacaoBackupLocal()">${icon('x')}</button></div>
+      <p>Esta ação substituirá os dados atuais pelos dados do backup de <b>${escapeHtml(backup.criadoEm)}</b>.</p>
+      <p class="small-note">${escapeHtml(resumo)}</p>
+      <label style="display:flex;align-items:flex-start;gap:8px;margin-top:14px;">
+        <input type="checkbox" id="backupAntesRestaurar" checked style="width:auto;margin-top:2px;">
+        Baixar um backup dos dados atuais antes de continuar
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-block" type="button" onclick="cancelarImportacaoBackupLocal()">Cancelar</button>
+        <button class="btn btn-danger btn-block" type="button" onclick="confirmarImportacaoBackupLocal()">${icon('upload',16)}Restaurar backup</button>
+      </div>
+    `);
   } catch (erro) {
     console.error('Erro ao importar backup', erro);
     alert('Não foi possível importar o backup: ' + (erro && erro.message ? erro.message : 'arquivo inválido'));
@@ -5246,6 +5235,74 @@ async function importarBackupLocal(file){
     if(input) input.value = '';
   }
 }
+function cancelarImportacaoBackupLocal(){
+  backupLocalPendente=null;
+  fecharModal();
+}
+window.cancelarImportacaoBackupLocal=cancelarImportacaoBackupLocal;
+async function confirmarImportacaoBackupLocal(){
+  if(!exigirAdmin() || !backupLocalPendente) return;
+  const {dados,criadoEm}=backupLocalPendente;
+  const criarBackupAntes=document.getElementById('backupAntesRestaurar')?.checked===true;
+  backupLocalPendente=null;
+  fecharModal();
+  if(criarBackupAntes){
+    baixarBackupJSON(gerarBackupJSON(), `backup-reciclar-antes-restauracao-${new Date().toISOString().slice(0,16).replace(/[:T]/g,'-')}.json`);
+  }
+  const anterior=gerarBackupJSON().dados;
+  const gravacoes=[
+    ['colaboradores',dados.colaboradores,anterior.colaboradores],
+    ['entregas',dados.entregas,anterior.entregas],
+    ['transferencias',dados.transferencias,anterior.transferencias],
+    ['trocas',dados.trocas,anterior.trocas],
+    ['campanhas',dados.campanhas,anterior.campanhas],
+    ['metas',dados.metas||[],anterior.metas],
+    ['config',dados.config,anterior.config],
+  ];
+  let tentativas=0;
+  try{
+    for(const [chave,valor] of gravacoes){
+      tentativas++;
+      const salvo=FIRESTORE_RECORD_COLLECTIONS.has(chave)
+        ?await storageReplaceCollection(chave,valor)
+        :await storageSet(chave,valor);
+      if(!salvo) throw new Error(`Não foi possível salvar "${chave}".`);
+    }
+  }catch(erro){
+    const falhasRollback=[];
+    for(let i=tentativas-1;i>=0;i--){
+      const [chave,,valorAnterior]=gravacoes[i];
+      const restaurado=FIRESTORE_RECORD_COLLECTIONS.has(chave)
+        ?await storageReplaceCollection(chave,valorAnterior)
+        :await storageSet(chave,valorAnterior);
+      if(!restaurado) falhasRollback.push(chave);
+    }
+    const avisoRollback=falhasRollback.length
+      ?` A restauração parcial não pôde ser revertida para: ${falhasRollback.join(', ')}. Faça uma nova conferência dos dados e use um backup caso necessário.`
+      :' Os dados anteriores foram mantidos.';
+    console.error('Erro ao restaurar backup',erro);
+    alert(`${erro.message}${avisoRollback}`);
+    return;
+  }
+  STATE.colaboradores=dados.colaboradores;
+  STATE.entregas=dados.entregas;
+  STATE.transferencias=dados.transferencias;
+  STATE.trocas=dados.trocas;
+  STATE.campanhas=dados.campanhas;
+  STATE.metasSnapshots=dados.metas||[];
+  STATE.config=dados.config;
+  const campanhaDoBackup=dados.metadata&&dados.metadata.campanhaSelecionadaId;
+  STATE.campanhaSelecionadaId=campanhaDoBackup||(campanhaPadrao()||{}).id||null;
+  salvarCampanhaSelecionadaPersistida(STATE.campanhaSelecionadaId);
+  renderApp();
+  abrirModal(`
+    <div class="success-icon" aria-hidden="true">${icon('check',28)}</div>
+    <h3 class="success-title">Backup restaurado</h3>
+    <p class="success-message">Os dados do backup de ${escapeHtml(criadoEm)} foram restaurados.</p>
+    <div class="modal-actions"><button class="btn btn-primary btn-block" type="button" onclick="fecharModal()">Entendi</button></div>
+  `,false,'success');
+}
+window.confirmarImportacaoBackupLocal=confirmarImportacaoBackupLocal;
 window.importarBackupLocal = importarBackupLocal;
 
 /* =========================================================
