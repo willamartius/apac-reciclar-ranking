@@ -90,9 +90,22 @@ a{color:var(--verde-700);}
 .topbar h1{font-size:19px;margin:0;font-weight:600;}
 .topbar .desc{font-size:12.5px;color:var(--text-muted);margin-top:2px;}
 .help-btn{
-  width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:#fff;
+  display:grid;place-items:center;width:42px;height:42px;min-width:42px;min-height:42px;padding:0;border-radius:50%;border:1px solid var(--border);background:#fff;
   color:var(--verde-700);font-weight:800;font-size:15px;flex-shrink:0;
 }
+.topbar-tools{display:flex;align-items:center;gap:10px;min-width:0;}
+.topbar-icon-actions{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.topbar select{
+  appearance:none;-webkit-appearance:none;
+  padding:10px 38px 10px 13px;
+  border:1.5px solid #D8E3DA;border-radius:13px;
+  background-color:#fff;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23205C42' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;
+  box-shadow:0 2px 8px rgba(24,68,45,.05);
+  transition:border-color .18s ease,box-shadow .18s ease;
+}
+.topbar select:focus{outline:none;border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(94,157,113,.16);}
 .content{padding:22px 26px 90px 26px;max-width:1180px;width:100%;}
 
 /* Mobile bottom nav */
@@ -179,16 +192,30 @@ tr:last-child td{border-bottom:none;}
 .progress{background:#EAF0EA;border-radius:8px;height:8px;overflow:hidden;}
 .progress > div{height:100%;background:var(--verde-500);border-radius:8px;}
 
-.modal-overlay{position:fixed;inset:0;background:rgba(18,30,22,.5);display:flex;align-items:flex-end;justify-content:center;z-index:100;}
+.modal-overlay{position:fixed;inset:0;background:rgba(18,30,22,.5);display:flex;align-items:flex-end;justify-content:center;z-index:100;overscroll-behavior:contain;touch-action:pan-y;}
 @media(min-width:720px){.modal-overlay{align-items:center;}}
-.modal{background:#fff;border-radius:18px 18px 0 0;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;padding:22px;}
+.modal{background:#fff;border-radius:18px 18px 0 0;max-width:560px;width:100%;max-height:92vh;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:22px;}
 @media(min-width:720px){.modal{border-radius:16px;}}
 .modal-public-details{border-radius:18px;}
+.modal-overlay-swap-request{align-items:center;padding:12px;overflow:hidden;}
+.modal-swap-request{width:100%;max-width:560px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);border-radius:20px;}
+.swap-picker{position:relative;}
+.swap-picker-trigger{display:flex;width:100%;min-height:50px;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1.5px solid #D8E3DA;border-radius:13px;background:linear-gradient(180deg,#fff 0%,#FBFDFC 100%);color:var(--text);text-align:left;font-size:14px;box-shadow:0 2px 8px rgba(24,68,45,.05);transition:border-color .18s ease,box-shadow .18s ease;}
+.swap-picker-trigger:hover,.swap-picker.is-open .swap-picker-trigger{border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(94,157,113,.12);}
+.swap-picker-trigger-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.swap-picker-chevron{flex:none;color:var(--verde-700);transition:transform .18s ease;}
+.swap-picker.is-open .swap-picker-chevron{transform:rotate(180deg);}
+.swap-picker-options{max-height:220px;margin-top:6px;padding:5px;overflow-y:auto;border:1px solid var(--border);border-radius:13px;background:#fff;box-shadow:0 10px 24px rgba(24,68,45,.1);overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+.swap-picker-options[hidden]{display:none;}
+.swap-picker-option{display:flex;width:100%;align-items:center;gap:10px;padding:10px;border:0;border-radius:9px;background:transparent;color:var(--text);text-align:left;font-size:13px;}
+.swap-picker-option:hover,.swap-picker-option[aria-selected=true]{background:var(--verde-100);color:var(--verde-800);}
+.swap-picker-option-mark{width:18px;height:18px;flex:none;display:grid;place-items:center;border:1.5px solid #CBD7CE;border-radius:50%;color:transparent;}
+.swap-picker-option[aria-selected=true] .swap-picker-option-mark{border-color:var(--verde-600);background:var(--verde-600);color:#fff;}
 .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:10px;}
 .modal-head h3{margin:0;font-size:17px;}
 .modal-close{background:none;border:none;font-size:20px;color:var(--text-muted);line-height:1;padding:2px 6px;}
 .modal-actions{display:flex;gap:10px;margin-top:18px;}
-.notification-button{position:relative;display:inline-flex;align-items:center;justify-content:center;min-width:42px;min-height:42px;padding:8px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--verde-800);}
+.notification-button{position:relative;display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;min-width:42px;min-height:42px;padding:0;border:1px solid var(--border);border-radius:50%;background:#fff;color:var(--verde-800);flex-shrink:0;}
 .notification-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;display:grid;place-items:center;padding:0 5px;border-radius:20px;background:var(--vermelho);color:#fff;font-size:10px;font-weight:800;line-height:1;}
 .swap-request-list{display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow-y:auto;}
 .swap-request-card{border:1px solid var(--border);border-radius:12px;padding:12px;}
@@ -321,8 +348,10 @@ select{text-overflow:ellipsis;}
   .sidebar{display:none;}
   .content{padding:16px 14px 96px 14px;}
   .topbar{padding:12px 14px;align-items:flex-start;}
-  .topbar > div:last-child{gap:6px !important;}
-  .topbar select{min-width:0 !important;max-width:min(52vw,260px);}
+  .topbar-tools{gap:6px;}
+  .topbar-tools > div:first-child{min-width:0;max-width:calc(100% - 94px);}
+  .topbar select{min-width:0 !important;max-width:100%;padding:8px 30px 8px 9px;}
+  .topbar-icon-actions{gap:6px;}
   .bottomnav{display:block;}
   .bottomnav-row{max-width:520px;margin:0 auto;}
   .bottomnav button{min-width:0;min-height:48px;padding:5px 2px;}
@@ -336,11 +365,13 @@ select{text-overflow:ellipsis;}
   .topbar{gap:8px;}
   .topbar h1{font-size:17px;}
   .topbar .desc{font-size:11.5px;}
-  .topbar > div:last-child{max-width:58%;justify-content:flex-end;}
-  .topbar > div:last-child > div{min-width:0;max-width:calc(100% - 40px);}
-  .topbar > div:last-child .small-note{display:none;}
-  .topbar select{max-width:100%;font-size:12px;padding:8px 7px;}
-  .help-btn{width:32px;height:32px;}
+  .topbar > div:first-child{flex:1;min-width:0;}
+  .topbar > div:last-child{max-width:64%;justify-content:flex-end;flex-shrink:0;}
+  .topbar-tools > div:first-child{max-width:calc(100% - 90px);}
+  .topbar-tools > div:first-child .small-note{display:none;}
+  .topbar select{max-width:100%;font-size:11px;}
+  .help-btn{width:42px;height:42px;}
+  .notification-button{width:42px;height:42px;min-width:42px;min-height:42px;border-radius:50%;}
   .content{padding:14px 10px calc(82px + env(safe-area-inset-bottom));}
   .card{padding:14px;border-radius:12px;}
   .grid{gap:9px;}
@@ -365,12 +396,15 @@ select{text-overflow:ellipsis;}
   .dashboard-ranking-mobile-name{font-size:13px;font-weight:700;overflow-wrap:anywhere;}
   .dashboard-ranking-mobile-score{font-size:13px;font-weight:800;color:var(--verde-800);white-space:nowrap;}
   .modal{padding:18px 14px calc(18px + env(safe-area-inset-bottom));}
+  .modal-overlay-swap-request{padding:12px;}
+  .modal-swap-request{width:100%;max-height:calc(100dvh - 24px);padding:18px 14px;border-radius:20px;}
   .modal-actions{flex-wrap:wrap;}
   .modal-actions > .btn{flex:1 1 120px;justify-content:center;}
 }
 @media(max-width:360px){
   .grid-4,.grid-3{grid-template-columns:1fr;}
-  .topbar > div:last-child{max-width:54%;}
+  .topbar > div:last-child{max-width:66%;}
+  .topbar-tools > div:first-child{max-width:calc(100% - 88px);}
   .bottomnav button{font-size:9px;}
 }
 </style>
@@ -1325,6 +1359,7 @@ const ICONS = {
   edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
   trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2M6 6l1 15h10l1-15"/>',
   check:'<path d="M20 6L9 17l-5-5"/>',
+  chevron:'<path d="m6 9 6 6 6-6"/>',
   x:'<path d="M18 6L6 18M6 6l12 12"/>',
   upload:'<path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 18v2h16v-2"/>',
   download:'<path d="M12 4v12M6 12l6 6 6-6"/><path d="M4 20h16"/>',
@@ -1591,6 +1626,63 @@ function campanhasComSolicitacaoPublica(){
 function rankingCampanhaParaSolicitacao(campanhaId){
   return campanhasComSolicitacaoPublica().find(ranking=>ranking.campanhaId===campanhaId)||null;
 }
+function renderPickerSolicitacao(id,label,opcoes,valorSelecionado){
+  const selecionada=opcoes.find(opcao=>opcao.value===valorSelecionado)||opcoes[0];
+  const valor=selecionada?selecionada.value:'';
+  const rotulo=selecionada?selecionada.label:'Selecione uma opção';
+  return `<div class="field swap-picker" id="${id}Picker">
+    <label id="${id}Label">${escapeHtml(label)}</label>
+    <input id="${id}" type="hidden" value="${escapeHtml(valor)}">
+    <button id="${id}Trigger" class="swap-picker-trigger" type="button" aria-labelledby="${id}Label ${id}Value" aria-haspopup="listbox" aria-expanded="false" onclick="alternarPickerSolicitacao('${id}')">
+      <span class="swap-picker-trigger-label" id="${id}Value">${escapeHtml(rotulo)}</span>
+      <span class="swap-picker-chevron" aria-hidden="true">${icon('chevron',18)}</span>
+    </button>
+    <div id="${id}Options" class="swap-picker-options" role="listbox" aria-labelledby="${id}Label" hidden>
+      ${opcoes.map(opcao=>`<button class="swap-picker-option" type="button" role="option" aria-selected="${opcao.value===valor}" data-value="${escapeHtml(opcao.value)}" onclick="selecionarOpcaoSolicitacao('${id}',this.dataset.value)">
+        <span class="swap-picker-option-mark" aria-hidden="true">${icon('check',13)}</span><span>${escapeHtml(opcao.label)}</span>
+      </button>`).join('')}
+    </div>
+  </div>`;
+}
+function alternarPickerSolicitacao(id){
+  const picker=document.getElementById(`${id}Picker`);
+  const trigger=document.getElementById(`${id}Trigger`);
+  const options=document.getElementById(`${id}Options`);
+  if(!picker || !trigger || !options) return;
+  const abrir=options.hidden;
+  document.querySelectorAll('#modalOverlay .swap-picker').forEach(item=>{
+    item.classList.remove('is-open');
+    const list=item.querySelector('.swap-picker-options');
+    const button=item.querySelector('.swap-picker-trigger');
+    if(list) list.hidden=true;
+    if(button) button.setAttribute('aria-expanded','false');
+  });
+  if(abrir){
+    picker.classList.add('is-open');
+    options.hidden=false;
+    trigger.setAttribute('aria-expanded','true');
+  }
+}
+function selecionarOpcaoSolicitacao(id,valor){
+  const input=document.getElementById(id);
+  const options=document.getElementById(`${id}Options`);
+  const picker=document.getElementById(`${id}Picker`);
+  const trigger=document.getElementById(`${id}Trigger`);
+  if(!input || !options || !picker || !trigger) return;
+  const opcao=[...options.querySelectorAll('[data-value]')].find(item=>item.dataset.value===valor);
+  if(!opcao) return;
+  input.value=valor;
+  picker.querySelector('.swap-picker-trigger-label').textContent=opcao.querySelector('span:last-child').textContent;
+  options.querySelectorAll('[data-value]').forEach(item=>item.setAttribute('aria-selected',String(item===opcao)));
+  picker.classList.remove('is-open');
+  options.hidden=true;
+  trigger.setAttribute('aria-expanded','false');
+  if(id==='solicitacaoCampanha') atualizarFormularioSolicitacaoTroca();
+  if(id==='solicitacaoOrigem' || id==='solicitacaoDestino'
+    || id==='solicitacaoMaterialOrigem' || id==='solicitacaoMaterialDestino'){
+    atualizarFormularioSolicitacaoTroca();
+  }
+}
 function abrirSolicitacaoTrocaPublica(){
   if(!FIREBASE_DB){
     alert('As solicitações públicas exigem conexão com o Firebase. Tente novamente mais tarde.');
@@ -1602,20 +1694,25 @@ function abrirSolicitacaoTrocaPublica(){
     return;
   }
   const preferida=campanhas.find(ranking=>ranking.campanhaId===STATE.rankingPublicoCampanhaId)||campanhas[0];
+  const participantes=preferida.participantes.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const materiais=preferida.materiais;
+  const opcoesCampanhas=campanhas.map(ranking=>({value:ranking.campanhaId,label:ranking.campanhaNome}));
+  const opcoesParticipantes=participantes.map(participante=>({value:participante.id,label:participante.nome}));
+  const opcoesMateriais=materiais.map(material=>({value:material.key,label:`${material.nome} (${material.unidade})`}));
   abrirModal(`
     <div class="modal-head"><h3>Solicitar troca de materiais</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <p class="small-note">O pedido ficará pendente até um administrador conferir e aprovar. A seleção de nomes não confirma a identidade de quem solicita; selecione os nomes corretos e as quantidades combinadas.</p>
-    <div class="field"><label for="solicitacaoCampanha">Campanha</label><select id="solicitacaoCampanha" onchange="atualizarFormularioSolicitacaoTroca()">${campanhas.map(ranking=>`<option value="${escapeHtml(ranking.campanhaId)}" ${ranking.campanhaId===preferida.campanhaId?'selected':''}>${escapeHtml(ranking.campanhaNome)}</option>`).join('')}</select></div>
+    ${renderPickerSolicitacao('solicitacaoCampanha','Campanha',opcoesCampanhas,preferida.campanhaId)}
     <div class="section-title" style="margin:14px 0 8px;font-size:13.5px;">Você oferece</div>
     <div class="grid grid-2">
-      <div class="field"><label for="solicitacaoOrigem">Seu nome</label><select id="solicitacaoOrigem" onchange="atualizarFormularioSolicitacaoTroca()"></select></div>
-      <div class="field"><label for="solicitacaoMaterialOrigem">Material</label><select id="solicitacaoMaterialOrigem"></select></div>
+      ${renderPickerSolicitacao('solicitacaoOrigem','Seu nome',opcoesParticipantes,participantes[0]?.id)}
+      ${renderPickerSolicitacao('solicitacaoMaterialOrigem','Material',opcoesMateriais,materiais[0]?.key)}
     </div>
     <div class="field"><label for="solicitacaoQuantidadeOrigem">Quantidade que você oferece</label><input id="solicitacaoQuantidadeOrigem" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric"></div>
     <div class="section-title" style="margin:14px 0 8px;font-size:13.5px;">Você receberá</div>
     <div class="grid grid-2">
-      <div class="field"><label for="solicitacaoDestino">Outro colaborador</label><select id="solicitacaoDestino"></select></div>
-      <div class="field"><label for="solicitacaoMaterialDestino">Material</label><select id="solicitacaoMaterialDestino"></select></div>
+      ${renderPickerSolicitacao('solicitacaoDestino','Outro colaborador',opcoesParticipantes,participantes[1]?.id)}
+      ${renderPickerSolicitacao('solicitacaoMaterialDestino','Material',opcoesMateriais,materiais[1]?.key)}
     </div>
     <div class="field"><label for="solicitacaoQuantidadeDestino">Quantidade que o outro colaborador oferece</label><input id="solicitacaoQuantidadeDestino" type="number" min="1" max="9007199254740991" step="1" inputmode="numeric"></div>
     <p id="solicitacaoTrocaErro" class="auth-error" role="alert" style="display:none;"></p>
@@ -1623,8 +1720,7 @@ function abrirSolicitacaoTrocaPublica(){
       <button class="btn btn-outline btn-block" type="button" onclick="fecharModal()">Cancelar</button>
       <button class="btn btn-primary btn-block" type="button" onclick="enviarSolicitacaoTrocaPublica()">${icon('check',16)}Solicitar troca</button>
     </div>
-  `);
-  atualizarFormularioSolicitacaoTroca();
+  `,false,'swap-request');
 }
 function atualizarFormularioSolicitacaoTroca(){
   const campanhaEl=document.getElementById('solicitacaoCampanha');
@@ -1641,17 +1737,22 @@ function atualizarFormularioSolicitacaoTroca(){
   const materialDestinoAnterior=materialDestinoEl.value;
   const participantes=ranking.participantes.slice().sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
   const materiais=ranking.materiais;
-  const opcoesParticipantes=participantes.map(p=>`<option value="${escapeHtml(p.id)}">${escapeHtml(p.nome)}</option>`).join('');
-  const opcoesMateriais=materiais.map(m=>`<option value="${escapeHtml(m.key)}">${escapeHtml(m.nome)} (${escapeHtml(m.unidade)})</option>`).join('');
-  origemEl.innerHTML=opcoesParticipantes;
-  destinoEl.innerHTML=opcoesParticipantes;
-  materialOrigemEl.innerHTML=opcoesMateriais;
-  materialDestinoEl.innerHTML=opcoesMateriais;
-  if(participantes.some(p=>p.id===origemAnterior)) origemEl.value=origemAnterior;
-  if(participantes.some(p=>p.id===destinoAnterior)) destinoEl.value=destinoAnterior;
-  else if(participantes.length>1) destinoEl.value=participantes.find(p=>p.id!==origemEl.value).id;
-  if(materiais.some(m=>m.key===materialOrigemAnterior)) materialOrigemEl.value=materialOrigemAnterior;
-  if(materiais.some(m=>m.key===materialDestinoAnterior)) materialDestinoEl.value=materialDestinoAnterior;
+  const opcoesParticipantes=participantes.map(p=>({value:p.id,label:p.nome}));
+  const opcoesMateriais=materiais.map(m=>({value:m.key,label:`${m.nome} (${m.unidade})`}));
+  const origem=opcoesParticipantes.some(opcao=>opcao.value===origemAnterior)?origemAnterior:opcoesParticipantes[0]?.value||'';
+  const destino=opcoesParticipantes.some(opcao=>opcao.value===destinoAnterior)&&destinoAnterior!==origem
+    ?destinoAnterior
+    :opcoesParticipantes.find(opcao=>opcao.value!==origem)?.value||'';
+  const materialOrigem=opcoesMateriais.some(opcao=>opcao.value===materialOrigemAnterior)
+    ?materialOrigemAnterior
+    :opcoesMateriais[0]?.value||'';
+  const materialDestino=opcoesMateriais.some(opcao=>opcao.value===materialDestinoAnterior)&&materialDestinoAnterior!==materialOrigem
+    ?materialDestinoAnterior
+    :opcoesMateriais.find(opcao=>opcao.value!==materialOrigem)?.value||'';
+  document.getElementById('solicitacaoOrigemPicker').outerHTML=renderPickerSolicitacao('solicitacaoOrigem','Seu nome',opcoesParticipantes,origem);
+  document.getElementById('solicitacaoDestinoPicker').outerHTML=renderPickerSolicitacao('solicitacaoDestino','Outro colaborador',opcoesParticipantes,destino);
+  document.getElementById('solicitacaoMaterialOrigemPicker').outerHTML=renderPickerSolicitacao('solicitacaoMaterialOrigem','Material',opcoesMateriais,materialOrigem);
+  document.getElementById('solicitacaoMaterialDestinoPicker').outerHTML=renderPickerSolicitacao('solicitacaoMaterialDestino','Material',opcoesMateriais,materialDestino);
 }
 async function enviarSolicitacaoTrocaPublica(){
   const erroEl=document.getElementById('solicitacaoTrocaErro');
@@ -1722,6 +1823,8 @@ async function enviarSolicitacaoTrocaPublica(){
 window.abrirSolicitacaoTrocaPublica=abrirSolicitacaoTrocaPublica;
 window.atualizarFormularioSolicitacaoTroca=atualizarFormularioSolicitacaoTroca;
 window.enviarSolicitacaoTrocaPublica=enviarSolicitacaoTrocaPublica;
+window.alternarPickerSolicitacao=alternarPickerSolicitacao;
+window.selecionarOpcaoSolicitacao=selecionarOpcaoSolicitacao;
 function abrirDetalhesRankingPublico(indice){
   const ranking=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
   const item=ranking&&ranking.ranking[indice];
@@ -1823,10 +1926,12 @@ function renderApp(){
           <h1>${current.label}</h1>
           <div class="desc">APAC de Imperatriz · Maranhão</div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        <div class="topbar-tools">
           ${renderSeletorCampanhaTopo()}
-          <button class="help-btn" onclick="abrirAjuda()" title="Como usar">?</button>
-          ${STATE.isAdmin?renderBotaoNotificacoesTroca():''}
+          <div class="topbar-icon-actions">
+            ${STATE.isAdmin?renderBotaoNotificacoesTroca():''}
+            <button class="help-btn" onclick="abrirAjuda()" title="Como usar">?</button>
+          </div>
         </div>
       </div>
       <div class="content" id="viewContent"></div>
@@ -1865,15 +1970,39 @@ function abrirMaisSheet(){
 window.abrirMaisSheet = abrirMaisSheet;
 
 /* ---------- MODAL GENÉRICO ---------- */
+let modalScrollY=null;
 function abrirModal(innerHtml, wide, modalClass=''){
   fecharModal();
+  if(modalScrollY===null){
+    modalScrollY=window.scrollY||window.pageYOffset||0;
+    document.body.style.position='fixed';
+    document.body.style.top=`-${modalScrollY}px`;
+    document.body.style.left='0';
+    document.body.style.right='0';
+    document.body.style.width='100%';
+    document.body.style.overflow='hidden';
+  }
   const wrap = document.createElement('div');
   wrap.className=`modal-overlay${modalClass?' modal-overlay-'+modalClass:''}`; wrap.id='modalOverlay';
   wrap.onclick=(e)=>{ if(e.target===wrap) fecharModal(); };
   wrap.innerHTML = `<div class="modal${modalClass?' modal-'+modalClass:''}" style="${wide?'max-width:720px':''}">${innerHtml}</div>`;
   document.body.appendChild(wrap);
 }
-function fecharModal(){ const m=document.getElementById('modalOverlay'); if(m) m.remove(); }
+function fecharModal(){
+  const m=document.getElementById('modalOverlay');
+  if(m) m.remove();
+  if(modalScrollY!==null && !document.getElementById('modalOverlay')){
+    const scrollY=modalScrollY;
+    modalScrollY=null;
+    document.body.style.position='';
+    document.body.style.top='';
+    document.body.style.left='';
+    document.body.style.right='';
+    document.body.style.width='';
+    document.body.style.overflow='';
+    window.scrollTo(0,scrollY);
+  }
+}
 window.fecharModal = fecharModal;
 
 /* ---------- AUTENTICAÇÃO E PAPÉIS ---------- */
