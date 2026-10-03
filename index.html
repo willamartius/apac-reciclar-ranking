@@ -440,6 +440,11 @@ select{text-overflow:ellipsis;}
   .topbar .desc{font-size:11.5px;}
   .topbar-tools{gap:8px;}
   .topbar .app-select-trigger{font-size:14px;}
+  .content .card{min-width:0;}
+  .content .card b{overflow-wrap:anywhere;}
+  .drive-backup-actions{grid-template-columns:minmax(0,1fr);}
+  .backup-actions>*{min-width:0;width:100%;}
+  .backup-actions .btn{white-space:normal;overflow-wrap:anywhere;}
   .notification-button{width:42px;height:42px;min-width:42px;min-height:42px;border-radius:50%;}
   .content{padding:14px 10px calc(82px + env(safe-area-inset-bottom));}
   .card{padding:14px;border-radius:12px;}
@@ -912,6 +917,7 @@ async function confirmarExcluirDefinitivamenteLixeira(id){
       }
     }
     STATE.lixeira=STATE.lixeira.filter(registro=>registro.id!==id);
+    fecharModal();
     renderApp();
   }catch(erro){
     console.error('Erro ao excluir definitivamente item da lixeira',id,erro);
@@ -2137,7 +2143,7 @@ function abrirDetalhesRankingPublico(indice){
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
 function renderTabelaDetalhesMateriais(categorias){
   const formatarQuantidade=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
-  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th class="material-markers-column">Excedentes</th><th>Disponível</th><th>META MENSAL</th><th>Cumprimento %</th></tr></thead>
+  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th class="material-markers-column">Excedente</th><th>Disponível</th><th>META MENSAL</th><th>Cumprimento %</th></tr></thead>
     <tbody>${categorias.map(cat=>{
       const cumprimento=ReciclarRankingLogic.resumirCategoria(cat.quantidade,cat.meta);
       const excedente=Math.max(0,cumprimento.quantidade-cat.meta);
@@ -3712,7 +3718,7 @@ function renderTabelaTrocas(){
   const lista = STATE.trocas.filter(t=>t.campanhaId===campanhaId).sort((a,b)=>b.data.localeCompare(a.data));
   if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhum resgate registrado ainda.</div>`; return; }
   wrap.innerHTML = `
-    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Kits</th><th>${escapeHtml(cfgTroca.nomeItem)}s resgatados</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Kits</th><th>RESGATE DE CARTELAS</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
     <tbody>
       ${lista.map(t=>{
         const c = STATE.colaboradores.find(x=>x.id===t.colaboradorId);
