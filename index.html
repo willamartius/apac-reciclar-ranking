@@ -4430,7 +4430,7 @@ function abrirFormCampanha(id){
         <div class="field"><label>Itens por kit fechado</label><input type="number" min="1" id="tcCartelasPorKit" value="${trocaCartela.cartelasPorKit||2}"></div>
       </div>
       <p class="small-note">Quantidade exigida de cada material para fechar 1 kit. Deixe em branco ou 0 para um material que não entra no kit.</p>
-      <div class="grid grid-2" id="tcKitWrap"></div>
+      <div class="grid grid-2" id="tcKitWrap">${renderKitTrocaFormMarkup(trocaCartela,c,nomesPersonalizados)}</div>
     </div>
 
     <div id="campanhaErro" style="color:var(--vermelho);font-size:12.5px;display:none;margin:8px 0;"></div>
@@ -4440,7 +4440,6 @@ function abrirFormCampanha(id){
     </div>
   `);
   renderMateriaisExtrasForm();
-  renderKitTrocaForm(trocaCartela);
 }
 function renderMateriaisExtrasForm(){
   const wrap = document.getElementById('extrasWrap');
@@ -4469,14 +4468,17 @@ function renderMateriaisExtrasForm(){
 function renderKitTrocaForm(trocaCartela){
   const wrap=document.getElementById('tcKitWrap');
   if(!wrap) return;
-  wrap.innerHTML=todasCategoriasMateriaisFormulario().map(cat=>{
-    const nomeInput=document.getElementById(`tcNomeMaterial_${cat.key}`);
+  const campanha=campanhaPorId(STATE.campanhaSelecionadaId);
+  wrap.innerHTML=renderKitTrocaFormMarkup(trocaCartela,campanha,(campanha&&campanha.nomesPersonalizados)||{},true);
+}
+function renderKitTrocaFormMarkup(trocaCartela,campanha,nomesPersonalizados={},preservarFormulario=false){
+  return todasCategoriasMateriaisFormulario(campanha).map(cat=>{
+    const nomeInput=preservarFormulario&&document.getElementById(`tcNomeMaterial_${cat.key}`);
     const campoNome=nomeInput
       ? nomeInput.value
-      : (document.getElementById(`cpNomeCat_${cat.key}`)?.value
-        || document.getElementById(`extraNome_${cat.key}`)?.value
+      : (nomesPersonalizados[cat.key]
         || cat.label);
-    const campoQuantidade=document.getElementById(`tcKit_${cat.key}`);
+    const campoQuantidade=preservarFormulario&&document.getElementById(`tcKit_${cat.key}`);
     const quantidade=campoQuantidade
       ? campoQuantidade.value
       : (trocaCartela&&trocaCartela.kit&&trocaCartela.kit[cat.key])||'';
