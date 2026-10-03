@@ -241,9 +241,8 @@ tr:last-child td{border-bottom:none;}
 .swap-picker-options{max-height:220px;margin-top:6px;padding:5px;overflow-y:auto;border:1px solid var(--border);border-radius:13px;background:#fff;box-shadow:0 10px 24px rgba(24,68,45,.1);overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
 .swap-picker-options[hidden]{display:none;}
 .swap-picker-option{display:flex;width:100%;align-items:center;gap:10px;padding:10px;border:0;border-radius:9px;background:transparent;color:var(--text);text-align:left;font-size:13px;}
-.swap-picker-option:hover,.swap-picker-option[aria-selected=true]{background:var(--verde-100);color:var(--verde-800);}
-.swap-picker-option-mark{width:18px;height:18px;flex:none;display:grid;place-items:center;border:1.5px solid #CBD7CE;border-radius:50%;color:transparent;}
-.swap-picker-option[aria-selected=true] .swap-picker-option-mark{border-color:var(--verde-600);background:var(--verde-600);color:#fff;}
+.swap-picker-option:hover{background:#F6FAF6;}
+.swap-picker-option[aria-selected=true]{background:var(--verde-100);color:var(--text);box-shadow:inset 0 0 0 1px rgba(62,142,90,.12);}
 .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:10px;}
 .modal-head h3{margin:0;font-size:17px;}
 .modal-close{background:none;border:none;font-size:20px;color:var(--text-muted);line-height:1;padding:2px 6px;}
@@ -328,12 +327,12 @@ select{text-overflow:ellipsis;}
 .public-ranking-table{width:100%;min-width:0;max-width:100%;margin:0 auto;overflow-x:auto;}
 .material-detail-table{width:100%;table-layout:fixed;}
 .material-detail-table th{white-space:normal;}
-.material-detail-table th:nth-child(1){width:24%;}
+.material-detail-table th:nth-child(1){width:22%;}
 .material-detail-table th:nth-child(2){width:17%;}
-.material-detail-table th:nth-child(3){width:17%;}
-.material-detail-table th:nth-child(4){width:18%;}
+.material-detail-table th:nth-child(3){width:16%;}
+.material-detail-table th:nth-child(4){width:22%;}
 .material-detail-table th:nth-child(5){width:24%;}
-.material-detail-table th:last-child{white-space:nowrap;}
+.material-detail-table th:nth-child(4),.material-detail-table th:last-child{white-space:nowrap;}
 .material-detail-table th:nth-child(n+2),
 .material-detail-table td:nth-child(n+2){text-align:center;}
 .material-detail-table .material-markers-column{padding-inline:0;}
@@ -366,7 +365,7 @@ select{text-overflow:ellipsis;}
   .podium-1{height:130px;}
   .material-detail-table{font-size:11px;}
   .material-detail-table th{font-size:9px;letter-spacing:0;padding:7px 3px;}
-  .material-detail-table th:last-child{font-size:clamp(7px,2.1vw,8.5px);letter-spacing:-.25px;}
+  .material-detail-table th:nth-child(4),.material-detail-table th:last-child{font-size:clamp(7px,2.1vw,8.5px);letter-spacing:-.25px;}
   .material-detail-table td{padding:8px 3px;overflow-wrap:anywhere;}
   .badge-surplus{font-size:9px;padding:2px 4px;}
   .modal-overlay-public-details{align-items:center;padding:10px;}
@@ -1675,7 +1674,7 @@ function renderPickerSolicitacao(id,label,opcoes,valorSelecionado){
     </button>
     <div id="${id}Options" class="swap-picker-options" role="listbox" aria-labelledby="${id}Label" hidden>
       ${opcoes.map(opcao=>`<button class="swap-picker-option" type="button" role="option" aria-selected="${opcao.value===valor}" data-value="${escapeHtml(opcao.value)}" onclick="selecionarOpcaoSolicitacao('${id}',this.dataset.value)">
-        <span class="swap-picker-option-mark" aria-hidden="true">${icon('check',13)}</span><span>${escapeHtml(opcao.label)}</span>
+        <span>${escapeHtml(opcao.label)}</span>
       </button>`).join('')}
     </div>
   </div>`;
@@ -1871,8 +1870,11 @@ function aprimorarSeletorNativo(select){
 }
 let aprimoramentoSeletorId=0;
 function aprimorarSeletoresNativos(raiz=document){
-  if(raiz instanceof HTMLSelectElement) aprimorarSeletorNativo(raiz);
-  if(raiz.querySelectorAll) raiz.querySelectorAll('select').forEach(aprimorarSeletorNativo);
+  const seletores=raiz instanceof HTMLSelectElement?[raiz]:raiz.querySelectorAll?[...raiz.querySelectorAll('select')]:[];
+  seletores.forEach(select=>{
+    try{ aprimorarSeletorNativo(select); }
+    catch(erro){ console.error('Não foi possível aplicar o menu personalizado ao seletor.',erro); }
+  });
 }
 document.addEventListener('keydown',evento=>{
   if(!appSelectOverlay) return;
@@ -2074,7 +2076,7 @@ function abrirDetalhesRankingPublico(indice){
 window.abrirDetalhesRankingPublico=abrirDetalhesRankingPublico;
 function renderTabelaDetalhesMateriais(categorias){
   const formatarQuantidade=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
-  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th class="material-markers-column">Excedentes</th><th>Disponível</th><th>Meta do mês</th><th>Cumprimento %</th></tr></thead>
+  return `<table class="material-detail-table"><thead><tr><th>Categoria</th><th class="material-markers-column">Excedentes</th><th>Disponível</th><th>META MENSAL</th><th>Cumprimento %</th></tr></thead>
     <tbody>${categorias.map(cat=>{
       const cumprimento=ReciclarRankingLogic.resumirCategoria(cat.quantidade,cat.meta);
       const excedente=Math.max(0,cumprimento.quantidade-cat.meta);
@@ -2123,6 +2125,7 @@ function renderApp(){
   const app = document.getElementById('app');
   if(STORAGE_MODE==='firestore' && (!STATE.authUser || (!STATE.isAdmin && !STATE.isOperator))){
     app.innerHTML=STATE.authUser && !STATE.mostrarLogin ? renderTelaAutenticacao() : renderRankingPublico();
+    aprimorarSeletoresNativos(app);
     return;
   }
   const navItems = navItemsVisiveis();
@@ -2181,6 +2184,7 @@ function renderApp(){
     ranking: renderRanking, historico: renderHistorico, relatorios: renderRelatorios, lixeira: renderLixeira, config: renderConfig,
   };
   content.innerHTML = renderers[STATE.view] ? renderers[STATE.view]() : '';
+  aprimorarSeletoresNativos(content);
 }
 
 function abrirMaisSheet(){
@@ -2219,6 +2223,7 @@ function abrirModal(innerHtml, wide, modalClass=''){
   wrap.onclick=(e)=>{ if(e.target===wrap) fecharModal(); };
   wrap.innerHTML = `<div class="modal${modalClass?' modal-'+modalClass:''}" style="${wide?'max-width:720px':''}">${innerHtml}</div>`;
   document.body.appendChild(wrap);
+  aprimorarSeletoresNativos(wrap);
 }
 function fecharModal(){
   const m=document.getElementById('modalOverlay');
