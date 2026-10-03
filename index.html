@@ -3105,7 +3105,7 @@ function obterSolicitacoesTroca(){
           const pedido=documento.data();
           const textos=['id','campanhaId','campanhaNome','colaboradorOrigemId','colaboradorOrigemNome',
             'categoriaOrigem','materialOrigemNome','colaboradorDestinoId','colaboradorDestinoNome',
-            'categoriaDestino','materialDestinoNome','solicitadoEm','status'];
+            'categoriaDestino','materialDestinoNome','status'];
           if(!pedido || textos.some(campo=>typeof pedido[campo]!=='string' || !pedido[campo].trim())
             || pedido.id!==documento.id || pedido.status!=='pendente'
             || pedido.colaboradorOrigemId===pedido.colaboradorDestinoId
