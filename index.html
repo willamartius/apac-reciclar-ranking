@@ -3460,32 +3460,53 @@ function verificarRegistrosTransacionais(key,remotos,filtro){
     throw new Error('Os dados envolvidos nesta troca mudaram desde que o painel foi carregado. Atualize a página e revise o pedido.');
   }
 }
-async function carregarEstadoTrocaTransacional(transacao,campanhaId,participanteIds){
+async function consultarRegistrosTrocaTransacional(campanhaId,participanteIds){
+  const raiz=FIREBASE_DB.collection('reciclar-apac');
+  const registros=key=>raiz.doc(key).collection('records');
+  const [entregas,transferenciasOrigem,transferenciasDestino,trocas,metas]=await Promise.all([
+    registros('entregas').where('colaboradorId','in',participanteIds).get(),
+    registros('transferencias').where('colaboradorOrigemId','in',participanteIds).get(),
+    registros('transferencias').where('colaboradorDestinoId','in',participanteIds).get(),
+    registros('trocas').where('colaboradorId','in',participanteIds).get(),
+    registros('metas').where('campanhaId','==',campanhaId).get(),
+  ]);
+  return {entregas,transferenciasOrigem,transferenciasDestino,trocas,metas};
+}
+async function carregarEstadoTrocaTransacional(transacao,campanhaId,participanteIds,consultas){
   const raiz=FIREBASE_DB.collection('reciclar-apac');
   const registros=key=>raiz.doc(key).collection('records');
   const campanhaRef=registros('campanhas').doc(campanhaId);
-  const [origemDoc,destinoDoc,entregasSnapshot,transferenciasOrigemSnapshot,transferenciasDestinoSnapshot,trocasSnapshot,campanhaDoc,metasSnapshot]=await Promise.all([
+  const [origemDoc,destinoDoc,campanhaDoc,...documentosConsultados]=await Promise.all([
     transacao.get(registros('colaboradores').doc(participanteIds[0])),
     transacao.get(registros('colaboradores').doc(participanteIds[1])),
-    transacao.get(registros('entregas').where('colaboradorId','in',participanteIds)),
-    transacao.get(registros('transferencias').where('colaboradorOrigemId','in',participanteIds)),
-    transacao.get(registros('transferencias').where('colaboradorDestinoId','in',participanteIds)),
-    transacao.get(registros('trocas').where('colaboradorId','in',participanteIds)),
     transacao.get(campanhaRef),
-    transacao.get(registros('metas').where('campanhaId','==',campanhaId)),
+    ...[
+      ...consultas.entregas.docs,
+      ...consultas.transferenciasOrigem.docs,
+      ...consultas.transferenciasDestino.docs,
+      ...consultas.trocas.docs,
+      ...consultas.metas.docs,
+    ].map(documento=>transacao.get(documento.ref)),
   ]);
   if(!origemDoc.exists || !destinoDoc.exists || !campanhaDoc.exists){
     throw new Error('A campanha ou um dos colaboradores não está mais cadastrado. Atualize o painel.');
   }
+  let indiceDocumento=0;
+  const lerConsulta=consulta=>consulta.docs.map(()=>documentosConsultados[indiceDocumento++]).filter(documento=>documento.exists);
+  const entregasSnapshot=lerConsulta(consultas.entregas);
+  const transferenciasOrigemSnapshot=lerConsulta(consultas.transferenciasOrigem);
+  const transferenciasDestinoSnapshot=lerConsulta(consultas.transferenciasDestino);
+  const trocasSnapshot=lerConsulta(consultas.trocas);
+  const metasSnapshot=lerConsulta(consultas.metas);
   const colaboradores=[origemDoc.data(),destinoDoc.data()];
-  const entregas=entregasSnapshot.docs.map(documento=>documento.data());
+  const entregas=entregasSnapshot.map(documento=>documento.data());
   const transferencias=[...new Map(
-    [...transferenciasOrigemSnapshot.docs,...transferenciasDestinoSnapshot.docs]
+    [...transferenciasOrigemSnapshot,...transferenciasDestinoSnapshot]
       .map(documento=>[documento.id,documento.data()])
   ).values()];
-  const trocas=trocasSnapshot.docs.map(documento=>documento.data());
+  const trocas=trocasSnapshot.map(documento=>documento.data());
   const campanhas=[campanhaDoc.data()];
-  const metas=metasSnapshot.docs.map(documento=>documento.data());
+  const metas=metasSnapshot.map(documento=>documento.data());
   const participanteEnvolvido=registro=>participanteIds.includes(registro.colaboradorId)
     || participanteIds.includes(registro.colaboradorOrigemId)
     || participanteIds.includes(registro.colaboradorDestinoId);
@@ -3543,6 +3564,7 @@ async function decidirSolicitacaoTroca(id,decisao){
         STATE.metasSnapshots=metaOriginal;
         throw erro;
       }
+      const consultasTroca=await consultarRegistrosTrocaTransacional(campanha.id,[origem.id,destino.id]);
       const transferenciasRef=FIREBASE_DB.collection('reciclar-apac').doc('transferencias').collection('records');
       const origemParaDestinoRef=transferenciasRef.doc();
       const destinoParaOrigemRef=transferenciasRef.doc();
@@ -3579,7 +3601,7 @@ async function decidirSolicitacaoTroca(id,decisao){
         if(serializarEstavel(documento.data())!==serializarEstavel(pedido)){
           throw new Error('A solicitação mudou desde que foi carregada. Atualize a página e tente novamente.');
         }
-        const dadosAtuais=await carregarEstadoTrocaTransacional(transacao,campanha.id,[origem.id,destino.id]);
+        const dadosAtuais=await carregarEstadoTrocaTransacional(transacao,campanha.id,[origem.id,destino.id],consultasTroca);
         const estadoAnterior={
           colaboradores:STATE.colaboradores,
           entregas:STATE.entregas,
