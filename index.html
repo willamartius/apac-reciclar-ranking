@@ -70,6 +70,7 @@ a{color:var(--verde-700);}
 .nav button svg{width:18px;height:18px;flex-shrink:0;opacity:.9;}
 .nav button:hover{background:rgba(255,255,255,0.06);}
 .nav button.active{background:var(--verde-700);color:#fff;}
+.nav .nav-help{margin-top:8px;padding-top:14px;border-top:1px solid rgba(255,255,255,.12);border-radius:0;}
 .sidebar-foot{border-top:1px solid rgba(255,255,255,0.12);padding-top:14px;margin-top:10px;}
 .admin-pill{
   display:flex;align-items:center;justify-content:space-between;gap:8px;
@@ -250,6 +251,13 @@ tr:last-child td{border-bottom:none;}
 .notification-button{position:relative;display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;min-width:42px;min-height:42px;padding:0;border:1px solid var(--border);border-radius:50%;background:#fff;color:var(--verde-800);flex-shrink:0;}
 .notification-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;display:grid;place-items:center;padding:0 5px;border-radius:20px;background:var(--vermelho);color:#fff;font-size:10px;font-weight:800;line-height:1;}
 .topbar-icon-actions .notification-button{overflow:visible;}
+.help-guide-intro{margin:-4px 0 16px;color:var(--text-muted);line-height:1.6;}
+.help-guide-section+.help-guide-section{margin-top:20px;}
+.help-guide-section-title{margin:0 0 9px;color:var(--verde-700);font-size:12px;font-weight:800;letter-spacing:.45px;text-transform:uppercase;}
+.help-guide-list{display:grid;gap:9px;}
+.help-guide-item{padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:#FBFDFC;}
+.help-guide-item b{display:block;margin-bottom:3px;color:var(--verde-900);font-size:13px;}
+.help-guide-item p{margin:0;color:var(--text-muted);font-size:12.5px;line-height:1.5;}
 .swap-request-list{display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow-y:auto;}
 .swap-request-card{border:1px solid var(--border);border-radius:12px;padding:12px;}
 .swap-request-card p{margin:0 0 8px;line-height:1.5;}
@@ -399,10 +407,10 @@ select{text-overflow:ellipsis;}
   .content{padding:16px 14px 96px 14px;}
   .topbar{padding:12px 14px;align-items:flex-start;}
   .topbar-tools{gap:6px;}
-  .topbar-tools{flex:0 1 64%;justify-content:flex-end;}
+  .topbar-tools{flex:0 1 72%;justify-content:flex-end;}
   .topbar-icon-actions{flex:0 0 auto;gap:6px;}
-  .topbar .app-select{flex:1 1 0;width:0;max-width:calc(100% - 96px);}
-  .topbar-tools > div:first-child{min-width:0;max-width:calc(100% - 94px);}
+  .topbar .app-select{flex:1 1 0;width:0;min-width:0!important;max-width:calc(100% - 48px);}
+  .topbar-tools > div:first-child{min-width:0;max-width:calc(100% - 48px);}
   .topbar select{min-width:0 !important;max-width:100%;padding:8px 30px 8px 9px;}
   .topbar-icon-actions{gap:6px;}
   .bottomnav{display:block;}
@@ -419,8 +427,8 @@ select{text-overflow:ellipsis;}
   .topbar h1{font-size:17px;}
   .topbar .desc{font-size:11.5px;}
   .topbar > div:first-child{flex:1;min-width:0;}
-  .topbar > div:last-child{max-width:64%;justify-content:flex-end;flex-shrink:0;}
-  .topbar-tools > div:first-child{max-width:calc(100% - 90px);}
+  .topbar > div:last-child{max-width:72%;justify-content:flex-end;flex-shrink:0;}
+  .topbar-tools > div:first-child{max-width:calc(100% - 48px);}
   .topbar-tools > div:first-child .small-note{display:none;}
   .topbar select{max-width:100%;font-size:11px;}
   .help-btn{width:42px;height:42px;}
@@ -456,8 +464,8 @@ select{text-overflow:ellipsis;}
 }
 @media(max-width:360px){
   .grid-4,.grid-3{grid-template-columns:1fr;}
-  .topbar > div:last-child{max-width:66%;}
-  .topbar-tools > div:first-child{max-width:calc(100% - 88px);}
+  .topbar > div:last-child{max-width:74%;}
+  .topbar-tools > div:first-child{max-width:calc(100% - 48px);}
   .bottomnav button{font-size:9px;}
 }
 </style>
@@ -1412,6 +1420,7 @@ const ICONS = {
   edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
   trash:'<path d="M3 6h18"/><path d="M8 6V4h8v2M6 6l1 15h10l1-15"/>',
   check:'<path d="M20 6L9 17l-5-5"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.7 1.2c-.8 1.1-2.3 1.4-2.3 3.3"/><path d="M12 17h.01"/>',
   chevron:'<path d="m6 9 6 6 6-6"/>',
   x:'<path d="M18 6L6 18M6 6l12 12"/>',
   upload:'<path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 18v2h16v-2"/>',
@@ -1739,6 +1748,7 @@ function selecionarOpcaoSolicitacao(id,valor){
 let appSelectOverlay=null;
 let appSelectAtivo=null;
 let appSelectOverflowAnterior='';
+let appSelectPaddingDireitoAnterior='';
 function sincronizarSeletorNativo(select){
   if(!select || !select.dataset.customSelect) return;
   const trigger=document.getElementById(select.dataset.customSelectTrigger);
@@ -1760,7 +1770,9 @@ function fecharSeletorNativo(restaurarFoco=false){
   appSelectOverlay=null;
   appSelectAtivo=null;
   document.body.style.overflow=appSelectOverflowAnterior;
+  document.body.style.paddingRight=appSelectPaddingDireitoAnterior;
   appSelectOverflowAnterior='';
+  appSelectPaddingDireitoAnterior='';
   if(trigger && trigger.isConnected){
     trigger.setAttribute('aria-expanded','false');
     if(restaurarFoco) trigger.focus();
@@ -1820,6 +1832,12 @@ function abrirSeletorNativo(select){
     if(evento.target===overlay) fecharSeletorNativo(true);
   });
   appSelectOverflowAnterior=document.body.style.overflow;
+  appSelectPaddingDireitoAnterior=document.body.style.paddingRight;
+  const larguraBarraRolagem=Math.max(0,window.innerWidth-document.documentElement.clientWidth);
+  if(larguraBarraRolagem){
+    const paddingDireitoAtual=parseFloat(getComputedStyle(document.body).paddingRight)||0;
+    document.body.style.paddingRight=`${paddingDireitoAtual+larguraBarraRolagem}px`;
+  }
   document.body.style.overflow='hidden';
   appSelectOverlay=overlay;
   appSelectAtivo={select,trigger};
@@ -2162,6 +2180,7 @@ function renderApp(){
       </div>
       <div class="nav">
         ${navItems.map(n=>`<button class="${n.key===STATE.view?'active':''}" onclick="irPara('${n.key}')">${icon(n.icon)}${n.label}</button>`).join('')}
+        <button class="nav-help" type="button" onclick="abrirAjuda()">${icon('help')}Como usar o painel</button>
       </div>
       <div class="sidebar-foot">
         <div class="admin-pill">
@@ -2183,7 +2202,6 @@ function renderApp(){
           ${renderSeletorCampanhaTopo()}
           <div class="topbar-icon-actions">
             ${STATE.isAdmin?renderBotaoNotificacoesTroca():''}
-            <button class="help-btn" onclick="abrirAjuda()" title="Como usar">?</button>
           </div>
         </div>
       </div>
@@ -2217,6 +2235,7 @@ function abrirMaisSheet(){
         if(!n) return '';
         return `<button class="btn btn-outline btn-block" style="justify-content:flex-start" onclick="fecharModal();irPara('${k}')">${icon(n.icon)}${n.label}</button>`;
       }).join('')}
+      <button class="btn btn-outline btn-block" style="justify-content:flex-start" onclick="fecharModal();abrirAjuda()">${icon('help')}Como usar o painel</button>
       <button class="btn btn-outline btn-block" style="justify-content:flex-start" onclick="fecharModal();${STATE.authUser?'sairAdmin()':'abrirLoginAdmin()'}">${STATE.authUser?'🔒 Sair da conta':'🔑 Entrar'}</button>
     </div>
   `);
@@ -2597,20 +2616,35 @@ async function sincronizarRankingsPublicos(){
 
 function abrirAjuda(){
   abrirModal(`
-    <div class="modal-head"><h3>Como usar o aplicativo</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <ol class="checklist">
-      <li><b>Cadastrar colaboradores:</b> vá em Colaboradores → Novo colaborador, ou importe uma planilha.</li>
-      <li><b>Registrar entregas:</b> vá em Entregas → Nova entrega, escolha o colaborador, o tipo de material e a quantidade.</li>
-      <li><b>Validar o material:</b> a Encarregada Financeira confere a contagem em Entregas e muda o status para "Validado". Só entregas validadas contam no ranking.</li>
-      <li><b>Excedente do mês:</b> se um colaborador entregar mais do que a meta pede em uma categoria, a sobra passa automaticamente para a meta do mês seguinte naquela mesma categoria.</li>
-      <li><b>Transferir material:</b> em Entregas → Transferir material, é possível mover o crédito de um colaborador para outro, ou trocar uma categoria por outra do mesmo colaborador, com autorização do administrador.</li>
-      <li><b>Ver o ranking:</b> em Ranking mensal, escolha o mês e veja a posição de cada colaborador.</li>
-      <li><b>Acompanhar o ranking público:</b> a página pública atualiza automaticamente após um administrador ou operador salvar mudanças; os detalhes mostram a quantidade disponível, o que falta para a meta e os excedentes por material.</li>
-      <li><b>Acompanhar a campanha inteira:</b> o Painel geral mostra a evolução e um resumo de todos os colaboradores desde maio de 2026.</li>
-      <li><b>Compartilhar no WhatsApp:</b> na tela de Ranking, escolha o resumo do Top 3 ou o ranking completo, revise o texto e envie pelo WhatsApp.</li>
-    </ol>
-    <p class="small-note">Ações de cadastro, validação, transferência e exclusão exigem o modo administrador, disponível no menu lateral (ou em "Mais" no celular).</p>
-  `);
+    <div class="modal-head"><h3>Como usar o painel</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p class="help-guide-intro">Um guia rápido para registrar materiais, acompanhar resultados e manter os dados da campanha atualizados. As opções disponíveis podem variar conforme seu perfil de acesso.</p>
+    <section class="help-guide-section">
+      <h4 class="help-guide-section-title">Rotina da campanha</h4>
+      <div class="help-guide-list">
+        <article class="help-guide-item"><b>Escolha a campanha e o período</b><p>Use o seletor no topo para trocar de campanha. No Painel geral e nas telas de acompanhamento, escolha o mês e o ano que deseja consultar.</p></article>
+        <article class="help-guide-item"><b>Cadastre os colaboradores</b><p>Em Colaboradores, cadastre cada participante e mantenha a situação atualizada. Se disponível, importe vários nomes de uma planilha.</p></article>
+        <article class="help-guide-item"><b>Registre e confira as entregas</b><p>Em Entregas, informe o colaborador, o material, a quantidade e a unidade. Entregas pendentes ainda não entram nos saldos nem no ranking; valide-as após conferir os materiais recebidos.</p></article>
+        <article class="help-guide-item"><b>Registre transferências</b><p>Na tela Entregas, use Transferir material para mover saldo entre colaboradores ou categorias. Confira origem, destino e quantidade antes de salvar.</p></article>
+      </div>
+    </section>
+    <section class="help-guide-section">
+      <h4 class="help-guide-section-title">Rankings e saldos</h4>
+      <div class="help-guide-list">
+        <article class="help-guide-item"><b>Entenda a pontuação</b><p>O Ranking mensal ordena os colaboradores pela média do cumprimento das categorias. Para a pontuação, cada categoria conta no máximo 100%; os detalhes mostram o percentual real, inclusive resultados acima da meta.</p></article>
+        <article class="help-guide-item"><b>Acompanhe os excedentes</b><p>Quando a quantidade supera a meta, o excedente segue para o mês seguinte na mesma categoria. Os indicadores de saldo anterior e seguinte ajudam a identificar esses valores nos detalhes.</p></article>
+        <article class="help-guide-item"><b>Confira a página pública</b><p>O ranking público é atualizado quando um administrador ou operador salva alterações. Os visitantes podem consultar campanha, período e detalhes; os pedidos públicos de troca só mudam os saldos após aprovação de um administrador.</p></article>
+        <article class="help-guide-item"><b>Compartilhe o ranking</b><p>Na tela Ranking, escolha o resumo do Top 3 ou a classificação completa, revise a mensagem e então compartilhe pelo WhatsApp.</p></article>
+      </div>
+    </section>
+    <section class="help-guide-section">
+      <h4 class="help-guide-section-title">Configurações e segurança</h4>
+      <div class="help-guide-list">
+        <article class="help-guide-item"><b>Solicitações de troca</b><p>O sino mostra pedidos aguardando análise. Confira os nomes e as quantidades combinadas; ao aprovar, o sistema verifica os saldos antes de registrar a troca.</p></article>
+        <article class="help-guide-item"><b>Backups</b><p>Em Configurações, administradores podem exportar ou importar um backup local e gerenciar backups privados no Google Drive. Cada administrador vincula sua própria conta Google.</p></article>
+        <article class="help-guide-item"><b>Aviso de manutenção</b><p>Em Configurações, um administrador pode ativar ou desativar temporariamente o aviso exibido na página pública.</p></article>
+      </div>
+    </section>
+  `,true,'help-guide');
 }
 window.abrirAjuda = abrirAjuda;
 
