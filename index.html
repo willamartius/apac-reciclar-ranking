@@ -249,6 +249,7 @@ tr:last-child td{border-bottom:none;}
 .modal-actions{display:flex;gap:10px;margin-top:18px;}
 .notification-button{position:relative;display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;min-width:42px;min-height:42px;padding:0;border:1px solid var(--border);border-radius:50%;background:#fff;color:var(--verde-800);flex-shrink:0;}
 .notification-count{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;display:grid;place-items:center;padding:0 5px;border-radius:20px;background:var(--vermelho);color:#fff;font-size:10px;font-weight:800;line-height:1;}
+.topbar-icon-actions .notification-button{overflow:visible;}
 .swap-request-list{display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow-y:auto;}
 .swap-request-card{border:1px solid var(--border);border-radius:12px;padding:12px;}
 .swap-request-card p{margin:0 0 8px;line-height:1.5;}
@@ -324,7 +325,11 @@ select{text-overflow:ellipsis;}
 .public-ranking-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-items:end;}
 .public-ranking-filters .field{min-width:0;margin-bottom:10px;}
 .public-ranking-filters .app-select{width:100%;}
-.public-ranking-table{width:100%;min-width:0;max-width:100%;margin:0 auto;overflow-x:auto;}
+.public-ranking-table{width:100%;min-width:0;max-width:100%;margin:0 auto;overflow-x:hidden;}
+.public-ranking-card .public-ranking-table>table{width:100%;table-layout:fixed;}
+.public-ranking-card .public-ranking-table th,
+.public-ranking-card .public-ranking-table td{text-align:center;}
+.public-ranking-card .public-ranking-table td:nth-child(2){overflow-wrap:anywhere;}
 .material-detail-table{width:100%;table-layout:fixed;}
 .material-detail-table th{white-space:normal;}
 .material-detail-table th:nth-child(1){width:22%;}
@@ -361,6 +366,16 @@ select{text-overflow:ellipsis;}
   .public-ranking-card{min-width:0;padding:14px;width:100%;}
   .public-ranking-filters{grid-template-columns:1fr;gap:0;}
   .public-ranking-card .table-wrap{width:100%;max-width:100%;margin-inline:auto;}
+  .public-ranking-card .public-ranking-table{overflow-x:hidden;}
+  .public-ranking-card .public-ranking-table th{padding:7px 2px;font-size:clamp(8px,2.45vw,10px);letter-spacing:0;white-space:normal;}
+  .public-ranking-card .public-ranking-table th:nth-child(1){width:12%;}
+  .public-ranking-card .public-ranking-table th:nth-child(2){width:34%;}
+  .public-ranking-card .public-ranking-table th:nth-child(3){width:22%;}
+  .public-ranking-card .public-ranking-table th:nth-child(4){width:32%;}
+  .public-ranking-card .public-ranking-table td{padding:9px 2px;font-size:clamp(10px,3vw,12px);}
+  .public-ranking-card .public-ranking-table td:nth-child(2){text-align:center;line-height:1.35;}
+  .public-ranking-card .public-details-toggle{width:100%;min-width:0;min-height:48px;padding:4px 2px;}
+  .public-ranking-card .public-details-window{height:38px;}
   .podium-card{height:116px;box-sizing:border-box;}
   .podium-1{height:130px;}
   .material-detail-table{font-size:11px;}
@@ -384,6 +399,9 @@ select{text-overflow:ellipsis;}
   .content{padding:16px 14px 96px 14px;}
   .topbar{padding:12px 14px;align-items:flex-start;}
   .topbar-tools{gap:6px;}
+  .topbar-tools{flex:0 1 64%;justify-content:flex-end;}
+  .topbar-icon-actions{flex:0 0 auto;gap:6px;}
+  .topbar .app-select{flex:1 1 0;width:0;max-width:calc(100% - 96px);}
   .topbar-tools > div:first-child{min-width:0;max-width:calc(100% - 94px);}
   .topbar select{min-width:0 !important;max-width:100%;padding:8px 30px 8px 9px;}
   .topbar-icon-actions{gap:6px;}
@@ -1935,7 +1953,7 @@ function abrirSolicitacaoTrocaPublica(){
   const opcoesMateriais=materiais.map(material=>({value:material.key,label:`${material.nome} (${material.unidade})`}));
   abrirModal(`
     <div class="modal-head"><h3>Solicitar troca de materiais</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <p class="small-note">O pedido ficará pendente até um administrador conferir e aprovar. A seleção de nomes não confirma a identidade de quem solicita; selecione os nomes corretos e as quantidades combinadas.</p>
+    <p class="small-note">O pedido ficará pendente até que um administrador o confira e aprove. A seleção dos nomes não confirma a identidade de quem está solicitando. Por isso, selecione corretamente os nomes e informe as quantidades conforme o combinado.</p>
     ${renderPickerSolicitacao('solicitacaoCampanha','Campanha',opcoesCampanhas,preferida.campanhaId)}
     <div class="section-title" style="margin:14px 0 8px;font-size:13.5px;">Você oferece</div>
     <div class="grid grid-2">
