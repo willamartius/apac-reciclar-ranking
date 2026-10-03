@@ -218,6 +218,11 @@ td{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:middle
 tr:last-child td{border-bottom:none;}
 .table-wrap{overflow-x:auto;border-radius:12px;}
 .table-empty{padding:30px 10px;text-align:center;color:var(--text-muted);font-size:13.5px;}
+.table-cell-center{text-align:center;}
+.drive-backup-card{min-width:0;}
+.drive-backup-card>*{min-width:0;}
+.drive-backup-restore{width:100%;min-width:0;}
+.drive-backup-restore select{display:block;width:100%;min-width:0;max-width:100%;text-overflow:ellipsis;}
 .dashboard-ranking-mobile{display:none;}
 
 .badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:800;}
@@ -3133,7 +3138,7 @@ function renderTabelaTransferencias(mes,ano){
   const lista = transferenciasDoMes(campanhaId, mes,ano).slice().sort((a,b)=>b.data.localeCompare(a.data));
   if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhuma transferência registrada neste mês.</div>`; return; }
   wrap.innerHTML = `
-    <table><thead><tr><th>Data</th><th>De</th><th>Para</th><th>Qtd.</th><th>Motivo</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Data</th><th>De</th><th>Para</th><th class="table-cell-center">Qtd.</th><th>Motivo</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
     <tbody>
       ${lista.map(t=>{
         const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
@@ -3144,7 +3149,7 @@ function renderTabelaTransferencias(mes,ano){
           <td>${formatarData(t.data)}</td>
           <td>${escapeHtml(origem?origem.nome:'(removido)')} <span class="small-note">— ${catOrigem?escapeHtml(catOrigem.label.split(' (')[0]):''}</span></td>
           <td>${escapeHtml(destino?destino.nome:'(removido)')} <span class="small-note">— ${catDestino?escapeHtml(catDestino.label.split(' (')[0]):''}</span></td>
-          <td>${t.quantidade}</td>
+          <td class="table-cell-center">${t.quantidade}</td>
           <td>${escapeHtml(t.motivo||'—')}</td>
           ${STATE.isAdmin? `<td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="confirmarExcluirTransferencia('${t.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button></td>` : ''}
         </tr>`;
@@ -3289,14 +3294,14 @@ function renderSaldoTransportado(mes,ano){
     <div class="stat-label">Excedente trazido de meses anteriores para ${nomeMes(mes)}/${ano}</div>
     <p class="small-note" style="margin:4px 0 10px 0;">Crédito que sobrou da meta batida em meses passados, já incluído automaticamente no cálculo deste mês. ${lista.length} colaborador(es) com excedente.</p>
     <div class="table-wrap">
-      <table><thead><tr><th>Colaborador</th><th>Setor</th><th>Categorias com excedente</th><th>Total excedente</th><th></th></tr></thead>
+      <table><thead><tr><th>Colaborador</th><th>Setor</th><th class="table-cell-center">Categorias com excedente</th><th class="table-cell-center">Total excedente</th><th></th></tr></thead>
       <tbody>
         ${lista.map((item,i)=>`
           <tr>
             <td style="font-weight:700;">${escapeHtml(item.colaborador.nome)}</td>
             <td>${escapeHtml(item.colaborador.setor||'—')}</td>
-            <td>${item.itens.length}</td>
-            <td><span class="badge badge-green">+${Math.round(item.total).toLocaleString('pt-BR')}</span></td>
+            <td class="table-cell-center">${item.itens.length}</td>
+            <td class="table-cell-center"><span class="badge badge-green">+${Math.round(item.total).toLocaleString('pt-BR')}</span></td>
             <td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="abrirDetalhesExcedente(${i})">Ver detalhes</button></td>
           </tr>`).join('')}
       </tbody></table>
@@ -3308,8 +3313,8 @@ function abrirDetalhesExcedente(indice){
   if(!item) return;
   abrirModal(`
     <div class="modal-head"><h3>Excedente de ${escapeHtml(item.colaborador.nome)}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-    <div class="table-wrap"><table><thead><tr><th>Material</th><th>Excedente trazido</th></tr></thead>
-      <tbody>${item.itens.map(it=>`<tr><td>${escapeHtml(it.categoria)}</td><td>+${Math.round(it.valor).toLocaleString('pt-BR')}</td></tr>`).join('')}</tbody>
+    <div class="table-wrap"><table><thead><tr><th>Material</th><th class="table-cell-center">Excedente trazido</th></tr></thead>
+      <tbody>${item.itens.map(it=>`<tr><td>${escapeHtml(it.categoria)}</td><td class="table-cell-center">+${Math.round(it.valor).toLocaleString('pt-BR')}</td></tr>`).join('')}</tbody>
     </table></div>
     <p class="small-note" style="margin-top:12px;">Total: <b>+${Math.round(item.total).toLocaleString('pt-BR')}</b> unidades equivalentes.</p>
   `);
@@ -3718,15 +3723,15 @@ function renderTabelaTrocas(){
   const lista = STATE.trocas.filter(t=>t.campanhaId===campanhaId).sort((a,b)=>b.data.localeCompare(a.data));
   if(lista.length===0){ wrap.innerHTML = `<div class="table-empty">Nenhum resgate registrado ainda.</div>`; return; }
   wrap.innerHTML = `
-    <table><thead><tr><th>Data</th><th>Colaborador</th><th>Kits</th><th>RESGATE DE CARTELAS</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Data</th><th>Colaborador</th><th class="table-cell-center">Kits</th><th class="table-cell-center">RESGATE DE ${escapeHtml(String(cfgTroca.nomeItem||'item').toLocaleUpperCase('pt-BR'))}</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
     <tbody>
       ${lista.map(t=>{
         const c = STATE.colaboradores.find(x=>x.id===t.colaboradorId);
         return `<tr>
           <td>${formatarData(t.data)}</td>
           <td style="font-weight:700;">${escapeHtml(c?c.nome:'(removido)')}</td>
-          <td>${t.quantidadeKits}</td>
-          <td><span class="badge badge-green">${t.cartelasEmitidas}</span></td>
+          <td class="table-cell-center">${t.quantidadeKits}</td>
+          <td class="table-cell-center"><span class="badge badge-green">${t.cartelasEmitidas}</span></td>
           ${STATE.isAdmin?`<td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="confirmarExcluirTroca('${t.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button></td>`:''}
         </tr>`;
       }).join('')}
@@ -3881,7 +3886,7 @@ function renderTabelaRanking(resultados, completa, mes, ano){
   const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
   return `
     <table><thead><tr>
-      <th>Pos.</th><th>Colaborador</th><th>Setor</th><th>Pontuação</th><th>% cumprimento</th>${completa?'<th>Materiais</th>':''}<th>Meta</th>${cfgTroca?`<th>${escapeHtml(cfgTroca.nomeItem)}</th>`:''}<th></th>
+      <th>Pos.</th><th>Colaborador</th><th>Setor</th><th>Pontuação</th><th>% cumprimento</th>${completa?'<th>Materiais</th>':''}<th>Meta</th>${cfgTroca?`<th class="table-cell-center">${escapeHtml(cfgTroca.nomeItem)}</th>`:''}<th></th>
     </tr></thead>
     <tbody>
       ${resultados.map(r=>{
@@ -3895,7 +3900,7 @@ function renderTabelaRanking(resultados, completa, mes, ano){
           <td>${r.mediaReal.toFixed(0)}%</td>
           ${completa?`<td>${r.totalMateriais.toLocaleString('pt-BR')}</td>`:''}
           <td>${r.metaAtingida? '<span class="badge badge-green">Atingida</span>' : '<span class="badge badge-grey">Em andamento</span>'}</td>
-          ${cfgTroca?`<td>${kits>0?`<span class="badge badge-green">${kits} disponíve${kits===1?'l':'is'}</span>`:'<span class="small-note">0</span>'}</td>`:''}
+          ${cfgTroca?`<td class="table-cell-center">${kits>0?`<span class="badge badge-green">${kits} disponíve${kits===1?'l':'is'}</span>`:'<span class="small-note">0</span>'}</td>`:''}
           <td>${mes&&ano? `<button class="btn btn-ghost btn-sm" onclick="abrirDetalhesColaborador('${r.colaborador.id}',${mes},${ano})">Detalhes</button>` : ''}</td>
         </tr>`;
       }).join('')}
@@ -4331,7 +4336,7 @@ function renderConfig(){
     </div>
 
     <div class="section-title">Backup no Google Drive</div>
-    <div class="card" style="display:grid;gap:12px;">
+    <div class="card drive-backup-card" style="display:grid;gap:12px;">
       <p class="small-note" style="margin:0;">Cada administrador vincula sua própria conta Google. Os backups são armazenados de forma privada em uma pasta do Google Drive, e o aplicativo mantém os dez arquivos de restauração mais recentes.</p>
       ${STATE.googleDriveLink?`<p class="small-note" style="margin:0;">Conta vinculada: <b>${escapeHtml(STATE.googleDriveLink.email)}</b></p>`:'<p class="small-note" style="margin:0;">Nenhuma conta Google vinculada a este usuário administrador.</p>'}
       ${STATE.googleDriveStatus?`<p class="small-note" role="status" style="margin:0;">${escapeHtml(STATE.googleDriveStatus)}</p>`:''}
@@ -4343,7 +4348,7 @@ function renderConfig(){
         <button class="btn btn-outline btn-block" type="button" onclick="criarBackupGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('download',16)}Salvar backup</button>
         <button class="btn btn-outline btn-block" type="button" onclick="listarBackupsGoogleDrive()" ${!STATE.googleDriveLink||STATE.googleDriveBusy?'disabled':''}>${icon('upload',16)}Exibir backup</button>
       </div>
-      ${STATE.googleDriveBackupsVisiveis&&STATE.googleDriveBackups.length?`<div class="field" style="margin:0;">
+      ${STATE.googleDriveBackupsVisiveis&&STATE.googleDriveBackups.length?`<div class="field drive-backup-restore" style="margin:0;">
         <label for="googleDriveBackupSelecionado">Backup para restaurar</label>
         <select id="googleDriveBackupSelecionado" onchange="selecionarBackupGoogleDrive(this.value)" ${STATE.googleDriveBusy?'disabled':''}>
           ${STATE.googleDriveBackups.map(item=>`<option value="${escapeHtml(item.id)}" ${item.id===STATE.googleDriveBackupSelecionadoId?'selected':''}>${escapeHtml(item.name)} · ${escapeHtml(item.createdTime?new Date(item.createdTime).toLocaleString('pt-BR'):'data desconhecida')}</option>`).join('')}
