@@ -113,13 +113,13 @@ select:disabled{background-color:#F1F4F1;color:#87958B;cursor:not-allowed;opacit
 .app-select{position:relative;display:block;width:100%;min-width:0;}
 .topbar .app-select{display:inline-flex;width:auto;min-width:0;flex:1 1 auto;}
 .app-select-native{position:absolute!important;width:1px!important;height:1px!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;opacity:0!important;pointer-events:none!important;}
-.app-select-trigger{display:flex;width:100%;min-width:0;min-height:40px;align-items:center;justify-content:space-between;gap:12px;padding:9px 38px 9px 11px;border:1.5px solid #D8E3DA;border-radius:11px;background:#fff;color:var(--text);box-shadow:0 2px 8px rgba(24,68,45,.05);text-align:left;font-size:14px;line-height:1.35;transition:border-color .18s ease,box-shadow .18s ease;}
+.app-select-trigger{display:flex;width:100%;min-width:0;min-height:40px;align-items:center;justify-content:space-between;gap:12px;padding:9px 14px 9px 11px;border:1.5px solid #D8E3DA;border-radius:11px;background:#fff;color:var(--text);box-shadow:0 2px 8px rgba(24,68,45,.05);text-align:left;font-size:14px;line-height:1.35;transition:border-color .18s ease,box-shadow .18s ease;}
 .app-select-trigger:hover,.app-select-trigger[aria-expanded=true]{border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(94,157,113,.12);}
 .app-select-trigger:focus-visible{outline:2px solid var(--verde-500);outline-offset:2px;}
 .app-select-trigger:disabled{background:#F1F4F1;color:#87958B;cursor:not-allowed;opacity:.8;}
 .app-select-value{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .app-select-chevron{width:16px;height:16px;flex:none;color:var(--verde-700);}
-.topbar .app-select-trigger{min-height:42px;padding:10px 38px 10px 13px;border-radius:13px;font:inherit;}
+.topbar .app-select-trigger{min-height:42px;padding:10px 14px 10px 13px;border-radius:13px;font:inherit;}
 .app-select-overlay{position:fixed;inset:0;z-index:160;pointer-events:none;}
 .app-select-overlay[hidden]{display:none;}
 .app-select-menu{position:fixed;width:min(360px,calc(100vw - 24px));max-height:min(55vh,420px);overflow-y:auto;border:1px solid var(--border);border-radius:15px;background:#fff;box-shadow:0 16px 42px rgba(18,48,31,.2);pointer-events:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:#AFC1B2 transparent;}
@@ -141,7 +141,7 @@ select:disabled{background-color:#F1F4F1;color:#87958B;cursor:not-allowed;opacit
   .app-select-option:first-child{border-radius:19px 19px 0 0;}
   .app-select-option:last-child{border-radius:0 0 19px 19px;}
   .app-select-option:only-child{border-radius:19px;}
-  .topbar .app-select-trigger{min-height:38px;padding:8px 30px 8px 9px;font-size:inherit;}
+  .topbar .app-select-trigger{min-height:38px;padding:8px 12px 8px 9px;font-size:inherit;}
 }
 .content{padding:22px 26px 90px 26px;max-width:1180px;width:100%;}
 
@@ -239,6 +239,12 @@ tr:last-child td{border-bottom:none;}
 .modal-public-details{border-radius:18px;}
 .modal-overlay-swap-request{align-items:center;padding:12px;overflow:hidden;}
 .modal-swap-request{width:100%;max-width:560px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);border-radius:20px;}
+.modal-overlay-swap-success{align-items:center;padding:16px;}
+.modal-swap-success{width:100%;max-width:420px;border-radius:22px;text-align:center;}
+.swap-success-icon{display:grid;width:58px;height:58px;place-items:center;margin:4px auto 14px;border-radius:50%;background:var(--verde-100);color:var(--verde-700);}
+.swap-success-icon svg{width:28px;height:28px;stroke-width:2.5;}
+.swap-success-title{margin:0 0 8px;color:var(--verde-900);font-family:'Fraunces',serif;font-size:23px;}
+.swap-success-message{margin:0;color:var(--text-muted);font-size:14px;line-height:1.55;}
 .swap-picker{position:relative;}
 .swap-picker-trigger{display:flex;width:100%;min-height:50px;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1.5px solid #D8E3DA;border-radius:13px;background:linear-gradient(180deg,#fff 0%,#FBFDFC 100%);color:var(--text);text-align:left;font-size:14px;box-shadow:0 2px 8px rgba(24,68,45,.05);transition:border-color .18s ease,box-shadow .18s ease;}
 .swap-picker-trigger:hover,.swap-picker.is-open .swap-picker-trigger{border-color:var(--verde-500);box-shadow:0 0 0 3px rgba(94,157,113,.12);}
@@ -2084,7 +2090,12 @@ async function enviarSolicitacaoTrocaPublica(){
   try{
     await referencia.set(pedido);
     fecharModal();
-    alert('Solicitação enviada. Um administrador precisa aprovar a troca antes que os saldos sejam alterados.');
+    abrirModal(`
+      <div class="swap-success-icon" aria-hidden="true">${icon('check',28)}</div>
+      <h3 class="swap-success-title">Pedido enviado!</h3>
+      <p class="swap-success-message">Sua solicitação ficará pendente até um administrador conferir e aprovar. Os saldos só serão atualizados depois da aprovação.</p>
+      <div class="modal-actions"><button class="btn btn-primary btn-block" type="button" onclick="fecharModal()">Entendi</button></div>
+    `,false,'swap-success');
   }catch(erro){
     console.error('Erro ao enviar solicitação pública de troca',erro);
     mostrarErro(erro.message||'Não foi possível enviar a solicitação. Tente novamente.');
