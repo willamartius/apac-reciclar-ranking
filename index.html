@@ -219,6 +219,12 @@ tr:last-child td{border-bottom:none;}
 .table-wrap{overflow-x:auto;border-radius:12px;}
 .table-empty{padding:30px 10px;text-align:center;color:var(--text-muted);font-size:13.5px;}
 .table-cell-center{text-align:center;}
+.report-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));}
+.report-card{display:flex;min-width:0;flex-direction:column;align-items:flex-start;gap:8px;}
+.report-card .small-note{flex:1;margin:0;}
+.report-card .btn{min-height:36px;margin-top:2px;padding:7px 11px;}
+.report-period{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.report-period .app-select{flex:1 1 180px;min-width:0;}
 .trash-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;width:260px;}
 .trash-actions .btn{width:100%;min-width:0;min-height:40px;justify-content:center;padding:6px 8px;white-space:normal;text-align:center;line-height:1.2;}
 .trash-actions .btn svg{width:18px;height:18px;flex:none;}
@@ -359,6 +365,12 @@ select{text-overflow:ellipsis;}
 .public-ranking-card .public-ranking-table th,
 .public-ranking-card .public-ranking-table td{text-align:center;}
 .public-ranking-card .public-ranking-table td:nth-child(2){overflow-wrap:anywhere;}
+.public-ranking-position{white-space:nowrap;}
+.public-ranking-position-content{display:inline-flex;align-items:center;justify-content:center;gap:2px;white-space:nowrap;}
+.public-ranking-medal{font-size:.9em;line-height:1;flex:none;}
+.ranking-position-cell{white-space:nowrap;text-align:center;}
+.ranking-position-content{display:inline-flex;align-items:center;justify-content:center;gap:3px;white-space:nowrap;}
+.ranking-medal{font-size:.9em;line-height:1;flex:none;}
 .material-detail-table{width:100%;table-layout:fixed;}
 .material-detail-table th{white-space:normal;}
 .material-detail-table th:nth-child(1){width:22%;}
@@ -397,11 +409,12 @@ select{text-overflow:ellipsis;}
   .public-ranking-card .table-wrap{width:100%;max-width:100%;margin-inline:auto;}
   .public-ranking-card .public-ranking-table{overflow-x:hidden;}
   .public-ranking-card .public-ranking-table th{padding:7px 2px;font-size:clamp(8px,2.45vw,10px);letter-spacing:0;white-space:normal;}
-  .public-ranking-card .public-ranking-table th:nth-child(1){width:12%;}
+  .public-ranking-card .public-ranking-table th:nth-child(1){width:18%;}
   .public-ranking-card .public-ranking-table th:nth-child(2){width:34%;}
-  .public-ranking-card .public-ranking-table th:nth-child(3){width:22%;}
-  .public-ranking-card .public-ranking-table th:nth-child(4){width:32%;}
+  .public-ranking-card .public-ranking-table th:nth-child(3){width:24%;}
+  .public-ranking-card .public-ranking-table th:nth-child(4){width:24%;}
   .public-ranking-card .public-ranking-table td{padding:9px 2px;font-size:clamp(10px,3vw,12px);}
+  .public-ranking-position-content{gap:1px;font-size:11px;}
   .public-ranking-card .public-ranking-table td:nth-child(2){text-align:center;line-height:1.35;}
   .public-ranking-card .public-details-toggle{width:100%;min-width:0;min-height:48px;padding:4px 2px;}
   .public-ranking-card .public-details-window{height:38px;}
@@ -1696,7 +1709,8 @@ function renderRankingPublico(){
             const botaoDetalhes=detalhesDisponiveis
               ?`<button class="btn btn-sm public-details-toggle${botaoDestacado?' is-achieved':''}" type="button" aria-label="Detalhes${resumoTroca?`. ${resumoTroca.quantidade} ${resumoTroca.unidade}.`:`. ${Math.round(item.percentualGeral??item.pontuacao)}% da meta, ${(item.totalMateriais||0).toLocaleString('pt-BR')} materiais.`} Abrir detalhes." onclick="abrirDetalhesRankingPublico(${index})"><span class="public-details-window" aria-hidden="true"><span class="public-details-track">${quadrosDetalhes}</span></span></button>`
               :`<button class="btn btn-ghost btn-sm" type="button" onclick="abrirDetalhesRankingPublico(${index})">Detalhes</button>`;
-            return `<tr><td><b>${item.posicao?`${item.posicao}º`:'—'}</b></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${detalhesDisponiveis?botaoDetalhes:'<span class="small-note">—</span>'}</td>`:''}</tr>`;
+            const medalha=item.posicao===1?'🥇':item.posicao===2?'🥈':item.posicao===3?'🥉':'';
+            return `<tr><td class="public-ranking-position"><span class="public-ranking-position-content"><b>${item.posicao?`${item.posicao}º`:'—'}</b>${medalha?`<span class="public-ranking-medal" aria-hidden="true">${medalha}</span>`:''}</span></td><td style="font-weight:700;">${escapeHtml(item.nome)}</td><td>${item.pontuacao.toFixed(0)} pts</td>${mostraDetalhes?`<td>${detalhesDisponiveis?botaoDetalhes:'<span class="small-note">—</span>'}</td>`:''}</tr>`;
           }).join('')}</tbody>
         </table></div>
         `:`<div class="empty-state">Ainda não há colaboradores com movimentação neste período.</div>`}
@@ -2270,6 +2284,7 @@ function renderApp(){
   };
   content.innerHTML = renderers[STATE.view] ? renderers[STATE.view]() : '';
   aprimorarSeletoresNativos(content);
+  if(STATE.view==='entregas') renderTabelaEntregas();
 }
 
 function abrirMaisSheet(){
@@ -3066,7 +3081,7 @@ function renderEntregas(){
       <div class="toolbar-left filters">
         <div><select id="filtroEntregaMes" onchange="renderTabelaEntregas()">${MESES_PT.map((m,i)=>`<option value="${i+1}" ${i+1===mesAnoAtual().mes?'selected':''}>${m}</option>`).join('')}</select></div>
         <div><select id="filtroEntregaAno" onchange="renderTabelaEntregas()">${[mesAnoAtual().ano-1,mesAnoAtual().ano,mesAnoAtual().ano+1].map(a=>`<option ${a===mesAnoAtual().ano?'selected':''}>${a}</option>`).join('')}</select></div>
-        <div class="filtro-status"><select id="filtroEntregaStatus" onchange="renderTabelaEntregas()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="validado">Validado</option></select></div>
+        ${STATE.entregasSecao==='entregas'?`<div class="filtro-status"><select id="filtroEntregaStatus" onchange="renderTabelaEntregas()"><option value="">Todos os status</option><option value="pendente">Pendente</option><option value="validado">Validado</option></select></div>`:''}
       </div>
       ${podeEditarDados()? `
       <div class="toolbar-right">
@@ -3076,12 +3091,15 @@ function renderEntregas(){
     </div>
     <div class="section-tabs" role="tablist" aria-label="Seção de registros">
       <button type="button" role="tab" aria-selected="${STATE.entregasSecao==='entregas'}" class="${STATE.entregasSecao==='entregas'?'active':''}" onclick="mudarSecaoEntregas('entregas')">Entregas</button>
+      <button type="button" role="tab" aria-selected="${STATE.entregasSecao==='excedentes'}" class="${STATE.entregasSecao==='excedentes'?'active':''}" onclick="mudarSecaoEntregas('excedentes')">Excedentes</button>
       <button type="button" role="tab" aria-selected="${STATE.entregasSecao==='transferencias'}" class="${STATE.entregasSecao==='transferencias'?'active':''}" onclick="mudarSecaoEntregas('transferencias')">Transferências</button>
       ${cfgTroca? `<button type="button" role="tab" aria-selected="${STATE.entregasSecao==='trocas'}" class="${STATE.entregasSecao==='trocas'?'active':''}" onclick="mudarSecaoEntregas('trocas')">Resgates</button>` : ''}
     </div>
     ${STATE.entregasSecao==='entregas'? `
-      <div class="card" id="saldoTransportadoWrap" style="display:none;"></div>
       <div class="card" style="padding:0;"><div class="table-wrap" id="tabelaEntregasWrap"></div></div>
+    ` : ''}
+    ${STATE.entregasSecao==='excedentes'? `
+      <div class="card" id="saldoTransportadoWrap"></div>
     ` : ''}
     ${STATE.entregasSecao==='transferencias'? `
       <div class="toolbar">
@@ -3100,7 +3118,7 @@ function renderEntregas(){
   `;
 }
 function mudarSecaoEntregas(secao){
-  if(!['entregas','transferencias','trocas'].includes(secao)) return;
+  if(!['entregas','excedentes','transferencias','trocas'].includes(secao)) return;
   STATE.entregasSecao=secao;
   renderApp();
 }
@@ -3110,9 +3128,9 @@ function renderTabelaEntregas(){
   const campanhaId = STATE.campanhaSelecionadaId;
   const mes = +document.getElementById('filtroEntregaMes').value;
   const ano = +document.getElementById('filtroEntregaAno').value;
-  const status = document.getElementById('filtroEntregaStatus').value;
+  const status = document.getElementById('filtroEntregaStatus')?.value||'';
+  renderSaldoTransportado(mes,ano);
   if(wrap){
-    renderSaldoTransportado(mes,ano);
     const chave = chaveMA(mes,ano);
     let lista = STATE.entregas.filter(e=> e.campanhaId===campanhaId && e.data && e.data.slice(0,7)===chave && (!status || e.statusValidacao===status));
     lista.sort((a,b)=> b.data.localeCompare(a.data));
@@ -3285,24 +3303,12 @@ function renderSaldoTransportado(mes,ano){
   const wrap = document.getElementById('saldoTransportadoWrap');
   if(!wrap) return;
   const campanhaId = STATE.campanhaSelecionadaId;
-  const chave = chaveMA(mes,ano);
-  const saldos = calcularSaldosAcumulados(campanhaId, mes,ano);
-  const porColaborador = {};
-  const categorias = categoriasDaCampanha(campanhaPorId(campanhaId));
-  STATE.colaboradores.forEach(c=>{
-    categorias.forEach(cat=>{
-      const s = saldos[c.id]?.[cat.key]?.[chave];
-      if(s && s.carryIn > 0){
-        if(!porColaborador[c.id]) porColaborador[c.id] = { colaborador:c, total:0, itens:[] };
-        porColaborador[c.id].total += s.carryIn;
-        porColaborador[c.id].itens.push({ categoria: cat.label.split(' (')[0], valor: s.carryIn });
-      }
-    });
-  });
-  const lista = Object.values(porColaborador).sort((a,b)=> b.total-a.total);
-  if(lista.length===0){ wrap.style.display='none'; wrap.innerHTML=''; return; }
-  wrap.style.display='block';
+  const lista=dadosExcedentesDoMes(campanhaId,mes,ano);
   window._excedentesPorColaborador = lista;
+  if(lista.length===0){
+    wrap.innerHTML=`<div class="empty-state">Nenhum excedente trazido de meses anteriores neste período.</div>`;
+    return;
+  }
   wrap.innerHTML = `
     <div class="stat-label">Excedente trazido de meses anteriores para ${nomeMes(mes)}/${ano}</div>
     <p class="small-note" style="margin:4px 0 10px 0;">Crédito que sobrou da meta batida em meses passados, já incluído automaticamente no cálculo deste mês. ${lista.length} colaborador(es) com excedente.</p>
@@ -3320,6 +3326,29 @@ function renderSaldoTransportado(mes,ano){
       </tbody></table>
     </div>
   `;
+}
+function dadosExcedentesDoMes(campanhaId,mes,ano){
+  const chave=chaveMA(mes,ano);
+  const saldos=calcularSaldosAcumulados(campanhaId,mes,ano);
+  const porColaborador={};
+  const categorias=categoriasDaCampanha(campanhaPorId(campanhaId));
+  STATE.colaboradores.forEach(colaborador=>{
+    categorias.forEach(categoria=>{
+      const saldo=saldos[colaborador.id]?.[categoria.key]?.[chave];
+      if(!saldo || saldo.carryIn<=0) return;
+      if(!porColaborador[colaborador.id]){
+        porColaborador[colaborador.id]={colaborador,total:0,itens:[]};
+      }
+      porColaborador[colaborador.id].total+=saldo.carryIn;
+      porColaborador[colaborador.id].itens.push({
+        key:categoria.key,
+        categoria:categoria.label.split(' (')[0],
+        unidade:categoria.unidade,
+        valor:saldo.carryIn,
+      });
+    });
+  });
+  return Object.values(porColaborador).sort((a,b)=>b.total-a.total);
 }
 function abrirDetalhesExcedente(indice){
   const item = (window._excedentesPorColaborador||[])[indice];
@@ -3906,7 +3935,7 @@ function renderTabelaRanking(resultados, completa, mes, ano){
         const kits = cfgTroca ? kitsDisponiveis(campanha, r.totaisAcumulados) : 0;
         return `
         <tr>
-          <td>${r.posicao? `<b>${r.posicao}º</b>${r.posicao<=3?' '+({1:'🥇',2:'🥈',3:'🥉'}[r.posicao]||''):''}` : '<span class="small-note">—</span>'}</td>
+          <td class="ranking-position-cell">${r.posicao? `<span class="ranking-position-content"><b>${r.posicao}º</b>${r.posicao<=3?`<span class="ranking-medal" aria-hidden="true">${({1:'🥇',2:'🥈',3:'🥉'}[r.posicao]||'')}</span>`:''}</span>` : '<span class="small-note">—</span>'}</td>
           <td style="font-weight:700;">${escapeHtml(r.colaborador.nome)}</td>
           <td>${escapeHtml(r.colaborador.setor||'—')}</td>
           <td style="min-width:120px;"><div style="display:flex;align-items:center;gap:8px;"><div class="progress" style="flex:1;"><div style="width:${Math.min(100,r.pontuacao)}%"></div></div><span>${r.pontuacao.toFixed(0)}</span></div></td>
@@ -4168,40 +4197,87 @@ window.exportarCsvEntregas = exportarCsvEntregas;
 function renderRelatorios(){
   if(!STATE.isAdmin) return `<div class="card"><div class="empty-state">Entre como administrador para acessar as exportações.</div></div>`;
   const mes=STATE.rankMes, ano=STATE.rankAno;
+  const campanhaId=STATE.campanhaSelecionadaId;
   const campanha = campanhaPorId(STATE.campanhaSelecionadaId);
   const cfgTroca = campanha && campanha.trocaCartela && campanha.trocaCartela.ativo ? campanha.trocaCartela : null;
+  const entregasMes=STATE.entregas.filter(item=>item.campanhaId===campanhaId&&item.data&&item.data.slice(0,7)===chaveMA(mes,ano));
+  const entregasValidadas=entregasValidadasDoMes(campanhaId,mes,ano);
+  const participantes=new Set(entregasValidadas.map(item=>item.colaboradorId)).size;
+  const totalMateriais=calcularResultadosMes(campanhaId,mes,ano).reduce((total,item)=>total+item.totalMateriais,0);
+  const totalExcedentes=dadosExcedentesDoMes(campanhaId,mes,ano).reduce((total,item)=>total+item.total,0);
+  const cardRelatorio=(titulo,descricao,acao,rotulo)=>`
+    <article class="card report-card">
+      <div class="stat-label">${titulo}</div>
+      <p class="small-note">${descricao}</p>
+      <button class="btn btn-outline btn-sm" type="button" onclick="${acao}">${icon('download',15)}${rotulo}</button>
+    </article>`;
   return `
-    <div class="grid grid-3">
-      <div class="card">
-        <div class="stat-label">Ranking do mês (CSV)</div>
-        <p class="small-note">Exporta posição, pontuação e percentuais de todos os colaboradores no mês selecionado.</p>
-        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvRanking(${mes},${ano})">${icon('download')}Exportar ranking</button>
-      </div>
-      <div class="card">
-        <div class="stat-label">Entregas do mês (CSV)</div>
-        <p class="small-note">Exporta todos os registros individuais de entrega do mês selecionado.</p>
-        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvEntregas(${mes},${ano})">${icon('download')}Exportar entregas</button>
-      </div>
-      <div class="card">
-        <div class="stat-label">Colaboradores (CSV)</div>
-        <p class="small-note">Exporta a lista completa de colaboradores cadastrados.</p>
-        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvColaboradores()">${icon('download')}Exportar colaboradores</button>
-      </div>
-      <div class="card">
-        <div class="stat-label">Transferências do mês (CSV)</div>
-        <p class="small-note">Exporta as transferências de material entre colaboradores e categorias no mês selecionado.</p>
-        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvTransferencias(${mes},${ano})">${icon('download')}Exportar transferências</button>
-      </div>
-      ${cfgTroca? `
-      <div class="card">
-        <div class="stat-label">Resgates de ${escapeHtml(cfgTroca.nomeItem)} (CSV)</div>
-        <p class="small-note">Exporta todos os resgates registrados nesta campanha, com data, colaborador e quantidade.</p>
-        <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="exportarCsvTrocas()">${icon('download')}Exportar resgates</button>
-      </div>` : ''}
+    <div class="card report-period">
+      <div><div class="stat-label">Período de referência</div><p class="small-note" style="margin:4px 0 0;">${escapeHtml(campanha?campanha.nome:'Nenhuma campanha selecionada')}</p></div>
+      <div class="filters" style="flex:1;min-width:min(100%,260px);">${seletorMesAno('rank', mes, ano)}</div>
     </div>
-    <div class="section-title">Mês de referência para os relatórios</div>
-    <div class="card">${seletorMesAno('rank', mes, ano)} <span class="small-note">Este seletor é compartilhado com a tela de Ranking.</span></div>
+    <div class="grid grid-4" style="margin-top:12px;">
+      <div class="card stat-card"><div class="stat-label">Entregas registradas</div><div class="stat-value">${entregasMes.length}</div><div class="stat-sub">${entregasValidadas.length} validadas</div></div>
+      <div class="card stat-card"><div class="stat-label">Colaboradores participantes</div><div class="stat-value">${participantes}</div><div class="stat-sub">com entrega validada</div></div>
+      <div class="card stat-card"><div class="stat-label">Materiais computados</div><div class="stat-value">${Math.round(totalMateriais).toLocaleString('pt-BR')}</div><div class="stat-sub">unidades equivalentes</div></div>
+      <div class="card stat-card"><div class="stat-label">Excedentes trazidos</div><div class="stat-value">${Math.round(totalExcedentes).toLocaleString('pt-BR')}</div><div class="stat-sub">unidades equivalentes</div></div>
+    </div>
+    <div class="section-title">Relatórios para baixar</div>
+    <div class="grid report-grid">
+      ${cardRelatorio('Ranking mensal','Posição, pontuação, cumprimento médio e metas dos colaboradores.',`exportarCsvRanking(${mes},${ano})`,'Exportar ranking')}
+      ${cardRelatorio('Entregas detalhadas','Registros individuais, material, quantidade, status e responsável.',`exportarCsvEntregas(${mes},${ano})`,'Exportar entregas')}
+      ${cardRelatorio('Resumo por material','Quantidade validada por categoria, comparada à meta mensal.',`exportarCsvResumoMateriais(${mes},${ano})`,'Exportar resumo')}
+      ${cardRelatorio('Excedentes por colaborador','Saldo de meses anteriores, separado por colaborador e material.',`exportarCsvExcedentes(${mes},${ano})`,'Exportar excedentes')}
+      ${cardRelatorio('Transferências','Reatribuições de material do mês selecionado.',`exportarCsvTransferencias(${mes},${ano})`,'Exportar transferências')}
+      ${cardRelatorio('Cadastro de colaboradores','Lista completa com setor, cargo, situação e data de cadastro.','exportarCsvColaboradores()','Exportar cadastro')}
+      ${cfgTroca? `
+      ${cardRelatorio(`Resgates de ${escapeHtml(cfgTroca.nomeItem)}`,'Histórico de resgates, colaborador e quantidade de kits.',`exportarCsvTrocas()`,'Exportar resgates')}` : ''}
+    </div>
   `;
+}
+function exportarCsvResumoMateriais(mes,ano){
+  if(!exigirAdmin()) return;
+  const campanhaId=STATE.campanhaSelecionadaId;
+  const campanha=campanhaPorId(campanhaId);
+  const categorias=categoriasDaCampanha(campanha);
+  const metas=getMetasDoMes(campanhaId,mes,ano);
+  const agregados=new Map(categorias.map(cat=>[cat.key,{registros:0,quantidade:0}]));
+  const outros=new Map();
+  entregasValidadasDoMes(campanhaId,mes,ano).forEach(entrega=>{
+    const categoria=resolverCategoria(campanhaId,entrega.tipo);
+    if(categoria&&agregados.has(categoria.key)){
+      const total=agregados.get(categoria.key);
+      total.registros++;
+      total.quantidade+=normalizarQuantidadeUnidades(entrega);
+      return;
+    }
+    const unidade=entrega.unidade||'unidades';
+    const total=outros.get(unidade)||{registros:0,quantidade:0};
+    total.registros++;
+    total.quantidade+=Number(entrega.quantidade)||0;
+    outros.set(unidade,total);
+  });
+  const linhas=[['Material','Unidade','EntregasValidadas','Quantidade','MetaMensal','CumprimentoPercentual']];
+  categorias.forEach(cat=>{
+    const total=agregados.get(cat.key);
+    const meta=Number(metas[cat.key]??cat.metaDefault)||0;
+    linhas.push([cat.label,cat.unidade,total.registros,total.quantidade,meta,meta?total.quantidade/meta*100:0]);
+  });
+  outros.forEach((total,unidade)=>{
+    linhas.push(['Outros materiais',unidade,total.registros,total.quantidade,'','']);
+  });
+  const csv=linhas.map(linha=>linha.map(valor=>`"${String(valor).replace(/"/g,'""')}"`).join(',')).join('\n')+'\n';
+  baixarArquivo(csv,`resumo-materiais-${nomeMes(mes)}-${ano}.csv`,'text/csv;charset=utf-8;');
+}
+function exportarCsvExcedentes(mes,ano){
+  if(!exigirAdmin()) return;
+  const lista=dadosExcedentesDoMes(STATE.campanhaSelecionadaId,mes,ano);
+  const linhas=[['Colaborador','Setor','Material','Unidade','Excedente']];
+  lista.forEach(item=>item.itens.forEach(material=>{
+    linhas.push([item.colaborador.nome,item.colaborador.setor||'',material.categoria,material.unidade,material.valor]);
+  }));
+  const csv=linhas.map(linha=>linha.map(valor=>`"${String(valor).replace(/"/g,'""')}"`).join(',')).join('\n')+'\n';
+  baixarArquivo(csv,`excedentes-${nomeMes(mes)}-${ano}.csv`,'text/csv;charset=utf-8;');
 }
 function exportarCsvRanking(mes,ano){
   if(!exigirAdmin()) return;
@@ -5397,7 +5473,6 @@ function finalizarCarregamento(){
   renderApp();
   // pós-render: preencher tabelas filtráveis que dependem de elementos já no DOM
   if(STATE.view==='colaboradores') renderTabelaColaboradores();
-  if(STATE.view==='entregas') renderTabelaEntregas();
   if(STATE.view==='config') renderTabelaCampanhas();
 }
 async function processarSessaoFirebase(user){
