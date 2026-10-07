@@ -1395,7 +1395,13 @@ function calcularSaldosAcumulados(campanhaId, mesAlvo,anoAlvo){
         try{
           saldoMensal=ReciclarRankingLogic.calcularSaldoMensal(creditos,carryIn,meta);
         }catch(erro){
-          throw new Error(`Saldo inválido para ${c.nome} / ${cat.label||cat.key} em ${String(mes).padStart(2,'0')}/${ano}. Entregas: ${creditosEntregas}; transferências recebidas: ${recebidos}; transferências enviadas: ${enviados}; consumo em trocas: ${consumidosEmTrocas}; saldo anterior: ${carryIn}; meta: ${meta}. ${erro.message}`);
+          if(creditos+carryIn<0 && Number.isFinite(creditos) && Number.isFinite(carryIn) && carryIn>=0 && meta>=0){
+            // Resgate maior que o saldo registrado: mantém o app utilizável com saldo zerado.
+            console.warn(`Saldo negativo ajustado para zero: ${c.nome} / ${cat.label||cat.key} em ${String(mes).padStart(2,'0')}/${ano}. Entregas: ${creditosEntregas}; recebidas: ${recebidos}; enviadas: ${enviados}; consumo em trocas: ${consumidosEmTrocas}; saldo anterior: ${carryIn}.`);
+            saldoMensal={totalDisponivel:0,leftover:0};
+          }else{
+            throw new Error(`Saldo inválido para ${c.nome} / ${cat.label||cat.key} em ${String(mes).padStart(2,'0')}/${ano}. Entregas: ${creditosEntregas}; transferências recebidas: ${recebidos}; transferências enviadas: ${enviados}; consumo em trocas: ${consumidosEmTrocas}; saldo anterior: ${carryIn}; meta: ${meta}. ${erro.message}`);
+          }
         }
         const {totalDisponivel,leftover}=saldoMensal;
         saldos[c.id][cat.key][chave] = { creditos, carryIn, totalDisponivel, leftover, meta };
