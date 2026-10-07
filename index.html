@@ -2171,26 +2171,28 @@ function abrirDetalhesRankingPublico(indice){
   const item=ranking&&ranking.ranking[indice];
   if(!item) return;
   const categorias=item.detalhes||[];
-  if(item.kit){
+  if(item.kit||item.resumoTroca){
     const fmt=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
-    const valores={
-      item:item.resumoTroca?.unidade||'item(s)',
-      kitsTrocados:String(item.kit.trocadosTotal),
-      kitsTrocadosMes:String(item.kit.trocadosMes),
-      kitsDisponiveis:String(item.kit.disponiveis),
+    const kit=item.kit||{
+      resgatesMes:item.resumoTroca?.quantidade||0,
+      resgatesTotal:null,
+      metaMensalResgates:null,
+      disponiveis:null,
+      materiais:[],
     };
-    const informativo=String(item.kit.informativoPublico||'A classificação é definida pelo total de kits trocados. As trocas descontam os materiais do saldo disponível, mas não retiram os kits já registrados do ranking.')
-      .replace(/\{(item|kitsTrocados|kitsTrocadosMes|kitsDisponiveis)\}/g,(_,chave)=>valores[chave]);
+    const metaMensal=Number(kit.metaMensalResgates)||0;
+    const informativo=String(kit.informativoPublico||'').trim();
     abrirModal(`
       <div class="modal-head"><h3>${escapeHtml(item.nome)} - ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
       <div class="grid grid-3" style="margin-bottom:12px;">
-        <div class="card stat-card"><div class="stat-label">Kits trocados</div><div class="stat-value">${item.kit.trocadosTotal}</div></div>
-        <div class="card stat-card"><div class="stat-label">Trocados no mês</div><div class="stat-value">${item.kit.trocadosMes}</div></div>
-        <div class="card stat-card"><div class="stat-label">Kits disponíveis</div><div class="stat-value">${item.kit.disponiveis}</div></div>
+        <div class="card stat-card"><div class="stat-label">Resgates no mês</div><div class="stat-value">${fmt(kit.resgatesMes||0)} ${escapeHtml(item.resumoTroca?.unidade||'itens')}</div></div>
+        <div class="card stat-card"><div class="stat-label">Meta mensal</div><div class="stat-value">${metaMensal?`${fmt(metaMensal)} ${escapeHtml(item.resumoTroca?.unidade||'itens')}`:'A definir'}</div></div>
+        <div class="card stat-card"><div class="stat-label">Kits disponíveis</div><div class="stat-value">${kit.disponiveis==null?'—':kit.disponiveis}</div></div>
       </div>
+      ${kit.materiais.length?`<div class="section-title">Materiais por kit e saldo disponível</div>
       <div class="table-wrap public-ranking-table"><table class="material-detail-table"><thead><tr><th>Material</th><th>Por kit</th><th>Disponível</th></tr></thead>
-        <tbody>${item.kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="small-note" style="margin-top:12px;white-space:pre-line;">${escapeHtml(informativo)}</p>
+        <tbody>${kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td></tr>`).join('')}</tbody></table></div>`:''}
+      ${informativo?`<p class="small-note" style="margin-top:12px;white-space:pre-line;">${escapeHtml(informativo)}</p>`:''}
     `, true, 'public-details');
     return;
   }
@@ -2657,6 +2659,9 @@ async function sincronizarRankingsPublicos(){
               return {
                 trocadosMes:trocas.filter(t=>t.data.slice(0,7)===chave).reduce((total,t)=>total+kitsDe(t),0),
                 trocadosTotal:trocas.reduce((total,t)=>total+kitsDe(t),0),
+                resgatesMes:trocas.filter(t=>t.data.slice(0,7)===chave).reduce((total,t)=>total+(Number(t.cartelasEmitidas)||0),0),
+                resgatesTotal:trocas.reduce((total,t)=>total+(Number(t.cartelasEmitidas)||0),0),
+                metaMensalResgates:Number(cfgTroca.metaMensalResgates)||0,
                 disponiveis:kitsDisponiveis(campanha,resultado.totais),
                 informativoPublico:String(cfgTroca.informativoPublico||'').trim(),
                 materiais:Object.keys(porKit).filter(key=>porKit[key]>0).map(key=>{
@@ -4629,9 +4634,14 @@ function abrirFormCampanha(id){
         <div class="field"><label>Itens por kit fechado</label><input type="number" min="1" id="tcCartelasPorKit" value="${trocaCartela.cartelasPorKit||2}"></div>
       </div>
       <div class="field">
+        <label for="tcMetaMensalResgates">Meta mensal de resgates (${escapeHtml(trocaCartela.nomeItem||'cartela')})</label>
+        <input type="number" id="tcMetaMensalResgates" min="0" step="1" value="${Number(trocaCartela.metaMensalResgates)||0}" placeholder="0">
+        <p class="small-note">Deixe em 0 se não houver uma meta. A meta é apenas informativa e não altera a posição no ranking.</p>
+      </div>
+      <div class="field">
         <label for="tcInformativoPublico">Informativo exibido nos detalhes do ranking público</label>
-        <textarea id="tcInformativoPublico" rows="3" maxlength="500" placeholder="Explique como funciona a classificação e as trocas nesta campanha.">${escapeHtml(trocaCartela.informativoPublico||'A classificação é definida pelo total de kits trocados. As trocas descontam os materiais do saldo disponível, mas não retiram os kits já registrados do ranking.')}</textarea>
-        <p class="small-note">Opcionalmente use {kitsTrocados}, {kitsTrocadosMes}, {kitsDisponiveis} e {item} para inserir os dados de cada participante.</p>
+        <textarea id="tcInformativoPublico" rows="3" maxlength="500" placeholder="Escreva uma orientação simples para os participantes.">${escapeHtml(trocaCartela.informativoPublico||'')}</textarea>
+        <p class="small-note">Texto livre, mostrado abaixo dos dados de resgate na página pública. Exemplo: “Cada resgate utiliza um kit completo de materiais.”</p>
       </div>
       <p class="small-note">Quantidade exigida de cada material para fechar 1 kit. Deixe em branco ou 0 para um material que não entra no kit.</p>
       <div class="grid grid-2" id="tcKitWrap">${renderKitTrocaFormMarkup(trocaCartela,c,nomesPersonalizados)}</div>
@@ -4780,6 +4790,12 @@ async function salvarCampanha(id){
   if(trocaAtiva){
     const nomeItem = document.getElementById('tcNomeItem').value.trim() || 'cartela';
     const cartelasPorKit = parseInt(document.getElementById('tcCartelasPorKit').value,10) || 1;
+    const metaMensalResgates = parseInt(document.getElementById('tcMetaMensalResgates').value,10) || 0;
+    if(metaMensalResgates<0){
+      erroEl.textContent='A meta mensal de resgates não pode ser negativa.';
+      erroEl.style.display='block';
+      return;
+    }
     const informativoPublico = document.getElementById('tcInformativoPublico').value.trim();
     const kit = {};
     for(const cat of todasCategoriasMateriaisFormulario()){
@@ -4793,7 +4809,7 @@ async function salvarCampanha(id){
       if(valor>0) kit[cat.key] = valor;
     }
     if(Object.keys(kit).length===0){ erroEl.textContent='Informe a quantidade exigida de pelo menos um material para o kit de troca.'; erroEl.style.display='block'; return; }
-    trocaCartela = { ativo:true, nomeItem, cartelasPorKit, informativoPublico, kit };
+    trocaCartela = { ativo:true, nomeItem, cartelasPorKit, metaMensalResgates, informativoPublico, kit };
   }
   const campanhasAnteriores=JSON.parse(JSON.stringify(STATE.campanhas));
   if(id){
