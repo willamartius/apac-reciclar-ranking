@@ -2169,10 +2169,18 @@ window.selecionarOpcaoSolicitacao=selecionarOpcaoSolicitacao;
 function abrirDetalhesRankingPublico(indice){
   const ranking=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
   const item=ranking&&ranking.ranking[indice];
-  if(!item || !item.detalhes || !item.detalhes.length) return;
-  const categorias=item.detalhes;
+  if(!item) return;
+  const categorias=item.detalhes||[];
   if(item.kit){
     const fmt=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
+    const valores={
+      item:item.resumoTroca?.unidade||'item(s)',
+      kitsTrocados:String(item.kit.trocadosTotal),
+      kitsTrocadosMes:String(item.kit.trocadosMes),
+      kitsDisponiveis:String(item.kit.disponiveis),
+    };
+    const informativo=String(item.kit.informativoPublico||'A classificação é definida pelo total de kits trocados. As trocas descontam os materiais do saldo disponível, mas não retiram os kits já registrados do ranking.')
+      .replace(/\{(item|kitsTrocados|kitsTrocadosMes|kitsDisponiveis)\}/g,(_,chave)=>valores[chave]);
     abrirModal(`
       <div class="modal-head"><h3>${escapeHtml(item.nome)} - ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
       <div class="grid grid-3" style="margin-bottom:12px;">
@@ -2182,10 +2190,11 @@ function abrirDetalhesRankingPublico(indice){
       </div>
       <div class="table-wrap public-ranking-table"><table class="material-detail-table"><thead><tr><th>Material</th><th>Por kit</th><th>Disponível</th></tr></thead>
         <tbody>${item.kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="small-note" style="margin-top:12px;">Nesta campanha a posição é definida pelo total de kits trocados. Em caso de empate, vale quem tem mais kits disponíveis para trocar. Os saldos diminuem a cada troca, sem afetar a posição.</p>
+      <p class="small-note" style="margin-top:12px;white-space:pre-line;">${escapeHtml(informativo)}</p>
     `, true, 'public-details');
     return;
   }
+  if(!categorias.length) return;
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(item.nome)} — ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <p class="small-note" style="margin-top:-6px;">Como é calculada a pontuação: a posição no ranking é definida pela média do percentual de cumprimento das 6 categorias. Para o cálculo da média, cada categoria é limitada a 100%, evitando que resultados acima da meta compensem categorias abaixo dela.</p>
@@ -2649,6 +2658,7 @@ async function sincronizarRankingsPublicos(){
                 trocadosMes:trocas.filter(t=>t.data.slice(0,7)===chave).reduce((total,t)=>total+kitsDe(t),0),
                 trocadosTotal:trocas.reduce((total,t)=>total+kitsDe(t),0),
                 disponiveis:kitsDisponiveis(campanha,resultado.totais),
+                informativoPublico:String(cfgTroca.informativoPublico||'').trim(),
                 materiais:Object.keys(porKit).filter(key=>porKit[key]>0).map(key=>{
                   const cat=categorias.find(c=>c.key===key);
                   return {nome:cat?cat.label.split(' (')[0]:key,unidade:cat?cat.unidade:'',porKit:porKit[key],disponivel:resultado.totais[key]||0};
@@ -4618,6 +4628,11 @@ function abrirFormCampanha(id){
         <div class="field"><label>Nome do item entregue</label><input type="text" id="tcNomeItem" value="${escapeHtml(trocaCartela.nomeItem||'cartela')}" placeholder="Ex: cartela de bingo"></div>
         <div class="field"><label>Itens por kit fechado</label><input type="number" min="1" id="tcCartelasPorKit" value="${trocaCartela.cartelasPorKit||2}"></div>
       </div>
+      <div class="field">
+        <label for="tcInformativoPublico">Informativo exibido nos detalhes do ranking público</label>
+        <textarea id="tcInformativoPublico" rows="3" maxlength="500" placeholder="Explique como funciona a classificação e as trocas nesta campanha.">${escapeHtml(trocaCartela.informativoPublico||'A classificação é definida pelo total de kits trocados. As trocas descontam os materiais do saldo disponível, mas não retiram os kits já registrados do ranking.')}</textarea>
+        <p class="small-note">Opcionalmente use {kitsTrocados}, {kitsTrocadosMes}, {kitsDisponiveis} e {item} para inserir os dados de cada participante.</p>
+      </div>
       <p class="small-note">Quantidade exigida de cada material para fechar 1 kit. Deixe em branco ou 0 para um material que não entra no kit.</p>
       <div class="grid grid-2" id="tcKitWrap">${renderKitTrocaFormMarkup(trocaCartela,c,nomesPersonalizados)}</div>
     </div>
@@ -4765,6 +4780,7 @@ async function salvarCampanha(id){
   if(trocaAtiva){
     const nomeItem = document.getElementById('tcNomeItem').value.trim() || 'cartela';
     const cartelasPorKit = parseInt(document.getElementById('tcCartelasPorKit').value,10) || 1;
+    const informativoPublico = document.getElementById('tcInformativoPublico').value.trim();
     const kit = {};
     for(const cat of todasCategoriasMateriaisFormulario()){
       const el = document.getElementById('tcKit_'+cat.key);
@@ -4777,7 +4793,7 @@ async function salvarCampanha(id){
       if(valor>0) kit[cat.key] = valor;
     }
     if(Object.keys(kit).length===0){ erroEl.textContent='Informe a quantidade exigida de pelo menos um material para o kit de troca.'; erroEl.style.display='block'; return; }
-    trocaCartela = { ativo:true, nomeItem, cartelasPorKit, kit };
+    trocaCartela = { ativo:true, nomeItem, cartelasPorKit, informativoPublico, kit };
   }
   const campanhasAnteriores=JSON.parse(JSON.stringify(STATE.campanhas));
   if(id){
