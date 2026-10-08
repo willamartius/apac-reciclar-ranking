@@ -376,7 +376,7 @@ select{text-overflow:ellipsis;}
 .kit-detail-side{display:grid;gap:12px;align-content:stretch;}
 .kit-detail-materials{display:flex;flex-direction:column;min-width:0;}
 .kit-detail-scroll{overflow-x:auto;margin-top:8px;-webkit-overflow-scrolling:touch;}
-.kit-materials-table{width:100%;min-width:430px;border-collapse:collapse;font-size:13px;}
+.kit-materials-table{width:100%;min-width:280px;border-collapse:collapse;font-size:13px;}
 .kit-materials-table th,.kit-materials-table td{padding:8px 10px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line,#e5e7e0);}
 @media (max-width:640px){.kit-detail-grid{grid-template-columns:1fr;}}
 .material-detail-table th{white-space:normal;}
@@ -2199,9 +2199,8 @@ function abrirDetalhesRankingPublico(indice){
           ${metaMensal?`<div class="card stat-card"><div class="stat-label">Meta mensal</div><div class="stat-value">${fmt(metaMensal)} ${escapeHtml(unidadeItem)}</div></div>`:''}
           ${kit.disponiveis==null?'':`<div class="card stat-card"><div class="stat-label">${escapeHtml(rotuloItem)} disponíveis</div><div class="stat-value">${fmt(kit.disponiveis*(Number(kit.cartelasPorKit)||1))}</div></div>`}
         </div>
-        ${kit.materiais.length?`<div class="card kit-detail-materials"><div class="stat-label">Materiais necessários</div>
-          <div class="kit-detail-scroll"><table class="kit-materials-table"><thead><tr><th>Material</th><th>Necessário</th><th>Disponível</th><th>Saldo anterior</th><th>Excedente</th></tr></thead>
-          <tbody>${kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td><td>${mat.saldoAnterior>0?'+'+fmt(mat.saldoAnterior)+' '+escapeHtml(mat.unidade):'—'}</td><td>${mat.excedente>0?'+'+fmt(mat.excedente)+' '+escapeHtml(mat.unidade):'—'}</td></tr>`).join('')}</tbody></table></div></div>`:''}
+        ${kit.materiais.length?`<div class="card kit-detail-materials">        <div class="kit-detail-scroll" style="margin-top:0;"><table class="kit-materials-table"><thead><tr><th>Material</th><th>Necessário</th><th>Disponível</th></tr></thead>
+          <tbody>${kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td></tr>`).join('')}</tbody></table></div></div>`:''}
       </div>
       ${informativo?`<p class="small-note" style="margin-top:12px;white-space:pre-line;">${escapeHtml(informativo)}</p>`:''}
     `, true, 'public-details');
