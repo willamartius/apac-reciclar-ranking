@@ -3245,14 +3245,16 @@ function renderTabelaTransferencias(mes,ano){
     <table><thead><tr><th>Data</th><th>De</th><th>Para</th><th class="table-cell-center">Qtd.</th><th>Motivo</th>${STATE.isAdmin?'<th></th>':''}</tr></thead>
     <tbody>
       ${lista.map(t=>{
-        const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
-        const destino = STATE.colaboradores.find(x=>x.id===t.colaboradorDestinoId);
-        const catOrigem = resolverCategoria(campanhaId, t.categoriaOrigem);
-        const catDestino = resolverCategoria(campanhaId, t.categoriaDestino);
+        const catOrigem = resolverCategoria(t.campanhaOrigemId||campanhaId, t.categoriaOrigem||t.categoriaOrigemRef);
+        const catDestino = resolverCategoria(t.campanhaDestinoId||campanhaId, t.categoriaDestino||t.categoriaDestinoRef);
+        const origem = STATE.colaboradores.find(x=>x.id===(t.colaboradorOrigemId||t.colaboradorOrigemNomeId));
+        const destino = STATE.colaboradores.find(x=>x.id===(t.colaboradorDestinoId||t.colaboradorDestinoNomeId));
+        const campanhaOutra = t.entreCampanhas?campanhaPorId(t.campanhaDestinoId||t.campanhaOrigemId):null;
+        const etiquetaCampanha = campanhaOutra?`<br><span class="badge">${t.campanhaDestinoId?'Enviado para':'Recebido de'}: ${escapeHtml(campanhaOutra.nome)}</span>`:'';
         return `<tr>
           <td>${formatarData(t.data)}</td>
-          <td>${escapeHtml(origem?origem.nome:'(removido)')} <span class="small-note">— ${catOrigem?escapeHtml(catOrigem.label.split(' (')[0]):''}</span></td>
-          <td>${escapeHtml(destino?destino.nome:'(removido)')} <span class="small-note">— ${catDestino?escapeHtml(catDestino.label.split(' (')[0]):''}</span></td>
+          <td>${escapeHtml(origem?origem.nome:'(removido)')} <span class="small-note">— ${catOrigem?escapeHtml(catOrigem.label.split(' (')[0]):''}</span>${t.campanhaOrigemId?etiquetaCampanha:''}</td>
+          <td>${escapeHtml(destino?destino.nome:'(removido)')} <span class="small-note">— ${catDestino?escapeHtml(catDestino.label.split(' (')[0]):''}</span>${t.campanhaDestinoId?etiquetaCampanha:''}</td>
           <td class="table-cell-center">${t.quantidade}</td>
           <td>${escapeHtml(t.motivo||'—')}</td>
           ${STATE.isAdmin? `<td style="text-align:right;"><button class="btn btn-ghost btn-sm" onclick="confirmarExcluirTransferencia('${t.id}')" style="color:var(--vermelho);">${icon('trash',16)}</button></td>` : ''}
@@ -3459,6 +3461,7 @@ function abrirFormTransferencia(){
     </div>
     <div class="small-note" id="saldoOrigemInfo" style="margin:-6px 0 14px 0;">—</div>
     <div class="section-title" style="margin:0 0 8px 0;font-size:13.5px;">Para (destino)</div>
+    <div class="field"><label>Campanha de destino</label><select id="tCampanhaDestino" onchange="atualizarCategoriasDestinoTransferencia()">${STATE.campanhas.slice().sort((a,b)=>(a.id===campanha?.id?-1:0)-(b.id===campanha?.id?-1:0)).map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}${c.id===campanha?.id?' (atual)':''}</option>`).join('')}</select></div>
     <div class="grid grid-2">
       <div class="field"><label>Colaborador</label><select id="tColabDestino">${opcoesColab}</select></div>
       <div class="field"><label>Categoria</label><select id="tCategoriaDestino">${opcoesCategoria}</select></div>
@@ -3486,6 +3489,15 @@ function atualizarSaldoTransferencia(){
   info.innerHTML = `Saldo disponível deste colaborador em ${escapeHtml(cat?cat.label.split(' (')[0]:'')} até ${nomeMes(mes)}/${ano}: <b>${saldo.toFixed(0)}</b> unidades equivalentes.`;
 }
 window.atualizarSaldoTransferencia = atualizarSaldoTransferencia;
+function atualizarCategoriasDestinoTransferencia(){
+  const campanhaEl=document.getElementById('tCampanhaDestino');
+  const catEl=document.getElementById('tCategoriaDestino');
+  if(!campanhaEl||!catEl) return;
+  const anterior=catEl.value;
+  catEl.innerHTML=categoriasDaCampanha(campanhaPorId(campanhaEl.value)).map(c=>`<option value="${c.key}">${escapeHtml(c.label.split(' (')[0])}</option>`).join('');
+  if([...catEl.options].some(o=>o.value===anterior)) catEl.value=anterior;
+}
+window.atualizarCategoriasDestinoTransferencia = atualizarCategoriasDestinoTransferencia;
 async function salvarTransferencia(){
   if(!exigirOperador()) return;
   const anteriores=STATE.transferencias.map(t=>({...t}));
@@ -3504,23 +3516,41 @@ async function salvarTransferencia(){
   if(!ReciclarRankingLogic.quantidadeUnitariaValida(quantidade,false)){
     erroEl.textContent = 'A quantidade transferida precisa ser um número inteiro de unidades.'; erroEl.style.display='block'; return;
   }
-  if(colaboradorOrigemId===colaboradorDestinoId && categoriaOrigem===categoriaDestino){
+  const campanhaDestinoId = document.getElementById('tCampanhaDestino').value;
+  const entreCampanhas = campanhaDestinoId!==STATE.campanhaSelecionadaId;
+  if(!entreCampanhas && colaboradorOrigemId===colaboradorDestinoId && categoriaOrigem===categoriaDestino){
     erroEl.textContent = 'Origem e destino são iguais. Escolha um colaborador ou categoria diferente para o destino.'; erroEl.style.display='block'; return;
   }
   const validacaoData = dataDentroDaCampanha(STATE.campanhaSelecionadaId, data);
   if(!validacaoData.ok){ erroEl.textContent = validacaoData.motivo; erroEl.style.display='block'; return; }
+  if(entreCampanhas){
+    const validacaoDestino = dataDentroDaCampanha(campanhaDestinoId, data);
+    if(!validacaoDestino.ok){ erroEl.textContent = `Campanha de destino: ${validacaoDestino.motivo}`; erroEl.style.display='block'; return; }
+  }
   const mes = +data.slice(5,7), ano = +data.slice(0,4);
   const campanhaId = STATE.campanhaSelecionadaId;
   const saldoAtual = saldoDisponivelAntes(campanhaId, colaboradorOrigemId, categoriaOrigem, mes, ano);
   if(quantidade > saldoAtual){
     erroEl.textContent = `Quantidade maior que o saldo disponível na origem (${saldoAtual.toFixed(0)} unidades equivalentes até este mês).`; erroEl.style.display='block'; return;
   }
-  STATE.transferencias.push({
-    id:uid(), campanhaId, data, colaboradorOrigemId, categoriaOrigem, colaboradorDestinoId, categoriaDestino,
-    quantidade, motivo, criadoEm:Date.now()
-  });
+  if(entreCampanhas){
+    const vinculoId=uid();
+    STATE.transferencias.push({
+      id:uid(), campanhaId, data, colaboradorOrigemId, categoriaOrigem, colaboradorDestinoId:'', categoriaDestino:'',
+      quantidade, motivo, criadoEm:Date.now(), entreCampanhas:true, vinculoId, campanhaDestinoId, colaboradorDestinoNomeId:colaboradorDestinoId, categoriaDestinoRef:categoriaDestino
+    },{
+      id:uid(), campanhaId:campanhaDestinoId, data, colaboradorOrigemId:'', categoriaOrigem:'', colaboradorDestinoId, categoriaDestino,
+      quantidade, motivo, criadoEm:Date.now(), entreCampanhas:true, vinculoId, campanhaOrigemId:campanhaId, colaboradorOrigemNomeId:colaboradorOrigemId, categoriaOrigemRef:categoriaOrigem
+    });
+  }else{
+    STATE.transferencias.push({
+      id:uid(), campanhaId, data, colaboradorOrigemId, categoriaOrigem, colaboradorDestinoId, categoriaDestino,
+      quantidade, motivo, criadoEm:Date.now()
+    });
+  }
   try{
     await garantirSnapshotMetas(campanhaId, mes,ano);
+    if(entreCampanhas) await garantirSnapshotMetas(campanhaDestinoId, mes,ano);
     if(!await salvarTransferencias()) throw new Error('O Firebase recusou a gravação.');
   }catch(e){
     STATE.transferencias=anteriores;
@@ -3811,7 +3841,11 @@ function confirmarExcluirTransferencia(id){
 }
 async function excluirTransferencia(id){
   if(!exigirAdmin()) return;
-  if(!await moverRegistroParaLixeira('transferencias',id)){ alert('Não foi possível mover a transferência para Itens apagados. Atualize a página e tente novamente.'); return; }
+  const alvo=STATE.transferencias.find(t=>t.id===id);
+  const ids=alvo&&alvo.vinculoId?STATE.transferencias.filter(t=>t.vinculoId===alvo.vinculoId).map(t=>t.id):[id];
+  for(const registroId of ids){
+    if(!await moverRegistroParaLixeira('transferencias',registroId)){ alert('Não foi possível mover a transferência para Itens apagados. Atualize a página e tente novamente.'); return; }
+  }
   fecharModal(); renderApp();
 }
 window.abrirFormTransferencia=abrirFormTransferencia; window.salvarTransferencia=salvarTransferencia;
