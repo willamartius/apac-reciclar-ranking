@@ -372,6 +372,13 @@ select{text-overflow:ellipsis;}
 .ranking-position-content{display:inline-flex;align-items:center;justify-content:center;gap:3px;white-space:nowrap;}
 .ranking-medal{font-size:.9em;line-height:1;flex:none;}
 .material-detail-table{width:100%;table-layout:fixed;}
+.kit-detail-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.8fr);gap:12px;margin-bottom:12px;align-items:stretch;}
+.kit-detail-side{display:grid;gap:12px;align-content:stretch;}
+.kit-detail-materials{display:flex;flex-direction:column;min-width:0;}
+.kit-detail-scroll{overflow-x:auto;margin-top:8px;-webkit-overflow-scrolling:touch;}
+.kit-materials-table{width:100%;min-width:430px;border-collapse:collapse;font-size:13px;}
+.kit-materials-table th,.kit-materials-table td{padding:8px 10px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--line,#e5e7e0);}
+@media (max-width:640px){.kit-detail-grid{grid-template-columns:1fr;}}
 .material-detail-table th{white-space:normal;}
 .material-detail-table th:nth-child(1){width:22%;}
 .material-detail-table th:nth-child(2){width:17%;}
@@ -2182,16 +2189,20 @@ function abrirDetalhesRankingPublico(indice){
     };
     const metaMensal=Number(kit.metaMensalResgates)||0;
     const informativo=String(kit.informativoPublico||'').trim();
+    const unidadeItem=item.resumoTroca?.unidade||'itens';
+    const rotuloItem=unidadeItem.charAt(0).toUpperCase()+unidadeItem.slice(1);
     abrirModal(`
       <div class="modal-head"><h3>${escapeHtml(item.nome)} - ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
-      <div class="grid grid-3" style="margin-bottom:12px;">
-        <div class="card stat-card"><div class="stat-label">Resgates no mês</div><div class="stat-value">${fmt(kit.resgatesMes||0)} ${escapeHtml(item.resumoTroca?.unidade||'itens')}</div></div>
-        ${metaMensal?`<div class="card stat-card"><div class="stat-label">Meta</div><div class="stat-value">${fmt(metaMensal)} ${escapeHtml(item.resumoTroca?.unidade||'itens')}</div></div>`:''}
-        ${kit.disponiveis==null?'':`<div class="card stat-card"><div class="stat-label">Kits disponíveis</div><div class="stat-value">${kit.disponiveis}</div></div>`}
+      <div class="kit-detail-grid">
+        <div class="kit-detail-side">
+          <div class="card stat-card"><div class="stat-label">Resgates no mês</div><div class="stat-value">${fmt(kit.resgatesMes||0)} ${escapeHtml(unidadeItem)}</div></div>
+          ${metaMensal?`<div class="card stat-card"><div class="stat-label">Meta mensal</div><div class="stat-value">${fmt(metaMensal)} ${escapeHtml(unidadeItem)}</div></div>`:''}
+          ${kit.disponiveis==null?'':`<div class="card stat-card"><div class="stat-label">${escapeHtml(rotuloItem)} disponíveis</div><div class="stat-value">${fmt(kit.disponiveis*(Number(kit.cartelasPorKit)||1))}</div></div>`}
+        </div>
+        ${kit.materiais.length?`<div class="card kit-detail-materials"><div class="stat-label">Materiais necessários</div>
+          <div class="kit-detail-scroll"><table class="kit-materials-table"><thead><tr><th>Material</th><th>Necessário</th><th>Disponível</th><th>Saldo anterior</th><th>Excedente</th></tr></thead>
+          <tbody>${kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td><td>${mat.saldoAnterior>0?'+'+fmt(mat.saldoAnterior)+' '+escapeHtml(mat.unidade):'—'}</td><td>${mat.excedente>0?'+'+fmt(mat.excedente)+' '+escapeHtml(mat.unidade):'—'}</td></tr>`).join('')}</tbody></table></div></div>`:''}
       </div>
-      ${kit.materiais.length?`<div class="section-title">Materiais por kit e saldo disponível</div>
-      <div class="table-wrap public-ranking-table"><table class="material-detail-table"><thead><tr><th>Material</th><th>Por kit</th><th>Disponível</th></tr></thead>
-        <tbody>${kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td></tr>`).join('')}</tbody></table></div>`:''}
       ${informativo?`<p class="small-note" style="margin-top:12px;white-space:pre-line;">${escapeHtml(informativo)}</p>`:''}
     `, true, 'public-details');
     return;
@@ -2663,10 +2674,13 @@ async function sincronizarRankingsPublicos(){
                 resgatesTotal:trocas.reduce((total,t)=>total+(Number(t.cartelasEmitidas)||0),0),
                 metaMensalResgates:Number(cfgTroca.metaMensalResgates)||0,
                 disponiveis:kitsDisponiveis(campanha,resultado.totais),
+                cartelasPorKit:Number(cfgTroca.cartelasPorKit)||1,
                 informativoPublico:String(cfgTroca.informativoPublico||'').trim(),
                 materiais:Object.keys(porKit).filter(key=>porKit[key]>0).map(key=>{
                   const cat=categorias.find(c=>c.key===key);
-                  return {nome:cat?cat.label.split(' (')[0]:key,unidade:cat?cat.unidade:'',porKit:porKit[key],disponivel:resultado.totais[key]||0};
+                  const disponivel=resultado.totais[key]||0;
+                  const kitsPossiveis=kitsDisponiveis(campanha,resultado.totais);
+                  return {nome:cat?cat.label.split(' (')[0]:key,unidade:cat?cat.unidade:'',porKit:porKit[key],disponivel,saldoAnterior:resultado.carryInsPorCategoria[key]||0,excedente:Math.max(0,disponivel-kitsPossiveis*porKit[key])};
                 }),
               };
             })()}:{ }),
