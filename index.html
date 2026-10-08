@@ -3235,6 +3235,20 @@ function renderTabelaEntregas(){
   renderTabelaTransferencias(mes,ano);
   renderTabelaTrocas();
 }
+function partesTransferencia(t){
+  const campanhaOrigem=t.campanhaOrigemId||t.campanhaId;
+  const campanhaDestino=t.campanhaDestinoId||t.campanhaId;
+  const categoriaOrigem=t.categoriaOrigem||t.categoriaOrigemRef;
+  const categoriaDestino=t.categoriaDestino||t.categoriaDestinoRef;
+  return {
+    origem:STATE.colaboradores.find(x=>x.id===(t.colaboradorOrigemId||t.colaboradorOrigemNomeId)),
+    destino:STATE.colaboradores.find(x=>x.id===(t.colaboradorDestinoId||t.colaboradorDestinoNomeId)),
+    catOrigem:resolverCategoria(campanhaOrigem,categoriaOrigem),
+    catDestino:resolverCategoria(campanhaDestino,categoriaDestino),
+    campanhaOrigem:campanhaPorId(campanhaOrigem),
+    campanhaDestino:campanhaPorId(campanhaDestino),
+  };
+}
 function renderTabelaTransferencias(mes,ano){
   const wrap = document.getElementById('tabelaTransferenciasWrap');
   if(!wrap) return;
@@ -4275,10 +4289,12 @@ function renderHistorico(){
       return {data:e.data,tipo:'Entrega',cor:'badge-green',texto:`${c?c.nome:'(removido)'} entregou ${e.quantidade} ${unid} de ${cat?cat.label.split(' (')[0]:'outros materiais'}`,extra:e.statusValidacao==='validado'?'Validada':'Pendente'};
     }),
     ...transferenciasDoMes(campanhaId,mes,ano).map(t=>{
-      const o = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
-      const d = STATE.colaboradores.find(x=>x.id===t.colaboradorDestinoId);
-      const cat = resolverCategoria(campanhaId,t.categoriaOrigem);
-      return {data:t.data,tipo:'Transferência',cor:'badge-amber',texto:`${o?o.nome:'(removido)'} para ${d?d.nome:'(removido)'}: ${t.quantidade} de ${cat?cat.label.split(' (')[0]:'material'}`,extra:t.motivo||''};
+      const {origem:o,destino:d,catOrigem,catDestino,campanhaOrigem,campanhaDestino}=partesTransferencia(t);
+      const nomeCat=c=>c?c.label.split(' (')[0]:'material';
+      const texto=t.entreCampanhas
+        ?`${o?o.nome:'(removido)'} (${campanhaOrigem?campanhaOrigem.nome:'campanha removida'}) para ${d?d.nome:'(removido)'} (${campanhaDestino?campanhaDestino.nome:'campanha removida'}): ${t.quantidade} de ${nomeCat(catOrigem||catDestino)}`
+        :`${o?o.nome:'(removido)'} para ${d?d.nome:'(removido)'}: ${t.quantidade} de ${nomeCat(catOrigem)}`;
+      return {data:t.data,tipo:'Transferência',cor:'badge-amber',texto,extra:t.motivo||''};
     }),
     ...trocasDoMes(campanhaId,mes,ano).map(t=>{
       const c = STATE.colaboradores.find(x=>x.id===t.colaboradorId);
@@ -4463,9 +4479,7 @@ function exportarCsvTransferencias(mes,ano){
   const lista = transferenciasDoMes(STATE.campanhaSelecionadaId, mes,ano);
   let csv = 'Data,ColaboradorOrigem,CategoriaOrigem,ColaboradorDestino,CategoriaDestino,Quantidade,Motivo\n';
   lista.forEach(t=>{
-    const origem = STATE.colaboradores.find(x=>x.id===t.colaboradorOrigemId);
-    const destino = STATE.colaboradores.find(x=>x.id===t.colaboradorDestinoId);
-    const catO = resolverCategoria(STATE.campanhaSelecionadaId, t.categoriaOrigem), catD = resolverCategoria(STATE.campanhaSelecionadaId, t.categoriaDestino);
+    const {origem,destino,catOrigem:catO,catDestino:catD}=partesTransferencia(t);
     csv += [t.data, origem?origem.nome:'', catO?catO.label:'', destino?destino.nome:'', catD?catD.label:'', t.quantidade, (t.motivo||'').replace(/,/g,';')]
       .map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')+'\n';
   });
@@ -4498,8 +4512,7 @@ function resumoItemLixeira(item){
     return `Entrega · ${colaborador?colaborador.nome:'colaborador removido'} · ${categoria?categoria.label.split(' (')[0]:'material'} · ${formatarData(registro.data)}`;
   }
   if(item.colecao==='transferencias'){
-    const origem=STATE.colaboradores.find(colab=>colab.id===registro.colaboradorOrigemId);
-    const destino=STATE.colaboradores.find(colab=>colab.id===registro.colaboradorDestinoId);
+    const {origem,destino}=partesTransferencia(registro);
     return `Transferência · ${origem?origem.nome:'origem removida'} → ${destino?destino.nome:'destino removido'} · ${formatarData(registro.data)}`;
   }
   if(item.colecao==='trocas'){
