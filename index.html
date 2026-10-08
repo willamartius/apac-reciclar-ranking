@@ -5800,6 +5800,28 @@ function carregarRankingsPublicos(){
           }
           resumoTroca={quantidade:item.resumoTroca.quantidade,unidade:item.resumoTroca.unidade};
         }
+        let kit;
+        if(item.kit && typeof item.kit==='object'){
+          const num=v=>Number.isFinite(v)&&v>=0?v:0;
+          kit={
+            trocadosMes:num(item.kit.trocadosMes),
+            trocadosTotal:num(item.kit.trocadosTotal),
+            resgatesMes:num(item.kit.resgatesMes),
+            resgatesTotal:num(item.kit.resgatesTotal),
+            metaMensalResgates:num(item.kit.metaMensalResgates),
+            disponiveis:Number.isFinite(item.kit.disponiveis)?Math.max(0,item.kit.disponiveis):null,
+            cartelasPorKit:num(item.kit.cartelasPorKit)||1,
+            informativoPublico:typeof item.kit.informativoPublico==='string'?item.kit.informativoPublico.slice(0,1000):'',
+            materiais:(Array.isArray(item.kit.materiais)?item.kit.materiais:[]).filter(m=>m&&typeof m.nome==='string').map(m=>({
+              nome:m.nome,
+              unidade:typeof m.unidade==='string'?m.unidade:'',
+              porKit:num(m.porKit),
+              disponivel:num(m.disponivel),
+              saldoAnterior:num(m.saldoAnterior),
+              excedente:num(m.excedente)
+            }))
+          };
+        }
         return {
           posicao:item.posicao,
           nome:item.nome,
@@ -5811,6 +5833,7 @@ function carregarRankingsPublicos(){
               ...(Number.isFinite(item.totalMateriais)?{totalMateriais:item.totalMateriais}:{})
             }),
           ...(resumoTroca?{resumoTroca}:{}),
+          ...(kit?{kit}:{}),
           ...(detalhes?{detalhes}:{})
         };
       }).sort((a,b)=>(a.posicao||Number.MAX_SAFE_INTEGER)-(b.posicao||Number.MAX_SAFE_INTEGER));
