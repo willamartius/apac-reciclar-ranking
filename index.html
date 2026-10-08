@@ -2186,8 +2186,8 @@ function abrirDetalhesRankingPublico(indice){
       <div class="modal-head"><h3>${escapeHtml(item.nome)} - ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
       <div class="grid grid-3" style="margin-bottom:12px;">
         <div class="card stat-card"><div class="stat-label">Resgates no mês</div><div class="stat-value">${fmt(kit.resgatesMes||0)} ${escapeHtml(item.resumoTroca?.unidade||'itens')}</div></div>
-        <div class="card stat-card"><div class="stat-label">Meta mensal</div><div class="stat-value">${metaMensal?`${fmt(metaMensal)} ${escapeHtml(item.resumoTroca?.unidade||'itens')}`:'A definir'}</div></div>
-        <div class="card stat-card"><div class="stat-label">Kits disponíveis</div><div class="stat-value">${kit.disponiveis==null?'—':kit.disponiveis}</div></div>
+        ${metaMensal?`<div class="card stat-card"><div class="stat-label">Meta</div><div class="stat-value">${fmt(metaMensal)} ${escapeHtml(item.resumoTroca?.unidade||'itens')}</div></div>`:''}
+        ${kit.disponiveis==null?'':`<div class="card stat-card"><div class="stat-label">Kits disponíveis</div><div class="stat-value">${kit.disponiveis}</div></div>`}
       </div>
       ${kit.materiais.length?`<div class="section-title">Materiais por kit e saldo disponível</div>
       <div class="table-wrap public-ranking-table"><table class="material-detail-table"><thead><tr><th>Material</th><th>Por kit</th><th>Disponível</th></tr></thead>
