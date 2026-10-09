@@ -428,11 +428,6 @@ function abrirSeletorNativo(select){
   });
   appSelectOverflowAnterior=document.body.style.overflow;
   appSelectPaddingDireitoAnterior=document.body.style.paddingRight;
-  const larguraBarraRolagem=Math.max(0,window.innerWidth-document.documentElement.clientWidth);
-  if(larguraBarraRolagem){
-    const paddingDireitoAtual=parseFloat(getComputedStyle(document.body).paddingRight)||0;
-    document.body.style.paddingRight=`${paddingDireitoAtual+larguraBarraRolagem}px`;
-  }
   document.body.style.overflow='hidden';
   appSelectOverlay=overlay;
   appSelectAtivo={select,trigger};
