@@ -73,6 +73,10 @@ let STATE = {
   manutencaoPublicaCarregada: false,
   salvandoManutencaoPublica: false,
   erroManutencaoPublica: '',
+  senhaSolicitacaoTroca: '',
+  senhaSolicitacaoTrocaCarregada: false,
+  salvandoSenhaSolicitacaoTroca: false,
+  erroSenhaSolicitacaoTroca: '',
   googleDriveLink: null,
   googleDriveLinkError: '',
   googleDriveBusy: false,
@@ -110,6 +114,8 @@ const GOOGLE_DRIVE_SCOPE = 'openid email profile https://www.googleapis.com/auth
 let GOOGLE_DRIVE_TOKEN_CACHE = null;
 const GOOGLE_DRIVE_TOKEN_SESSION_PREFIX = 'reciclar-apac-drive-token:';
 const SOLICITACAO_TROCA_COLLECTION = 'reciclar-apac-transfer-requests';
+const PUBLIC_SETTINGS_COLLECTION = 'reciclar-apac-public-settings';
+const SENHA_SOLICITACAO_TROCA_DOC = 'trocaSenha';
 
 let FIREBASE_DB = null;
 let FIREBASE_AUTH = null;
@@ -131,6 +137,7 @@ let rankingPublicoSyncPendente = false;
 let rankingPublicoUltimoMesSincronizado = '';
 let rankingsPublicosUnsubscribe = null;
 let manutencaoPublicaUnsubscribe = null;
+let senhaSolicitacaoTrocaUnsubscribe = null;
 function serializarEstavel(valor){
   if(Array.isArray(valor)) return `[${valor.map(serializarEstavel).join(',')}]`;
   if(valor && typeof valor==='object'){
@@ -538,6 +545,7 @@ async function verificarInstalacaoFirestore(){
 function defaultConfig(){
   return {
     painelPeriodo: { ano: null, tipo: '6' }, // ver calcularJanelaPainel() — a campanha é escolhida à parte, em STATE.campanhaSelecionadaId
+    senhaSolicitacaoTroca: '', // usada apenas fora do modo Firestore; no Firestore a senha fica em reciclar-apac-public-settings/trocaSenha
   };
 }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -682,6 +690,7 @@ async function carregarDados(){
     await storageSet('config', STATE.config);
   }
   if(!STATE.config.painelPeriodo) STATE.config.painelPeriodo = { ano: null, tipo: '6' };
+  if(typeof STATE.config.senhaSolicitacaoTroca!=='string') STATE.config.senhaSolicitacaoTroca = '';
   STATE.campanhas = campanhas;
   if(!STATE.campanhas || STATE.campanhas.length===0){
     await migrarParaCampanhas(configAntigoParaMigrar);

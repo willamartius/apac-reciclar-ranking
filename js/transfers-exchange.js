@@ -169,6 +169,29 @@ function pararObservacaoSolicitacoesTroca(){
   STATE.solicitacoesTrocaError='';
   STATE.solicitacaoTrocaBusyId='';
 }
+function obterConfigSenhaSolicitacaoTroca(){
+  if(!STATE.isAdmin || !FIREBASE_DB || !STATE.authUser) return;
+  if(senhaSolicitacaoTrocaUnsubscribe) return;
+  senhaSolicitacaoTrocaUnsubscribe=FIREBASE_DB.collection(PUBLIC_SETTINGS_COLLECTION).doc(SENHA_SOLICITACAO_TROCA_DOC)
+    .onSnapshot(documento=>{
+      const dados=documento.exists?documento.data():null;
+      STATE.senhaSolicitacaoTroca=(dados && typeof dados.senha==='string')?dados.senha:'';
+      STATE.senhaSolicitacaoTrocaCarregada=true;
+      renderApp();
+    },erro=>{
+      console.error('Erro ao observar a senha de solicitação de troca',erro);
+      STATE.senhaSolicitacaoTrocaCarregada=true;
+      renderApp();
+    });
+}
+function pararObservacaoConfigSenhaSolicitacaoTroca(){
+  if(senhaSolicitacaoTrocaUnsubscribe) senhaSolicitacaoTrocaUnsubscribe();
+  senhaSolicitacaoTrocaUnsubscribe=null;
+  STATE.senhaSolicitacaoTroca='';
+  STATE.senhaSolicitacaoTrocaCarregada=false;
+}
+window.obterConfigSenhaSolicitacaoTroca=obterConfigSenhaSolicitacaoTroca;
+window.pararObservacaoConfigSenhaSolicitacaoTroca=pararObservacaoConfigSenhaSolicitacaoTroca;
 function verificarRegistrosTransacionais(key,remotos,filtro){
   let locais;
   if(key==='colaboradores') locais=STATE.colaboradores;
