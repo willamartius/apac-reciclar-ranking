@@ -63,7 +63,7 @@ Antes de disponibilizar os botões do Drive:
 1. No Google Cloud Console, selecione ou crie um projeto e habilite a **Google Drive API**.
 2. Configure a tela de consentimento OAuth. Adicione os administradores como usuários de teste enquanto o app estiver em modo de teste; para contas Google Workspace da mesma organização, a opção de público interno também pode ser usada.
 3. Crie um **OAuth client ID** do tipo **Web application**. Cadastre a origem exata do site em **Authorized JavaScript origins** (esquema e domínio, sem caminho). Cadastre também origens locais somente se for testar localmente. O fluxo usa o popup do Google Identity Services e não exige redirect URI.
-4. Copie o client ID para `GOOGLE_DRIVE_CLIENT_ID` no início do script em `index.html`. O client ID não é uma senha; não coloque client secrets ou tokens no HTML.
+4. Copie o client ID para `GOOGLE_DRIVE_CLIENT_ID` no início de `js/core.js`. O client ID não é uma senha; não coloque client secrets ou tokens no HTML.
 5. Publique o conteúdo atualizado de `firestore.rules`. A regra `reciclar-apac-drive-links/{UID}` limita leitura e escrita do vínculo ao administrador autenticado correspondente; a coleção não permite listagem.
 6. Publique o app e, em **Configurações > Backup no Google Drive**, cada administrador vincula a própria conta Google. Trocar ou desvincular uma conta não apaga os arquivos já armazenados no Drive.
 
