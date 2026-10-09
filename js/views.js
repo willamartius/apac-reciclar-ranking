@@ -428,7 +428,7 @@ function abrirSeletorNativo(select){
   });
   appSelectOverflowAnterior=document.body.style.overflow;
   appSelectPaddingDireitoAnterior=document.body.style.paddingRight;
-  document.body.style.overflow='hidden';
+  if(consultaTelaCompacta.matches) document.body.style.overflow='hidden';
   appSelectOverlay=overlay;
   appSelectAtivo={select,trigger};
   trigger.setAttribute('aria-expanded','true');
@@ -894,9 +894,11 @@ window.abrirMaisSheet = abrirMaisSheet;
 
 /* ---------- MODAL GENÉRICO ---------- */
 let modalScrollY=null;
+const consultaTelaCompacta=window.matchMedia('(max-width:720px)');
 function abrirModal(innerHtml, wide, modalClass=''){
   fecharModal();
-  if(modalScrollY===null){
+  // No desktop o body fixo deslocava a barra lateral sticky e escondia a barra de rolagem; só travamos assim no mobile.
+  if(modalScrollY===null && consultaTelaCompacta.matches){
     modalScrollY=window.scrollY||window.pageYOffset||0;
     document.body.style.position='fixed';
     document.body.style.top=`-${modalScrollY}px`;
@@ -908,6 +910,7 @@ function abrirModal(innerHtml, wide, modalClass=''){
   const wrap = document.createElement('div');
   wrap.className=`modal-overlay${modalClass?' modal-overlay-'+modalClass:''}`; wrap.id='modalOverlay';
   wrap.onclick=(e)=>{ if(e.target===wrap) fecharModal(); };
+  wrap.addEventListener('wheel',e=>{ if(!e.target.closest('.modal')) e.preventDefault(); },{passive:false});
   wrap.innerHTML = `<div class="modal${modalClass?' modal-'+modalClass:''}" style="${wide?'max-width:720px':''}">${innerHtml}</div>`;
   document.body.appendChild(wrap);
   aprimorarSeletoresNativos(wrap);
