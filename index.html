@@ -1011,12 +1011,16 @@ function firestoreCollectionMatches(records, snapshot){
     return !!doc && serializarEstavel(doc.data())===serializarEstavel(record);
   });
 }
+async function carregarMarcadoresMigracao(){
+  const snapshot=await FIREBASE_DB.collection('reciclar-apac-migrations').get();
+  return new Set(snapshot.docs.filter(doc=>doc.data().schemaVersion===1).map(doc=>doc.id));
+}
 async function migrarColecoesFirestoreLegadas(){
   const base=FIREBASE_DB.collection('reciclar-apac');
+  const migradas=await carregarMarcadoresMigracao();
   for(const key of FIRESTORE_MIGRATION_COLLECTIONS){
     const marcadorRef=FIREBASE_DB.collection('reciclar-apac-migrations').doc(key);
-    const marcador=await marcadorRef.get();
-    if(marcador.exists && marcador.data().schemaVersion===1) continue;
+    if(migradas.has(key)) continue;
     const legado=await base.doc(key).get();
     if(legado.exists && legado.data().value!==undefined){
       let registros;
@@ -1045,9 +1049,9 @@ async function migrarColecoesFirestoreLegadas(){
 async function verificarMigracaoFirestoreLegada(){
   const base=FIREBASE_DB.collection('reciclar-apac');
   const pendentes=[];
+  const migradas=await carregarMarcadoresMigracao();
   for(const key of FIRESTORE_MIGRATION_COLLECTIONS){
-    const marcador=await FIREBASE_DB.collection('reciclar-apac-migrations').doc(key).get();
-    if(marcador.exists && marcador.data().schemaVersion===1) continue;
+    if(migradas.has(key)) continue;
     const legado=await base.doc(key).get();
     if(!legado.exists || legado.data().value===undefined) continue;
     let registros;
@@ -1188,14 +1192,24 @@ async function migrarParaCampanhas(configAntigo){
 
 /* ---------- CARREGAMENTO INICIAL ---------- */
 async function carregarDados(){
-  STATE.colaboradores = await storageGet('colaboradores', []);
-  STATE.entregas = await storageGet('entregas', []);
-  STATE.transferencias = await storageGet('transferencias', []);
-  STATE.trocas = await storageGet('trocas', []);
-  STATE.lixeira = STATE.isAdmin ? await storageGet('lixeira', []) : [];
+  const [colaboradores,entregas,transferencias,trocas,lixeira,metas,config,campanhas]=await Promise.all([
+    storageGet('colaboradores', []),
+    storageGet('entregas', []),
+    storageGet('transferencias', []),
+    storageGet('trocas', []),
+    STATE.isAdmin ? storageGet('lixeira', []) : Promise.resolve([]),
+    storageGet('metas', []),
+    storageGet('config', null),
+    storageGet('campanhas', null),
+  ]);
+  STATE.colaboradores = colaboradores;
+  STATE.entregas = entregas;
+  STATE.transferencias = transferencias;
+  STATE.trocas = trocas;
+  STATE.lixeira = lixeira;
   await limparLixeiraExpirada();
-  STATE.metasSnapshots = await storageGet('metas', []);
-  STATE.config = await storageGet('config', null);
+  STATE.metasSnapshots = metas;
+  STATE.config = config;
   const configAntigoParaMigrar = STATE.config; // pode conter metasDefault/metasHistorico do formato anterior
   if(STATE.config) delete STATE.config.senhaAdmin;
   if(!STATE.config){
@@ -1203,7 +1217,7 @@ async function carregarDados(){
     await storageSet('config', STATE.config);
   }
   if(!STATE.config.painelPeriodo) STATE.config.painelPeriodo = { ano: null, tipo: '6' };
-  STATE.campanhas = await storageGet('campanhas', null);
+  STATE.campanhas = campanhas;
   if(!STATE.campanhas || STATE.campanhas.length===0){
     await migrarParaCampanhas(configAntigoParaMigrar);
   } else {
@@ -4826,24 +4840,31 @@ async function salvarCampanha(id){
   const metasDefault = {};
   const nomesPersonalizados = {};
   const categoriasDesativadas = [];
+  let erroMetaNegativa = '';
   CATEGORIAS.forEach(cat=>{
     const ativo = document.getElementById('cpUsar_'+cat.key).checked;
     if(!ativo) categoriasDesativadas.push(cat.key);
-    metasDefault[cat.key] = parseFloat(document.getElementById('cpMeta_'+cat.key).value) || cat.metaDefault;
+    const metaOficial = parseFloat(document.getElementById('cpMeta_'+cat.key).value);
+    if(metaOficial<0) erroMetaNegativa = cat.label;
+    metasDefault[cat.key] = metaOficial || cat.metaDefault;
     const nomeDigitado = document.getElementById('cpNomeCat_'+cat.key).value.trim();
     if(nomeDigitado && nomeDigitado!==cat.label) nomesPersonalizados[cat.key] = nomeDigitado;
   });
   const materiaisExtras = [];
+  if(erroMetaNegativa){ erroEl.textContent=`A meta de "${erroMetaNegativa}" não pode ser negativa.`; erroEl.style.display='block'; return; }
+  let erroMaterial = false;
   (window._materiaisExtrasForm||[]).forEach(item=>{
     const nomeEl = document.getElementById('extraNome_'+item.key);
     if(!nomeEl) return; // linha removida da tela
     const label = nomeEl.value.trim();
     if(!label) return; // ignora linhas deixadas em branco
     const metaDefault = parseFloat(document.getElementById('extraMeta_'+item.key).value) || 0;
-    const unidade = document.getElementById('extraUnidade_'+item.key).value.trim() || 'unidades';
+    if(metaDefault<0){ erroEl.textContent=`A meta de "${label}" não pode ser negativa.`; erroEl.style.display='block'; erroMaterial=true; return; }
+    const unidade = (document.getElementById('extraUnidade_'+item.key)||{value:''}).value.trim() || 'unidades';
     materiaisExtras.push({ key: item.key, label, metaDefault, unidade });
     metasDefault[item.key] = metaDefault;
   });
+  if(erroMaterial) return;
   const totalAtivos = (CATEGORIAS.length - categoriasDesativadas.length) + materiaisExtras.length;
   const avisoEl = document.getElementById('avisoSemMateriais');
   if(totalAtivos===0){ avisoEl.style.display='block'; erroEl.textContent='Pelo menos um material precisa ficar ativo nesta campanha.'; erroEl.style.display='block'; return; }
@@ -5715,15 +5736,15 @@ async function processarSessaoFirebase(user){
   STATE.mostrarLogin=false;
   STATE.isAdmin=role==='admin';
   STATE.isOperator=role==='operator';
-  if(STATE.isAdmin) await carregarVinculoGoogleDrive();
+  const vinculoDrive=STATE.isAdmin ? carregarVinculoGoogleDrive() : Promise.resolve();
   if(STATE.isAdmin){
     await migrarColecoesFirestoreLegadas();
   } else {
-    const pendentes=await verificarMigracaoFirestoreLegada();
+    const [pendentes]=await Promise.all([verificarMigracaoFirestoreLegada(),verificarInstalacaoFirestore()]);
     if(pendentes.length) throw new Error(`O administrador precisa migrar estes dados antes do acesso do operador: ${pendentes.join(', ')}.`);
-    await verificarInstalacaoFirestore();
   }
   await carregarDados();
+  await vinculoDrive;
   if(STATE.isAdmin) obterSolicitacoesTroca();
   STATE.loginCarregando=false;
   rankingPublicoSyncAtivo=true;
