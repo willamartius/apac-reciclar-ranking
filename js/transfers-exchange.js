@@ -618,6 +618,18 @@ function abrirDetalhesColaborador(colaboradorId, mes, ano){
   const resultados = calcularResultadosMes(campanhaId, mes,ano);
   const r = resultados.find(x=>x.colaborador.id===colaboradorId);
   if(!r) return;
+  const campanha=campanhaPorId(campanhaId);
+  const cfgTroca=campanha&&campanha.trocaCartela&&campanha.trocaCartela.ativo?campanha.trocaCartela:null;
+  if(cfgTroca){
+    const nomeItem=String(cfgTroca.nomeItem||'item').trim();
+    const kit=montarResumoKitColaborador(campanha,cfgTroca,r,chaveMA(mes,ano),categorias);
+    const unidadeItem=kit.resgatesMes===1||/s$/i.test(nomeItem)?nomeItem:nomeItem+'s';
+    abrirModal(`
+      <div class="modal-head"><h3>${escapeHtml(r.colaborador.nome)} - ${nomeMes(mes)}/${ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+      ${renderDetalhesKit(kit,unidadeItem)}
+    `, true, 'public-details');
+    return;
+  }
   abrirModal(`
     <div class="modal-head"><h3>${escapeHtml(r.colaborador.nome)} — ${nomeMes(mes)}/${ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
     <p class="small-note" style="margin-top:-6px;">A pontuação é a média do cumprimento das categorias, limitada a 100% por categoria.</p>

@@ -48,3 +48,9 @@ test('funções chamadas por handlers inline existem no escopo global', () => {
   assert.deepEqual(ausentes, [], `Handlers sem função: ${ausentes.join(', ')}`);
   assert.ok(sandbox);
 });
+
+test('painel e página pública usam o mesmo renderizador de detalhes de kits', () => {
+  const usos = appScripts.filter(file => read(file).includes('renderDetalhesKit(kit,unidadeItem)'));
+  assert.deepEqual(usos.sort(), ['js/transfers-exchange.js', 'js/views.js']);
+  assert.ok(read('js/auth.js').includes('montarResumoKitColaborador('));
+});
