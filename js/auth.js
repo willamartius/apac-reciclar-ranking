@@ -273,27 +273,7 @@ async function sincronizarRankingsPublicos(){
                 };
               })(),
             }:{ }),
-            ...(cfgTroca?{kit:(()=>{
-              const porKit=cfgTroca.kit||{};
-              const trocas=STATE.trocas.filter(t=>t.campanhaId===campanha.id&&t.colaboradorId===resultado.colaborador.id&&t.data&&t.data.slice(0,7)<=chave);
-              const kitsDe=t=>Number(t.quantidadeKits)||Math.floor((Number(t.cartelasEmitidas)||0)/(Number(cfgTroca.cartelasPorKit)||1));
-              return {
-                trocadosMes:trocas.filter(t=>t.data.slice(0,7)===chave).reduce((total,t)=>total+kitsDe(t),0),
-                trocadosTotal:trocas.reduce((total,t)=>total+kitsDe(t),0),
-                resgatesMes:trocas.filter(t=>t.data.slice(0,7)===chave).reduce((total,t)=>total+(Number(t.cartelasEmitidas)||0),0),
-                resgatesTotal:trocas.reduce((total,t)=>total+(Number(t.cartelasEmitidas)||0),0),
-                metaMensalResgates:Number(cfgTroca.metaMensalResgates)||0,
-                disponiveis:kitsDisponiveis(campanha,resultado.totais),
-                cartelasPorKit:Number(cfgTroca.cartelasPorKit)||1,
-                informativoPublico:String(cfgTroca.informativoPublico||'').trim(),
-                materiais:Object.keys(porKit).filter(key=>porKit[key]>0).map(key=>{
-                  const cat=categorias.find(c=>c.key===key);
-                  const disponivel=resultado.totais[key]||0;
-                  const kitsPossiveis=kitsDisponiveis(campanha,resultado.totais);
-                  return {nome:cat?cat.label.split(' (')[0]:key,unidade:cat?cat.unidade:'',porKit:porKit[key],disponivel,saldoAnterior:resultado.carryInsPorCategoria[key]||0,excedente:Math.max(0,disponivel-kitsPossiveis*porKit[key])};
-                }),
-              };
-            })()}:{ }),
+            ...(cfgTroca?{kit:montarResumoKitColaborador(campanha,cfgTroca,resultado,chave,categorias)}:{ }),
             detalhes:categorias.map(cat=>({
               nome:cat.label.split(' (')[0],
               unidade:cat.unidade,

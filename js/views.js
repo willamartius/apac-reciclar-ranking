@@ -695,26 +695,33 @@ window.atualizarFormularioSolicitacaoTroca=atualizarFormularioSolicitacaoTroca;
 window.enviarSolicitacaoTrocaPublica=enviarSolicitacaoTrocaPublica;
 window.alternarPickerSolicitacao=alternarPickerSolicitacao;
 window.selecionarOpcaoSolicitacao=selecionarOpcaoSolicitacao;
-function abrirDetalhesRankingPublico(indice){
-  const ranking=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
-  const item=ranking&&ranking.ranking[indice];
-  if(!item) return;
-  const categorias=item.detalhes||[];
-  if(item.kit||item.resumoTroca){
-    const fmt=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
-    const kit=item.kit||{
-      resgatesMes:item.resumoTroca?.quantidade||0,
-      resgatesTotal:null,
-      metaMensalResgates:null,
-      disponiveis:null,
-      materiais:[],
-    };
-    const metaMensal=Number(kit.metaMensalResgates)||0;
-    const informativo=String(kit.informativoPublico||'').trim();
-    const unidadeItem=item.resumoTroca?.unidade||'itens';
-    const rotuloItem=unidadeItem.charAt(0).toUpperCase()+unidadeItem.slice(1);
-    abrirModal(`
-      <div class="modal-head"><h3>${escapeHtml(item.nome)} - ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+function montarResumoKitColaborador(campanha,cfgTroca,resultado,chave,categorias){
+  const porKit=cfgTroca.kit||{};
+  const trocas=STATE.trocas.filter(t=>t.campanhaId===campanha.id&&t.colaboradorId===resultado.colaborador.id&&t.data&&t.data.slice(0,7)<=chave);
+  const kitsDe=t=>Number(t.quantidadeKits)||Math.floor((Number(t.cartelasEmitidas)||0)/(Number(cfgTroca.cartelasPorKit)||1));
+  return {
+    trocadosMes:trocas.filter(t=>t.data.slice(0,7)===chave).reduce((total,t)=>total+kitsDe(t),0),
+    trocadosTotal:trocas.reduce((total,t)=>total+kitsDe(t),0),
+    resgatesMes:trocas.filter(t=>t.data.slice(0,7)===chave).reduce((total,t)=>total+(Number(t.cartelasEmitidas)||0),0),
+    resgatesTotal:trocas.reduce((total,t)=>total+(Number(t.cartelasEmitidas)||0),0),
+    metaMensalResgates:Number(cfgTroca.metaMensalResgates)||0,
+    disponiveis:kitsDisponiveis(campanha,resultado.totais),
+    cartelasPorKit:Number(cfgTroca.cartelasPorKit)||1,
+    informativoPublico:String(cfgTroca.informativoPublico||'').trim(),
+    materiais:Object.keys(porKit).filter(key=>porKit[key]>0).map(key=>{
+      const cat=categorias.find(c=>c.key===key);
+      const disponivel=resultado.totais[key]||0;
+      const kitsPossiveis=kitsDisponiveis(campanha,resultado.totais);
+      return {nome:cat?cat.label.split(' (')[0]:key,unidade:cat?cat.unidade:'',porKit:porKit[key],disponivel,saldoAnterior:resultado.carryInsPorCategoria[key]||0,excedente:Math.max(0,disponivel-kitsPossiveis*porKit[key])};
+    }),
+  };
+}
+function renderDetalhesKit(kit,unidadeItem){
+  const fmt=valor=>valor.toLocaleString('pt-BR',{maximumFractionDigits:2});
+  const metaMensal=Number(kit.metaMensalResgates)||0;
+  const informativo=String(kit.informativoPublico||'').trim();
+  const rotuloItem=unidadeItem.charAt(0).toUpperCase()+unidadeItem.slice(1);
+  return `
       <div class="kit-detail-grid">
         <div class="kit-detail-side">
           <div class="card stat-card"><div class="stat-label">Resgates no mês</div><div class="stat-value">${fmt(kit.resgatesMes||0)} ${escapeHtml(unidadeItem)}</div></div>
@@ -724,7 +731,25 @@ function abrirDetalhesRankingPublico(indice){
         ${kit.materiais.length?`<div class="card kit-detail-materials">        <div class="kit-detail-scroll" style="margin-top:0;"><table class="kit-materials-table"><thead><tr><th>Material</th><th>Necessário</th><th>Disponível</th></tr></thead>
           <tbody>${kit.materiais.map(mat=>`<tr><td>${escapeHtml(mat.nome)}</td><td>${fmt(mat.porKit)} ${escapeHtml(mat.unidade)}</td><td>${fmt(mat.disponivel)} ${escapeHtml(mat.unidade)}</td></tr>`).join('')}</tbody></table></div></div>`:''}
       </div>
-      ${informativo?`<p class="small-note" style="margin-top:12px;white-space:pre-line;">${escapeHtml(informativo)}</p>`:''}
+      ${informativo?`<p class="small-note" style="margin-top:12px;white-space:pre-line;">${escapeHtml(informativo)}</p>`:''}`;
+}
+function abrirDetalhesRankingPublico(indice){
+  const ranking=rankingPublicoPorId(STATE.rankingPublicoSelecionadoId);
+  const item=ranking&&ranking.ranking[indice];
+  if(!item) return;
+  const categorias=item.detalhes||[];
+  if(item.kit||item.resumoTroca){
+    const kit=item.kit||{
+      resgatesMes:item.resumoTroca?.quantidade||0,
+      resgatesTotal:null,
+      metaMensalResgates:null,
+      disponiveis:null,
+      materiais:[],
+    };
+    const unidadeItem=item.resumoTroca?.unidade||'itens';
+    abrirModal(`
+      <div class="modal-head"><h3>${escapeHtml(item.nome)} - ${nomeMes(ranking.mes)}/${ranking.ano}</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+      ${renderDetalhesKit(kit,unidadeItem)}
     `, true, 'public-details');
     return;
   }
