@@ -43,14 +43,14 @@ service cloud.firestore {
           'colaboradorOrigemId', 'colaboradorOrigemNome', 'categoriaOrigem',
           'materialOrigemNome', 'quantidadeOrigem',
           'colaboradorDestinoId', 'colaboradorDestinoNome', 'categoriaDestino',
-          'materialDestinoNome', 'quantidadeDestino', 'solicitadoEm', 'status'
+          'materialDestinoNome', 'quantidadeDestino', 'solicitadoEm', 'status', 'senha'
         ])
         && data.keys().hasAll([
           'id', 'campanhaId', 'campanhaNome',
           'colaboradorOrigemId', 'colaboradorOrigemNome', 'categoriaOrigem',
           'materialOrigemNome', 'quantidadeOrigem',
           'colaboradorDestinoId', 'colaboradorDestinoNome', 'categoriaDestino',
-          'materialDestinoNome', 'quantidadeDestino', 'solicitadoEm', 'status'
+          'materialDestinoNome', 'quantidadeDestino', 'solicitadoEm', 'status', 'senha'
         ])
         && data.id == requestId
         && data.campanhaId is string && data.campanhaId.size() > 0 && data.campanhaId.size() <= 200
@@ -68,7 +68,19 @@ service cloud.firestore {
         && data.colaboradorOrigemId != data.colaboradorDestinoId
         && data.categoriaOrigem != data.categoriaDestino
         && data.solicitadoEm is timestamp && data.solicitadoEm == request.time
-        && data.status == 'pendente';
+        && data.status == 'pendente'
+        && data.senha is string && data.senha.size() <= 200
+        && senhaSolicitacaoTrocaValida(data.senha);
+    }
+
+    function senhaSolicitacaoTrocaConfigurada() {
+      let path = /databases/$(database)/documents/reciclar-apac-public-settings/trocaSenha;
+      return exists(path) && get(path).data.senha is string && get(path).data.senha.size() > 0;
+    }
+
+    function senhaSolicitacaoTrocaValida(senhaEnviada) {
+      let path = /databases/$(database)/documents/reciclar-apac-public-settings/trocaSenha;
+      return !senhaSolicitacaoTrocaConfigurada() || get(path).data.senha == senhaEnviada;
     }
 
     function isApprovedTransferPair(requestId) {
@@ -113,14 +125,22 @@ service cloud.firestore {
     }
 
     match /reciclar-apac-public-settings/{settingId} {
-      allow read: if settingId == 'maintenance';
+      allow read: if settingId == 'maintenance'
+        || (settingId == 'trocaSenha' && isAdmin());
       allow create, update: if settingId == 'maintenance'
-        && isAdmin()
-        && request.resource.data.keys().hasOnly(['ativada', 'atualizadoEm'])
-        && request.resource.data.keys().hasAll(['ativada', 'atualizadoEm'])
-        && request.resource.data.ativada is bool
-        && request.resource.data.atualizadoEm is string;
-      allow delete: if settingId == 'maintenance' && isAdmin();
+        ? (isAdmin()
+          && request.resource.data.keys().hasOnly(['ativada', 'atualizadoEm'])
+          && request.resource.data.keys().hasAll(['ativada', 'atualizadoEm'])
+          && request.resource.data.ativada is bool
+          && request.resource.data.atualizadoEm is string)
+        : settingId == 'trocaSenha'
+          && isAdmin()
+          && request.resource.data.keys().hasOnly(['senha', 'atualizadoEm'])
+          && request.resource.data.keys().hasAll(['senha', 'atualizadoEm'])
+          && request.resource.data.senha is string
+          && request.resource.data.senha.size() <= 200
+          && request.resource.data.atualizadoEm is string;
+      allow delete: if (settingId == 'maintenance' || settingId == 'trocaSenha') && isAdmin();
     }
 
     match /reciclar-apac-drive-links/{userId} {

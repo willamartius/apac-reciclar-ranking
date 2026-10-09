@@ -398,6 +398,14 @@ function renderConfig(){
       <p id="manutencaoPublicaErro" class="auth-error" role="alert" ${STATE.erroManutencaoPublica?'':'hidden'}>${escapeHtml(STATE.erroManutencaoPublica)}</p>
     </div>
 
+    <div class="section-title">Senha de solicitação de troca</div>
+    <div class="card">
+      <p class="small-note">Defina uma senha que será pedida na página pública depois que o colaborador clicar em "Solicitar troca". Deixe em branco para não exigir senha.</p>
+      <div class="field"><label for="senhaSolicitacaoTrocaInput">Senha</label><input id="senhaSolicitacaoTrocaInput" type="text" autocomplete="off" value="${escapeHtml(STATE.senhaSolicitacaoTroca||'')}" ${STATE.salvandoSenhaSolicitacaoTroca?'disabled':''}></div>
+      <button class="btn btn-outline" onclick="salvarSenhaSolicitacaoTroca()" ${STATE.salvandoSenhaSolicitacaoTroca?'disabled':''}>Salvar senha</button>
+      <p id="senhaSolicitacaoTrocaErro" class="auth-error" role="alert" ${STATE.erroSenhaSolicitacaoTroca?'':'hidden'}>${escapeHtml(STATE.erroSenhaSolicitacaoTroca)}</p>
+    </div>
+
     <div class="section-title">Backup e restauração</div>
     <div class="card" style="display:grid;gap:12px;">
       <div>
@@ -1489,6 +1497,7 @@ function finalizarCarregamento(){
 }
 async function processarSessaoFirebase(user){
   pararObservacaoSolicitacoesTroca();
+  pararObservacaoConfigSenhaSolicitacaoTroca();
   const uidAnterior=STATE.authUser&&STATE.authUser.uid;
   if(uidAnterior && (!user || user.uid!==uidAnterior)) limparTokenGoogleDriveSessao(uidAnterior);
   STATE.authUser=user;
@@ -1541,7 +1550,7 @@ async function processarSessaoFirebase(user){
   }
   await carregarDados();
   await vinculoDrive;
-  if(STATE.isAdmin) obterSolicitacoesTroca();
+  if(STATE.isAdmin){ obterSolicitacoesTroca(); obterConfigSenhaSolicitacaoTroca(); }
   STATE.loginCarregando=false;
   rankingPublicoSyncAtivo=true;
   agendarSincronizacaoRankingPublicoNaViradaDoMes();

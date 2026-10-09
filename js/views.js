@@ -122,6 +122,40 @@ async function alterarManutencaoPublica(ativada){
   }
 }
 window.alterarManutencaoPublica=alterarManutencaoPublica;
+async function salvarSenhaSolicitacaoTroca(){
+  if(!exigirAdmin()) return;
+  if(STATE.salvandoSenhaSolicitacaoTroca) return;
+  const input=document.getElementById('senhaSolicitacaoTrocaInput');
+  const senha=(input?.value||'').trim();
+  const erroElemento=document.getElementById('senhaSolicitacaoTrocaErro');
+  if(senha.length>200){
+    STATE.erroSenhaSolicitacaoTroca='A senha pode ter no máximo 200 caracteres.';
+    if(erroElemento){ erroElemento.textContent=STATE.erroSenhaSolicitacaoTroca; erroElemento.hidden=false; }
+    return;
+  }
+  STATE.salvandoSenhaSolicitacaoTroca=true;
+  STATE.erroSenhaSolicitacaoTroca='';
+  renderApp();
+  try{
+    if(STORAGE_MODE==='firestore'){
+      await FIREBASE_DB.collection(PUBLIC_SETTINGS_COLLECTION).doc(SENHA_SOLICITACAO_TROCA_DOC).set({
+        senha,
+        atualizadoEm:new Date().toISOString(),
+      });
+    }else{
+      STATE.config.senhaSolicitacaoTroca=senha;
+      if(!await salvarConfig()) throw STORAGE_ERRORS.get('config')||new Error('Não foi possível salvar a configuração local.');
+    }
+    STATE.senhaSolicitacaoTroca=senha;
+  }catch(erro){
+    console.error('Erro ao salvar a senha de solicitação de troca',erro);
+    STATE.erroSenhaSolicitacaoTroca=erro.message||'Não foi possível salvar a senha.';
+  }finally{
+    STATE.salvandoSenhaSolicitacaoTroca=false;
+    renderApp();
+  }
+}
+window.salvarSenhaSolicitacaoTroca=salvarSenhaSolicitacaoTroca;
 function irPara(view){
   if((view==='config' || view==='relatorios' || view==='lixeira') && !STATE.isAdmin){ exigirAdmin(); return; }
   STATE.view=view; renderApp(); window.scrollTo(0,0);
@@ -578,7 +612,7 @@ function abrirSolicitacaoTrocaPublica(){
     <p id="solicitacaoTrocaErro" class="auth-error" role="alert" style="display:none;"></p>
     <div class="modal-actions">
       <button class="btn btn-outline btn-block" type="button" onclick="fecharModal()">Cancelar</button>
-      <button class="btn btn-primary btn-block" type="button" onclick="enviarSolicitacaoTrocaPublica()">${icon('check',16)}Solicitar troca</button>
+      <button class="btn btn-primary btn-block" type="button" onclick="confirmarSolicitacaoTrocaPublica()">${icon('check',16)}Solicitar troca</button>
     </div>
   `,false,'swap-request');
 }
@@ -614,7 +648,8 @@ function atualizarFormularioSolicitacaoTroca(){
   document.getElementById('solicitacaoMaterialOrigemPicker').outerHTML=renderPickerSolicitacao('solicitacaoMaterialOrigem','Material',opcoesMateriais,materialOrigem);
   document.getElementById('solicitacaoMaterialDestinoPicker').outerHTML=renderPickerSolicitacao('solicitacaoMaterialDestino','Material',opcoesMateriais,materialDestino);
 }
-async function enviarSolicitacaoTrocaPublica(){
+let pedidoTrocaPublicaPendente=null;
+function confirmarSolicitacaoTrocaPublica(){
   const erroEl=document.getElementById('solicitacaoTrocaErro');
   const mostrarErro=mensagem=>{
     if(erroEl){ erroEl.textContent=mensagem; erroEl.style.display='block'; }
@@ -650,9 +685,7 @@ async function enviarSolicitacaoTrocaPublica(){
     return;
   }
   if(erroEl) erroEl.style.display='none';
-  const referencia=FIREBASE_DB.collection(SOLICITACAO_TROCA_COLLECTION).doc();
-  const pedido={
-    id:referencia.id,
+  pedidoTrocaPublicaPendente={
     campanhaId,
     campanhaNome:ranking.campanhaNome,
     colaboradorOrigemId:origem.id,
@@ -665,6 +698,38 @@ async function enviarSolicitacaoTrocaPublica(){
     categoriaDestino:materialRecebido.key,
     materialDestinoNome:materialRecebido.nome,
     quantidadeDestino,
+  };
+  abrirSenhaSolicitacaoTrocaPublica();
+}
+function abrirSenhaSolicitacaoTrocaPublica(){
+  abrirModal(`
+    <div class="modal-head"><h3>Confirme com a senha</h3><button class="modal-close" onclick="fecharModal()">${icon('x')}</button></div>
+    <p class="small-note">Informe a senha de solicitação de troca definida pela administração para concluir o pedido. Se não souber a senha, procure um administrador.</p>
+    <div class="field"><label for="solicitacaoTrocaSenha">Senha</label><input id="solicitacaoTrocaSenha" type="password" autocomplete="off"></div>
+    <p id="solicitacaoTrocaSenhaErro" class="auth-error" role="alert" style="display:none;"></p>
+    <div class="modal-actions">
+      <button class="btn btn-outline btn-block" type="button" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary btn-block" type="button" onclick="enviarSolicitacaoTrocaPublica()">${icon('check',16)}Confirmar</button>
+    </div>
+  `,false,'swap-request-senha');
+}
+async function enviarSolicitacaoTrocaPublica(){
+  const erroEl=document.getElementById('solicitacaoTrocaSenhaErro');
+  const mostrarErro=mensagem=>{
+    if(erroEl){ erroEl.textContent=mensagem; erroEl.style.display='block'; }
+  };
+  if(!FIREBASE_DB){ mostrarErro('A conexão com o Firebase não está disponível.'); return; }
+  if(!pedidoTrocaPublicaPendente){
+    mostrarErro('Atualize a página e refaça a solicitação.');
+    return;
+  }
+  const senha=document.getElementById('solicitacaoTrocaSenha')?.value||'';
+  if(erroEl) erroEl.style.display='none';
+  const referencia=FIREBASE_DB.collection(SOLICITACAO_TROCA_COLLECTION).doc();
+  const pedido={
+    ...pedidoTrocaPublicaPendente,
+    id:referencia.id,
+    senha,
     solicitadoEm:firebase.firestore.FieldValue.serverTimestamp(),
     status:'pendente',
   };
@@ -672,6 +737,7 @@ async function enviarSolicitacaoTrocaPublica(){
   if(botao) botao.disabled=true;
   try{
     await referencia.set(pedido);
+    pedidoTrocaPublicaPendente=null;
     fecharModal();
     abrirModal(`
       <div class="success-icon" aria-hidden="true">${icon('check',28)}</div>
@@ -681,12 +747,16 @@ async function enviarSolicitacaoTrocaPublica(){
     `,false,'success');
   }catch(erro){
     console.error('Erro ao enviar solicitação pública de troca',erro);
-    mostrarErro(erro.message||'Não foi possível enviar a solicitação. Tente novamente.');
+    mostrarErro(erro.code==='permission-denied'
+      ?'Senha incorreta. Confira com a administração e tente novamente.'
+      :(erro.message||'Não foi possível enviar a solicitação. Tente novamente.'));
     if(botao) botao.disabled=false;
   }
 }
 window.abrirSolicitacaoTrocaPublica=abrirSolicitacaoTrocaPublica;
 window.atualizarFormularioSolicitacaoTroca=atualizarFormularioSolicitacaoTroca;
+window.confirmarSolicitacaoTrocaPublica=confirmarSolicitacaoTrocaPublica;
+window.abrirSenhaSolicitacaoTrocaPublica=abrirSenhaSolicitacaoTrocaPublica;
 window.enviarSolicitacaoTrocaPublica=enviarSolicitacaoTrocaPublica;
 window.alternarPickerSolicitacao=alternarPickerSolicitacao;
 window.selecionarOpcaoSolicitacao=selecionarOpcaoSolicitacao;
