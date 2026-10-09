@@ -17,8 +17,8 @@ test('index.html carrega CSS e scripts do app em arquivos separados, em ordem', 
   ]);
   assert.ok(scriptTags.indexOf('ranking-logic.js') < scriptTags.indexOf('js/core.js'));
   assert.ok(scriptTags.indexOf('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js') < scriptTags.indexOf('js/core.js'));
-  assert.doesNotMatch(html, /<style>/);
-  assert.doesNotMatch(html, /<script>/);
+  assert.doesNotMatch(html, /<style>/i);
+  assert.doesNotMatch(html, /<script>/i);
 });
 
 test('todos os arquivos referenciados existem e o CSS tem chaves balanceadas', () => {
